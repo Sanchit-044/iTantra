@@ -1,0 +1,31 @@
+# Gradle
+.gradle/
+build/
+!gradle/wrapper/gradle-wrapper.jar
+
+# Android
+local.properties
+*.apk
+*.aab
+*.ap_
+*.dex
+captures/
+.cxx/
+
+# Bundled model assets are large binaries and are provisioned separately.
+# See docs/BUILD.md. Keep the directory structure and READMEs.
+models-pack/src/main/assets/models/**
+!models-pack/src/main/assets/models/README.txt
+android/src/main/assets/models/**
+android/src/main/assets/alerts/**
+
+# Evaluation corpus: recordings of real speakers are personal data and are
+# deliberately not committed. See docs/CORPUS.md.
+harness/src/androidTest/assets/corpus/**
+harness/src/androidTest/assets/roundtrip/**
+
+# IDE
+.idea/
+*.iml
+*.iws
+.DS_Store
