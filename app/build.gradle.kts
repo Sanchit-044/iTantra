@@ -18,11 +18,20 @@ android {
         versionName = "0.1.0-prototype"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+        // Restrict language resources to supported languages to save APK size
+        resourceConfigurations.addAll(listOf("en", "hi", "ta", "bn"))
+
+        ndk {
+            // Drop x86/x86_64 to save tens of MBs from ONNX native libs
+            abiFilters += listOf("arm64-v8a", "armeabi-v7a")
+        }
     }
 
     buildTypes {
         release {
             isMinifyEnabled = true
+            isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
     }
@@ -46,7 +55,7 @@ dependencies {
     implementation(project(":android"))
 
     implementation(libs.kotlin.coroutines.core)
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
+    implementation(libs.kotlin.coroutines.android)
 
     // Compose
     val composeBom = platform(libs.compose.bom)

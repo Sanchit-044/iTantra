@@ -41,8 +41,8 @@ android {
 dependencies {
     api(project(":core"))
 
-    implementation("androidx.core:core-ktx:1.13.1")
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
+    implementation(libs.androidx.core.ktx)
+    implementation(libs.kotlin.coroutines.android)
 
     // ONNX Runtime serves BOTH the VITS TTS decoder and the IndicWav2Vec CTC acoustic
     // model -- one inference runtime for the whole app. Vosk was dropped entirely (no
