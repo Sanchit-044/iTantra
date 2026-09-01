@@ -28,6 +28,7 @@ val androidSdkPresent: Boolean =
             ?.readText()?.contains("sdk.dir") == true
 
 if (androidSdkPresent) {
+    include(":app")
     include(":android")
     include(":harness")
     // Install-time asset pack holding the bundled models. The future :app module must
