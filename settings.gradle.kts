@@ -31,9 +31,6 @@ if (androidSdkPresent) {
     include(":app")
     include(":android")
     include(":harness")
-    // Install-time asset pack holding the bundled models. The future :app module must
-    // declare `assetPacks += listOf(":models-pack")`; see docs/BUILD.md.
-    include(":models-pack")
 } else {
     logger.lifecycle("[itantra] Android SDK not found -- only :core is configured. Set ANDROID_HOME to build :android/:harness.")
 }

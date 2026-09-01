@@ -9,7 +9,6 @@ plugins {
 android {
     namespace = "in.gov.itantra"
     compileSdk = 35
-    assetPacks += listOf(":models-pack")
 
     defaultConfig {
         applicationId = "in.gov.itantra"
