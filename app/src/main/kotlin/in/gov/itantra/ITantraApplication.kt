@@ -1,4 +1,4 @@
-package in.gov.itantra
+package `in`.gov.itantra
 
 import android.app.Application
 import dagger.hilt.android.HiltAndroidApp

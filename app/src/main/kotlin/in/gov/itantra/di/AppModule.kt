@@ -1,4 +1,4 @@
-package in.gov.itantra.di
+package `in`.gov.itantra.di
 
 import android.content.Context
 import dagger.Module

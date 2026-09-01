@@ -7,7 +7,7 @@
   That omission is deliberate and load-bearing. Without it the OS refuses every
   socket to a non-local address, so the "fully offline" constraint is enforced by
   the platform rather than by developer discipline. Any future code that tries to
-  reach the network -- including a transitive dependency phoning home -- fails at
+  reach the network - including a transitive dependency phoning home - fails at
   runtime instead of silently succeeding. Do not add it. If a build ever needs it,
   that is a design change to escalate, not a build fix.
 

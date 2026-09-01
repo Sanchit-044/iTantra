@@ -23,9 +23,6 @@ android {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
-    kotlinOptions {
-        jvmTarget = "17"
-    }
 
     packaging {
         // Models are bundled at install time and must never be compressed-then-extracted
@@ -36,6 +33,10 @@ android {
             noCompress += listOf("onnx", "wav", "json")
         }
     }
+}
+
+kotlin {
+    jvmToolchain(17)
 }
 
 dependencies {

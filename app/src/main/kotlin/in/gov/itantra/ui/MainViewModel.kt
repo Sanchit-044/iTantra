@@ -29,8 +29,12 @@ class MainViewModel @Inject constructor(
 
     fun startPtt() {
         _uiState.update { it.copy(isSpeaking = true, recognizedText = "") }
-        startPttUseCase.execute(language = _uiState.value.speakLanguage) { partialText ->
-            _uiState.update { it.copy(recognizedText = partialText) }
+        try {
+            startPttUseCase.execute(language = _uiState.value.speakLanguage) { partialText ->
+                _uiState.update { it.copy(recognizedText = partialText) }
+            }
+        } catch (e: Exception) {
+            _uiState.update { it.copy(isSpeaking = false, recognizedText = "Error: ${e.message}") }
         }
     }
 

@@ -62,7 +62,7 @@ abstract class StreamTransport(
         protected set
 
     @Volatile
-    override var pairingInfo: PairingInfo? = null
+    final override var pairingInfo: PairingInfo? = null
         private set
 
     @Volatile
@@ -84,7 +84,7 @@ abstract class StreamTransport(
     private val bytesIn = AtomicLong(0)
 
     @Volatile
-    override var lastRoundTripMs: Long? = null
+    final override var lastRoundTripMs: Long? = null
         private set
 
     private val heartbeatSentAt = java.util.concurrent.ConcurrentHashMap<Int, Long>()
@@ -125,17 +125,17 @@ abstract class StreamTransport(
 
     override fun connect(timeoutMs: Long) {
         if (state == ConnectionState.CONNECTED) return
-        setState(ConnectionState.DISCOVERING)
+        updateState(ConnectionState.DISCOVERING)
         try {
             val l = openLink(timeoutMs)
             link = l
-            setState(ConnectionState.HANDSHAKING)
+            updateState(ConnectionState.HANDSHAKING)
             handshake(l)
             running.set(true)
             readerThread = Thread({ readLoop(l) }, "itantra-transport-rx").apply { start() }
-            setState(ConnectionState.CONNECTED)
+            updateState(ConnectionState.CONNECTED)
         } catch (e: Exception) {
-            setState(ConnectionState.FAILED)
+            updateState(ConnectionState.FAILED)
             disconnect()
             throw TransportException("connection failed on ${kind.name}", e)
         }
@@ -301,7 +301,7 @@ abstract class StreamTransport(
         }
 
         running.set(false)
-        if (state == ConnectionState.CONNECTED) setState(ConnectionState.DISCONNECTED)
+        if (state == ConnectionState.CONNECTED) updateState(ConnectionState.DISCONNECTED)
     }
 
     private fun dispatch(packet: Packet) {
@@ -340,7 +340,7 @@ abstract class StreamTransport(
         crypto = null
         pairingConfirmed.set(false)
         pairingInfo = null
-        setState(ConnectionState.DISCONNECTED)
+        updateState(ConnectionState.DISCONNECTED)
     }
 
     override fun close() {
@@ -348,7 +348,7 @@ abstract class StreamTransport(
         (scheduler as? DefaultScheduler)?.shutdown()
     }
 
-    protected fun setState(next: ConnectionState) {
+    protected fun updateState(next: ConnectionState) {
         if (state != next) {
             state = next
             listener?.onStateChanged(next)
