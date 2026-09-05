@@ -19,6 +19,7 @@ import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
 import java.util.Locale
 import java.util.concurrent.CountDownLatch
+import java.util.concurrent.atomic.AtomicLong
 
 /**
  * Module B3, VITS-on-ONNX backend.
@@ -83,6 +84,14 @@ class VitsOnnxTtsEngine(
     @Volatile
     var loadedModelSizeBytes: Long? = null
         private set
+
+    private val fallbackCount = AtomicLong(0)
+    private val synthesisedCount = AtomicLong(0)
+    private val underrunCount = AtomicLong(0)
+
+    val androidTtsFallbackCount: Long get() = fallbackCount.get()
+    val utterancesSynthesised: Long get() = synthesisedCount.get()
+    val underruns: Long get() = underrunCount.get()
 
     private val lock = Any()
     
@@ -221,13 +230,15 @@ class VitsOnnxTtsEngine(
                     if (result == TextToSpeech.ERROR) {
                         android.util.Log.e("iTantra-TTS", "speak() returned ERROR immediately")
                     } else {
+                        fallbackCount.incrementAndGet()
                         // Block while speaking to simulate synthesis time and prevent the app
                         // from closing the receive session too early.
                         latch.await(15, java.util.concurrent.TimeUnit.SECONDS)
                     }
                     
                     val elapsed = System.currentTimeMillis() - startedAt
-                    synthesisLatency.recordMs(elapsed)
+                    if (elapsed >= 0) synthesisLatency.recordMs(elapsed)
+                    synthesisedCount.incrementAndGet()
                     
                     state = TtsState.VOICE_LOADED
                     // Return empty AudioClip since Android OS already played the sound

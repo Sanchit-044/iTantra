@@ -29,7 +29,7 @@ class LanTransport(
 
     enum class Role { HOST, CLIENT }
 
-    override val kind: TransportKind = TransportKind.BLUETOOTH_RFCOMM // Using a dummy kind or we should add LAN to TransportKind
+    override val kind: TransportKind = TransportKind.LAN
 
     private var serverSocket: ServerSocket? = null
     private var isHosting = AtomicBoolean(false)

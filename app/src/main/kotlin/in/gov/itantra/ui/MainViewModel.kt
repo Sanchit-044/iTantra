@@ -7,6 +7,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
+import `in`.gov.itantra.android.diag.AndroidDiagnosticsService
 import `in`.gov.itantra.android.transport.BluetoothTransport
 import `in`.gov.itantra.android.transport.WifiDirectTransport
 import `in`.gov.itantra.core.Language
@@ -45,6 +46,7 @@ data class UiState(
     val connectionMode: ConnectionMode = ConnectionMode.WIFI_DIRECT_HOST,
     val pairedDevices: List<BluetoothDeviceInfo> = emptyList(),
     val pairingInfo: PairingInfo? = null,
+    val selectedDeviceAddress: String? = null,
     val error: String? = null
 )
 
@@ -55,7 +57,8 @@ class MainViewModel @Inject constructor(
     private val keyAgreementProvider: KeyAgreementProvider,
     private val startPttUseCase: StartPttTransmissionUseCase,
     private val stopPttUseCase: StopPttTransmissionUseCase,
-    private val receivePttUseCase: ReceivePttTransmissionUseCase
+    private val receivePttUseCase: ReceivePttTransmissionUseCase,
+    private val diagnostics: AndroidDiagnosticsService,
 ) : ViewModel(), TransportListener {
 
     private val _uiState = MutableStateFlow(UiState())
@@ -71,6 +74,9 @@ class MainViewModel @Inject constructor(
         super.onCleared()
         transport?.setListener(null)
         transport?.disconnect()
+        if (diagnostics.attachedTransport === transport) {
+            diagnostics.attachedTransport = null
+        }
     }
     
     fun setConnectionMode(mode: ConnectionMode) {
@@ -93,6 +99,10 @@ class MainViewModel @Inject constructor(
 
     fun refreshPairedDevices() {
         loadPairedDevices()
+    }
+
+    fun selectDevice(address: String?) {
+        _uiState.update { it.copy(selectedDeviceAddress = address) }
     }
 
     // --- Transport Listener ---
@@ -128,13 +138,16 @@ class MainViewModel @Inject constructor(
                     ConnectionMode.WIFI_DIRECT_CLIENT -> WifiDirectTransport(context, keyAgreementProvider, WifiDirectTransport.Role.CLIENT)
                     ConnectionMode.BLUETOOTH_HOST -> BluetoothTransport(context, keyAgreementProvider, BluetoothTransport.Role.HOST)
                     ConnectionMode.BLUETOOTH_CLIENT -> {
-                        if (peerAddress == null) throw Exception("Please select a device to connect to")
-                        BluetoothTransport(context, keyAgreementProvider, BluetoothTransport.Role.CLIENT, peerAddress)
+                        val address = peerAddress ?: _uiState.value.selectedDeviceAddress
+                        if (address == null) throw Exception("Please select a device to connect to")
+                        BluetoothTransport(context, keyAgreementProvider, BluetoothTransport.Role.CLIENT, address)
                     }
                 }
                 
                 newTransport.setListener(this@MainViewModel)
                 transport = newTransport
+                diagnostics.attachedTransport = newTransport
+                diagnostics.currentLanguage = _uiState.value.speakLanguage
                 
                 newTransport.connect()
             } catch (e: Exception) {
@@ -145,6 +158,7 @@ class MainViewModel @Inject constructor(
 
     fun disconnect() {
         transport?.disconnect()
+        // Keep the last transport attached so session counters remain visible.
     }
 
     fun confirmPairing() {
@@ -163,6 +177,7 @@ class MainViewModel @Inject constructor(
 
     fun startPtt() {
         val currentTransport = transport ?: return
+        diagnostics.currentLanguage = _uiState.value.speakLanguage
         
         _uiState.update { it.copy(isSpeaking = true, recognizedText = "") }
         try {
@@ -180,6 +195,7 @@ class MainViewModel @Inject constructor(
     }
 
     fun setSpeakLanguage(language: Language) {
+        diagnostics.currentLanguage = language
         _uiState.update { it.copy(speakLanguage = language) }
     }
 

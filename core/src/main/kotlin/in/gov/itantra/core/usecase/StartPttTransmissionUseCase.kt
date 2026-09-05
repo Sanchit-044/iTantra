@@ -4,6 +4,8 @@ import `in`.gov.itantra.core.stt.SttEngine
 import `in`.gov.itantra.core.stt.SttListener
 import `in`.gov.itantra.core.stt.SttResult
 import `in`.gov.itantra.core.stt.SttException
+import `in`.gov.itantra.core.stt.EndpointTrigger
+import `in`.gov.itantra.core.diag.DiagnosticsSink
 import `in`.gov.itantra.core.transport.Packet
 import `in`.gov.itantra.core.transport.Transport
 import `in`.gov.itantra.core.transport.MessageType
@@ -15,7 +17,8 @@ import java.util.concurrent.atomic.AtomicInteger
  * It starts the STT engine and pipes recognized sentences to the Transport layer.
  */
 class StartPttTransmissionUseCase(
-    private val sttEngine: SttEngine
+    private val sttEngine: SttEngine,
+    private val diagnostics: DiagnosticsSink? = null,
 ) {
     private val sequenceCounter = AtomicInteger(0)
 
@@ -32,7 +35,17 @@ class StartPttTransmissionUseCase(
             }
 
             override fun onFinal(result: SttResult) {
-                if (result.text.isBlank()) return
+                val cancelled = result.trigger == EndpointTrigger.CANCELLED
+                runCatching {
+                    diagnostics?.onSttFinal(
+                        text = result.text,
+                        language = result.language,
+                        finalisationMs = result.finalisationLatencyMs,
+                        audioMs = result.utteranceDurationMs,
+                        cancelled = cancelled,
+                    )
+                }
+                if (cancelled || result.text.isBlank()) return
                 
                 // Show the final transmitted text on the sending phone's UI
                 onPartialResult(result.text)

@@ -7,12 +7,12 @@ import dagger.hilt.InstallIn
 import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
 import `in`.gov.itantra.android.crypto.KeystoreKeyAgreement
+import `in`.gov.itantra.android.diag.AndroidDiagnosticsService
 import `in`.gov.itantra.android.stt.OnnxCtcSttEngine
-import `in`.gov.itantra.android.transport.WifiDirectTransport
 import `in`.gov.itantra.android.tts.VitsOnnxTtsEngine
 import `in`.gov.itantra.core.crypto.KeyAgreementProvider
+import `in`.gov.itantra.core.diag.DiagnosticsSink
 import `in`.gov.itantra.core.stt.SttEngine
-import `in`.gov.itantra.core.transport.Transport
 import `in`.gov.itantra.core.tts.TtsEngine
 import `in`.gov.itantra.core.usecase.StartPttTransmissionUseCase
 import `in`.gov.itantra.core.usecase.StopPttTransmissionUseCase
@@ -41,10 +41,29 @@ object AppModule {
     }
 
     @Provides
+    @Singleton
+    fun provideDiagnosticsService(
+        @ApplicationContext context: Context,
+        sttEngine: SttEngine,
+        ttsEngine: TtsEngine,
+    ): AndroidDiagnosticsService {
+        return AndroidDiagnosticsService(
+            context = context,
+            sttEngine = { sttEngine },
+            ttsEngine = { ttsEngine },
+        )
+    }
+
+    @Provides
+    @Singleton
+    fun provideDiagnosticsSink(diagnostics: AndroidDiagnosticsService): DiagnosticsSink = diagnostics
+
+    @Provides
     fun provideStartPttTransmissionUseCase(
-        sttEngine: SttEngine
+        sttEngine: SttEngine,
+        diagnostics: DiagnosticsSink,
     ): StartPttTransmissionUseCase {
-        return StartPttTransmissionUseCase(sttEngine)
+        return StartPttTransmissionUseCase(sttEngine, diagnostics)
     }
 
     @Provides
