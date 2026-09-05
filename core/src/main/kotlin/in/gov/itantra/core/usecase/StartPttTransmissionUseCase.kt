@@ -15,12 +15,11 @@ import java.util.concurrent.atomic.AtomicInteger
  * It starts the STT engine and pipes recognized sentences to the Transport layer.
  */
 class StartPttTransmissionUseCase(
-    private val sttEngine: SttEngine,
-    private val transport: Transport
+    private val sttEngine: SttEngine
 ) {
     private val sequenceCounter = AtomicInteger(0)
 
-    fun execute(language: Language, onPartialResult: (String) -> Unit) {
+    fun execute(language: Language, transport: Transport, onPartialResult: (String) -> Unit) {
         // Ensure the correct language model is loaded
         if (sttEngine.activeLanguage != language) {
             sttEngine.loadModel(language)

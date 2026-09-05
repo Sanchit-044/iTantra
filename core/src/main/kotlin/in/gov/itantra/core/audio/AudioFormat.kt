@@ -50,7 +50,7 @@ class AudioClip(
  * this interface is what lets Module B6's forced-audio-focus behaviour be asserted
  * in a plain JVM unit test.
  */
-interface AudioSink {
+interface AudioSink : AutoCloseable {
     val format: AudioFormat
 
     /** Blocking write. Returns the number of samples actually consumed. */

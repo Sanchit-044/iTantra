@@ -41,20 +41,10 @@ object AppModule {
     }
 
     @Provides
-    @Singleton
-    fun provideTransport(
-        @ApplicationContext context: Context,
-        keyAgreementProvider: KeyAgreementProvider
-    ): Transport {
-        return WifiDirectTransport(context, keyAgreementProvider)
-    }
-
-    @Provides
     fun provideStartPttTransmissionUseCase(
-        sttEngine: SttEngine,
-        transport: Transport
+        sttEngine: SttEngine
     ): StartPttTransmissionUseCase {
-        return StartPttTransmissionUseCase(sttEngine, transport)
+        return StartPttTransmissionUseCase(sttEngine)
     }
 
     @Provides
@@ -62,5 +52,19 @@ object AppModule {
         sttEngine: SttEngine
     ): StopPttTransmissionUseCase {
         return StopPttTransmissionUseCase(sttEngine)
+    }
+
+    @Provides
+    @Singleton
+    fun provideAudioSinkFactory(): `in`.gov.itantra.core.audio.AudioSinkFactory {
+        return `in`.gov.itantra.android.audio.AndroidAudioSinkFactory()
+    }
+
+    @Provides
+    fun provideReceivePttTransmissionUseCase(
+        ttsEngine: TtsEngine,
+        audioSinkFactory: `in`.gov.itantra.core.audio.AudioSinkFactory
+    ): `in`.gov.itantra.core.usecase.ReceivePttTransmissionUseCase {
+        return `in`.gov.itantra.core.usecase.ReceivePttTransmissionUseCase(ttsEngine, audioSinkFactory)
     }
 }
