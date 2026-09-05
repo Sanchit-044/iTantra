@@ -8,8 +8,10 @@ import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import `in`.gov.itantra.android.diag.AndroidDiagnosticsService
+import `in`.gov.itantra.android.notify.QueuedMessageNotifier
 import `in`.gov.itantra.android.transport.BluetoothTransport
 import `in`.gov.itantra.android.transport.LanTransport
+import `in`.gov.itantra.android.transport.StreamTransport
 import `in`.gov.itantra.android.transport.WifiDirectTransport
 import `in`.gov.itantra.core.Language
 import `in`.gov.itantra.core.alert.AlertContent
@@ -21,12 +23,16 @@ import `in`.gov.itantra.core.lang.LanguageSettingsStore
 import `in`.gov.itantra.core.stt.LanguageIdEngine
 import `in`.gov.itantra.core.stt.resolveSpokenLanguage
 import `in`.gov.itantra.core.translate.TranslationUnavailableException
+import `in`.gov.itantra.core.queue.InboxMessage
+import `in`.gov.itantra.core.queue.InboundMessageInbox
+import `in`.gov.itantra.core.queue.OutboundMessageQueue
 import `in`.gov.itantra.core.transport.ConnectionState
 import `in`.gov.itantra.core.transport.MessageType
 import `in`.gov.itantra.core.transport.Packet
 import `in`.gov.itantra.core.transport.PairingInfo
 import `in`.gov.itantra.core.transport.Transport
 import `in`.gov.itantra.core.transport.TransportListener
+import `in`.gov.itantra.core.usecase.FlushQueuedMessagesUseCase
 import `in`.gov.itantra.core.usecase.ReceivePttTransmissionUseCase
 import `in`.gov.itantra.core.usecase.SendAlertUseCase
 import `in`.gov.itantra.core.usecase.StartPttTransmissionUseCase
@@ -65,7 +71,11 @@ data class UiState(
     val selectedDeviceAddress: String? = null,
     val alertSending: Boolean = false,
     val alertStatus: String? = null,
-    val error: String? = null
+    val error: String? = null,
+    val outboundPending: Int = 0,
+    val outboundFailed: Int = 0,
+    val inbox: List<InboxMessage> = emptyList(),
+    val playingInboxId: String? = null,
 )
 
 @HiltViewModel
@@ -81,6 +91,10 @@ class MainViewModel @Inject constructor(
     private val sendAlertUseCase: SendAlertUseCase,
     private val alertPlayer: AlertPlayer,
     private val diagnostics: AndroidDiagnosticsService,
+    private val flushQueuedUseCase: FlushQueuedMessagesUseCase,
+    private val outboundQueue: OutboundMessageQueue,
+    private val inbox: InboundMessageInbox,
+    private val notifier: QueuedMessageNotifier,
 ) : ViewModel(), TransportListener {
 
     private val _uiState = MutableStateFlow(UiState())
@@ -102,6 +116,9 @@ class MainViewModel @Inject constructor(
                 }
             }
         }
+        outboundQueue.purgeExpired()
+        inbox.purgeExpired()
+        publishQueues(notifyIfUnread = true)
     }
 
     override fun onCleared() {
@@ -126,8 +143,8 @@ class MainViewModel @Inject constructor(
                 }
                 _uiState.update { it.copy(pairedDevices = devices) }
             }
-        } catch (e: Exception) {
-            // Ignore missing permissions if they haven't been granted yet
+        } catch (_: Exception) {
+            // Permissions may not be granted yet.
         }
     }
 
@@ -227,13 +244,14 @@ class MainViewModel @Inject constructor(
     }
 
     override fun onPairingCodeAvailable(info: PairingInfo) {
-        _uiState.update { it.copy(pairingInfo = info) }
+        _uiState.update { it.copy(pairingInfo = info, pairingConfirmed = false) }
     }
 
     override fun onReceive(packet: Packet) {
         viewModelScope.launch(Dispatchers.IO) {
             try {
                 when (packet.type) {
+                    MessageType.QUEUED -> handleQueuedInbound(packet)
                     MessageType.ALERT -> {
                         alertPlayer.play(
                             IncomingAlert(
@@ -254,6 +272,18 @@ class MainViewModel @Inject constructor(
                 _uiState.update { it.copy(error = "Playback error: ${e.message}") }
             }
         }
+    }
+
+    override fun onSendFailed(packet: Packet, reason: String) {
+        if (packet.type != MessageType.QUEUED) return
+        val existing = outboundQueue.snapshot().firstOrNull {
+            it.text == packet.text &&
+                it.language == packet.language &&
+                it.createdAtMs == packet.timestampMs
+        }
+        if (existing != null) outboundQueue.markFailed(existing.id)
+        else outboundQueue.enqueue(packet.language, packet.text)
+        publishQueues()
     }
 
     private suspend fun playNormalOrDefer(packet: Packet) {
@@ -315,11 +345,19 @@ class MainViewModel @Inject constructor(
     fun disconnect() {
         transport?.disconnect()
         // Keep the last transport attached so session counters remain visible.
+        _uiState.update { it.copy(pairingConfirmed = false, pairingInfo = null) }
     }
 
     fun confirmPairing() {
-        transport?.confirmPairing()
+        val tx = transport ?: return
+        try {
+            tx.confirmPairing()
+        } catch (e: Exception) {
+            _uiState.update { it.copy(error = "Pairing failed: ${e.message}") }
+            return
+        }
         _uiState.update { it.copy(pairingInfo = null, pairingConfirmed = true) }
+        flushQueue()
     }
 
     fun dismissPairing() {
@@ -362,19 +400,40 @@ class MainViewModel @Inject constructor(
     }
 
     fun startPtt() {
-        val currentTransport = transport ?: return
         val state = _uiState.value
-        if (state.connectionState != ConnectionState.CONNECTED) return
-        if (state.channelBusy) {
-            _uiState.update { it.copy(recognizedText = "Channel busy") }
-            return
+        val isConnected = state.connectionState == ConnectionState.CONNECTED
+        if (isConnected) {
+            if (state.channelBusy) {
+                _uiState.update { it.copy(recognizedText = "Channel busy") }
+                return
+            }
+            if (state.isSpeaking || state.isRequestingFloor) return
+            pttWanted.set(true)
+            _uiState.update {
+                it.copy(isRequestingFloor = true, recognizedText = "", error = null)
+            }
+            transport?.requestFloor()
+        } else {
+            if (state.isSpeaking) return
+            _uiState.update { it.copy(isSpeaking = true, recognizedText = "", error = null) }
+            try {
+                startPttUseCase.execute(
+                    language = state.currentLanguage,
+                    transport = null,
+                    sendLive = false,
+                    onPartialResult = { partial ->
+                        _uiState.update { it.copy(recognizedText = partial) }
+                    },
+                    onFinalResult = { },
+                    onQueued = { publishQueues() },
+                    onError = { message ->
+                        _uiState.update { it.copy(isSpeaking = false, recognizedText = "Error: $message") }
+                    }
+                )
+            } catch (e: Exception) {
+                _uiState.update { it.copy(isSpeaking = false, recognizedText = "Error: ${e.message}") }
+            }
         }
-        if (state.isSpeaking || state.isRequestingFloor) return
-        pttWanted.set(true)
-        _uiState.update {
-            it.copy(isRequestingFloor = true, recognizedText = "", error = null)
-        }
-        currentTransport.requestFloor()
     }
 
     fun stopPtt() {
@@ -383,8 +442,84 @@ class MainViewModel @Inject constructor(
         _uiState.update {
             it.copy(isSpeaking = false, isRequestingFloor = false, recognizedText = it.recognizedText)
         }
+        if (isLiveReady()) flushQueue()
+    }
+
+    fun playInbox(id: String) {
+        val item = inbox.find(id) ?: return
+        if (_uiState.value.playingInboxId != null) return
+        viewModelScope.launch(Dispatchers.IO) {
+            _uiState.update { it.copy(playingInboxId = id, error = null) }
+            try {
+                receivePttUseCase.execute(
+                    Packet.text(MessageType.NORMAL, item.language, 0, item.text),
+                    _uiState.value.currentLanguage
+                )
+                inbox.markRead(id)
+            } catch (e: Exception) {
+                _uiState.update { it.copy(error = "Playback error: ${e.message}") }
+            } finally {
+                _uiState.update { it.copy(playingInboxId = null) }
+                publishQueues()
+            }
+        }
+    }
+
+    fun dismissInbox(id: String) {
+        inbox.discard(id)
+        publishQueues()
     }
     companion object {
         private const val MAX_DEFERRED_NORMAL = 8
     }
+
+    private fun handleQueuedInbound(packet: Packet) {
+        val id = inboundId(packet)
+        val stored = inbox.offer(id, packet.language, packet.text, packet.timestampMs)
+        publishQueues()
+        if (stored != null) {
+            notifier.notifyUnread(inbox.unreadCount(), stored.text)
+        }
+    }
+
+    private fun flushQueue() {
+        val tx = transport ?: return
+        if (!isLiveReady()) return
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                flushQueuedUseCase.execute(tx, pairingConfirmed = true)
+            } catch (e: Exception) {
+                _uiState.update { it.copy(error = "Queue send failed: ${e.message}") }
+            } finally {
+                publishQueues()
+            }
+        }
+    }
+
+    private fun isLiveReady(): Boolean {
+        val tx = transport ?: return false
+        if (tx.state != ConnectionState.CONNECTED) return false
+        if (!_uiState.value.pairingConfirmed) return false
+        val stream = tx as? StreamTransport
+        return stream == null || stream.isPairingConfirmed
+    }
+
+    private fun publishQueues(notifyIfUnread: Boolean = false) {
+        val unread = inbox.unreadCount()
+        if (unread == 0) notifier.cancel()
+        else if (notifyIfUnread) {
+            val preview = inbox.snapshot().firstOrNull { it.unread }?.text.orEmpty()
+            notifier.notifyUnread(unread, preview)
+        }
+        _uiState.update {
+            it.copy(
+                outboundPending = outboundQueue.pendingCount(),
+                outboundFailed = outboundQueue.failedCount(),
+                inbox = inbox.snapshot(),
+            )
+        }
+    }
+
+    private fun inboundId(packet: Packet): String =
+        "${packet.timestampMs}:${packet.sequence}:${packet.text.hashCode()}"
 }

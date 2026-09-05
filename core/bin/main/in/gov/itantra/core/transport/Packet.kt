@@ -33,6 +33,12 @@ enum class MessageType(val wire: Byte) {
 
     /** PTT floor: holder released the channel. */
     FLOOR_RELEASE(0x08),
+
+    /**
+     * Store-and-forward speech. Same ciphertext path as [NORMAL], but the receiver
+     * must not auto-play it -- the operator opens it from the inbox.
+     */
+    QUEUED(0x09),
     ;
 
     val isFloorControl: Boolean
@@ -64,6 +70,8 @@ data class Packet(
     val text: String get() = payload.toString(Charsets.UTF_8)
 
     val isAlert: Boolean get() = type == MessageType.ALERT
+
+    val isQueued: Boolean get() = type == MessageType.QUEUED
 
     val requiresAck: Boolean get() = flags and FLAG_REQUIRES_ACK != 0
 

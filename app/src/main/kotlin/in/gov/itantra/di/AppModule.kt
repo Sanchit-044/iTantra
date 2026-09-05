@@ -14,6 +14,8 @@ import `in`.gov.itantra.android.audio.AudioTrackSink
 import `in`.gov.itantra.android.crypto.KeystoreKeyAgreement
 import `in`.gov.itantra.android.pack.LocalLanguagePackManager
 import `in`.gov.itantra.android.diag.AndroidDiagnosticsService
+import `in`.gov.itantra.android.notify.QueuedMessageNotifier
+import `in`.gov.itantra.android.queue.FileQueueStore
 import `in`.gov.itantra.android.stt.OnnxCtcSttEngine
 import `in`.gov.itantra.android.tts.VitsOnnxTtsEngine
 import `in`.gov.itantra.core.alert.AlertPlayer
@@ -36,6 +38,11 @@ import `in`.gov.itantra.core.usecase.SendAlertUseCase
 import `in`.gov.itantra.core.usecase.StartPttTransmissionUseCase
 import `in`.gov.itantra.core.usecase.StopPttTransmissionUseCase
 import `in`.gov.itantra.lang.PrefsLanguageSettingsStore
+import `in`.gov.itantra.core.queue.InboundMessageInbox
+import `in`.gov.itantra.core.queue.OutboundMessageQueue
+import `in`.gov.itantra.core.queue.QueueStore
+import `in`.gov.itantra.core.usecase.FlushQueuedMessagesUseCase
+import java.util.concurrent.atomic.AtomicInteger
 import javax.inject.Singleton
 
 @Module
@@ -68,6 +75,12 @@ object AppModule {
 
     @Provides
     @Singleton
+    fun provideQueueStore(@ApplicationContext context: Context): QueueStore {
+        return FileQueueStore(context)
+    }
+
+    @Provides
+    @Singleton
     fun provideDiagnosticsService(
         @ApplicationContext context: Context,
         sttEngine: SttEngine,
@@ -82,8 +95,20 @@ object AppModule {
 
     @Provides
     @Singleton
+    fun provideOutboundQueue(store: QueueStore): OutboundMessageQueue {
+        return OutboundMessageQueue(store)
+    }
+
+    @Provides
+    @Singleton
     fun provideLanguagePackManager(@ApplicationContext context: Context): LanguagePackManager {
         return LocalLanguagePackManager(context)
+    }
+
+    @Provides
+    @Singleton
+    fun provideInbox(store: QueueStore): InboundMessageInbox {
+        return InboundMessageInbox(store)
     }
 
     @Provides
@@ -103,11 +128,30 @@ object AppModule {
     fun provideDiagnosticsSink(diagnostics: AndroidDiagnosticsService): DiagnosticsSink = diagnostics
 
     @Provides
+    fun providePacketSequence(): AtomicInteger = AtomicInteger(0)
+
+    @Provides
+    @Singleton
+    fun provideNotifier(@ApplicationContext context: Context): QueuedMessageNotifier {
+        return QueuedMessageNotifier(context)
+    }
+
+    @Provides
     fun provideStartPttTransmissionUseCase(
         sttEngine: SttEngine,
         diagnostics: DiagnosticsSink,
+        outboundQueue: OutboundMessageQueue,
+        sequence: AtomicInteger,
     ): StartPttTransmissionUseCase {
-        return StartPttTransmissionUseCase(sttEngine, diagnostics)
+        return StartPttTransmissionUseCase(sttEngine, diagnostics, outboundQueue, sequence)
+    }
+
+    @Provides
+    fun provideFlushQueuedMessagesUseCase(
+        outboundQueue: OutboundMessageQueue,
+        sequence: AtomicInteger,
+    ): FlushQueuedMessagesUseCase {
+        return FlushQueuedMessagesUseCase(outboundQueue, sequence)
     }
 
     @Provides

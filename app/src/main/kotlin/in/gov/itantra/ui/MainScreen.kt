@@ -151,6 +151,59 @@ fun MainScreen(
             )
         }
 
+        if (uiState.outboundPending > 0) {
+            Text(
+                text = "${uiState.outboundPending} waiting to send" +
+                    if (uiState.outboundFailed > 0) " (${uiState.outboundFailed} failed, will retry)" else "",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.padding(top = 8.dp)
+            )
+        }
+
+        if (uiState.inbox.isNotEmpty()) {
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 8.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)
+            ) {
+                Column(modifier = Modifier.padding(12.dp)) {
+                    Text("Queued inbox — tap Play. Nothing auto-plays.", style = MaterialTheme.typography.labelMedium)
+                    Spacer(Modifier.height(4.dp))
+                    LazyColumn(modifier = Modifier.heightIn(max = 140.dp).fillMaxWidth()) {
+                        items(uiState.inbox, key = { it.id }) { item ->
+                            Row(
+                                modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
+                                    Text(
+                                        text = if (item.unread) "New · ${item.language.endonym}" else item.language.endonym,
+                                        style = MaterialTheme.typography.labelSmall,
+                                    )
+                                    Text(
+                                        text = item.text,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        maxLines = 2,
+                                    )
+                                }
+                                TextButton(
+                                    onClick = { viewModel.playInbox(item.id) },
+                                    enabled = uiState.playingInboxId == null,
+                                ) {
+                                    Text(if (uiState.playingInboxId == item.id) "Playing" else "Play")
+                                }
+                                TextButton(onClick = { viewModel.dismissInbox(item.id) }) {
+                                    Text("Dismiss")
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         Spacer(modifier = Modifier.weight(1f))
 
         val status = when {
@@ -159,7 +212,8 @@ fun MainScreen(
             uiState.isRequestingFloor -> "Waiting for channel…"
             uiState.channelBusy -> "Channel busy"
             uiState.recognizedText.isNotEmpty() -> uiState.recognizedText
-            else -> "Ready to speak..."
+            uiState.connectionState == ConnectionState.CONNECTED -> "Ready to speak..."
+            else -> "Not connected — PTT will save and send later"
         }
         Text(
             text = status,
@@ -179,8 +233,7 @@ fun MainScreen(
                 if (pttHeld) viewModel.stopPtt() else viewModel.startPtt()
             },
             modifier = Modifier.size(120.dp),
-            enabled = uiState.connectionState == ConnectionState.CONNECTED &&
-                (pttHeld || !uiState.channelBusy),
+            enabled = uiState.connectionState != ConnectionState.CONNECTED || pttHeld || !uiState.channelBusy,
             colors = ButtonDefaults.buttonColors(
                 containerColor = when {
                     uiState.isSpeaking -> MaterialTheme.colorScheme.error
@@ -198,7 +251,6 @@ fun MainScreen(
                 }
             )
         }
-
-        Spacer(modifier = Modifier.height(16.dp))
+        Spacer(modifier = Modifier.height(24.dp))
     }
 }
