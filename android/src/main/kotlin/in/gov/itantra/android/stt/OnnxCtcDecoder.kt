@@ -48,15 +48,24 @@ class OnnxCtcDecoder(
 
         try {
             val env = OrtEnvironment.getEnvironment()
-            val bytes = context.assets.open(descriptor.assetPath).use { it.readBytes() }
+            
+            val modelFile = java.io.File(context.cacheDir, "ctc_model_${language.code}.onnx")
+            if (!modelFile.exists()) {
+                context.assets.open(descriptor.assetPath).use { input ->
+                    modelFile.outputStream().use { output ->
+                        input.copyTo(output)
+                    }
+                }
+            }
+            
             val options = OrtSession.SessionOptions().apply {
                 setIntraOpNumThreads(2)
                 setInterOpNumThreads(1)
                 setOptimizationLevel(OrtSession.SessionOptions.OptLevel.ALL_OPT)
             }
-            session = env.createSession(bytes, options)
+            session = env.createSession(modelFile.absolutePath, options)
             vocabulary = CtcVocabulary.fromAsset(context, vocabAssetFor(language))
-            loadedModelSizeBytes = bytes.size.toLong()
+            loadedModelSizeBytes = modelFile.length()
             loadedLanguage = language
         } catch (e: Exception) {
             throw SttException("failed to load ONNX CTC model for ${language.code}", e)

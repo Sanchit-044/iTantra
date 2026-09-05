@@ -35,8 +35,11 @@ import java.util.concurrent.TimeUnit
 class WifiDirectTransport(
     private val context: Context,
     keyAgreement: KeyAgreementProvider,
+    private val role: Role,
     private val port: Int = DEFAULT_PORT,
 ) : StreamTransport(keyAgreement) {
+
+    enum class Role { HOST, CLIENT }
 
     override val kind: TransportKind = TransportKind.WIFI_DIRECT
 
@@ -50,8 +53,8 @@ class WifiDirectTransport(
     @Volatile private var connectionInfo: WifiP2pInfo? = null
     @Volatile private var discoveredPeer: WifiP2pDevice? = null
 
-    private var peersFound: CountDownLatch? = null
-    private var connected: CountDownLatch? = null
+    @Volatile private var peersFound: CountDownLatch? = null
+    @Volatile private var connected: CountDownLatch? = null
 
     @SuppressLint("MissingPermission") // Location / NEARBY_WIFI_DEVICES checked by the caller.
     override fun openLink(timeoutMs: Long): Link {
@@ -62,31 +65,66 @@ class WifiDirectTransport(
             ?: throw TransportException("could not initialise a Wi-Fi P2P channel")
         channel = ch
 
-        peersFound = CountDownLatch(1)
         connected = CountDownLatch(1)
         registerReceiver(m, ch)
 
         try {
-            discoverPeers(m, ch)
-
-            if (peersFound?.await(remaining(deadline), TimeUnit.MILLISECONDS) != true) {
-                throw TransportException("no Wi-Fi Direct peers found within ${timeoutMs}ms")
+            // Fast-path: Check if already connected via sticky broadcast
+            if (connected?.await(1000, TimeUnit.MILLISECONDS) == true) {
+                val info = connectionInfo
+                if (info != null && info.groupFormed) {
+                    val peerName = discoveredPeer?.deviceName ?: "Connected Peer"
+                    val peerAddr = discoveredPeer?.deviceAddress ?: "unknown"
+                    return if (info.isGroupOwner) {
+                        acceptAsOwner(peerName, peerAddr, remaining(deadline))
+                    } else {
+                        connectToOwner(info, peerName, peerAddr, remaining(deadline))
+                    }
+                }
             }
-            val peer = discoveredPeer
-                ?: throw TransportException("peer list was empty after discovery")
 
-            invite(m, ch, peer)
-
-            if (connected?.await(remaining(deadline), TimeUnit.MILLISECONDS) != true) {
-                throw TransportException("Wi-Fi Direct group did not form within ${timeoutMs}ms")
-            }
-            val info = connectionInfo
-                ?: throw TransportException("group formed but no connection info was delivered")
-
-            return if (info.isGroupOwner) {
-                acceptAsOwner(peer, remaining(deadline))
+            if (role == Role.HOST) {
+                val groupCreated = CountDownLatch(1)
+                m.createGroup(ch, object : WifiP2pManager.ActionListener {
+                    override fun onSuccess() { groupCreated.countDown() }
+                    override fun onFailure(reason: Int) { groupCreated.countDown() }
+                })
+                groupCreated.await(5000, TimeUnit.MILLISECONDS)
+                
+                if (connected?.await(10000, TimeUnit.MILLISECONDS) == true) {
+                    val info = connectionInfo
+                    if (info != null && info.groupFormed && info.isGroupOwner) {
+                        return acceptAsOwner("Connected Peer", "unknown", remaining(deadline))
+                    }
+                }
+                throw TransportException("Failed to host Wi-Fi Direct group")
             } else {
-                connectToOwner(info, peer, remaining(deadline))
+                // Not connected or fast-path failed. Enter robust retry loop.
+                while (System.currentTimeMillis() < deadline) {
+                    peersFound = CountDownLatch(1)
+                    connected = CountDownLatch(1)
+                    
+                    discoverPeers(m, ch)
+                    
+                    if (peersFound?.await(5000, TimeUnit.MILLISECONDS) != true) {
+                        // Retry discovery
+                        continue
+                    }
+                    
+                    val peer = discoveredPeer ?: continue
+                    
+                    invite(m, ch, peer)
+                    
+                    if (connected?.await(15000, TimeUnit.MILLISECONDS) == true) {
+                        val info = connectionInfo
+                        if (info != null && info.groupFormed && !info.isGroupOwner) {
+                            val peerName = peer.deviceName ?: "unknown"
+                            val peerAddr = peer.deviceAddress ?: "unknown"
+                            return connectToOwner(info, peerName, peerAddr, remaining(deadline))
+                        }
+                    }
+                }
+                throw TransportException("Failed to connect to Host within ${timeoutMs}ms master timeout")
             }
         } catch (e: Exception) {
             unregisterReceiver()
@@ -128,7 +166,7 @@ class WifiDirectTransport(
         })
     }
 
-    private fun acceptAsOwner(peer: WifiP2pDevice, timeoutMs: Long): Link {
+    private fun acceptAsOwner(peerName: String, peerAddress: String, timeoutMs: Long): Link {
         val server = ServerSocket().apply {
             reuseAddress = true
             bind(InetSocketAddress(port))
@@ -139,7 +177,7 @@ class WifiDirectTransport(
             val socket = server.accept()
             server.close()
             serverSocket = null
-            socket.toLink(peer)
+            socket.toLink(peerName, peerAddress)
         } catch (e: Exception) {
             runCatching { server.close() }
             serverSocket = null
@@ -147,7 +185,7 @@ class WifiDirectTransport(
         }
     }
 
-    private fun connectToOwner(info: WifiP2pInfo, peer: WifiP2pDevice, timeoutMs: Long): Link {
+    private fun connectToOwner(info: WifiP2pInfo, peerName: String, peerAddress: String, timeoutMs: Long): Link {
         val ownerAddress = info.groupOwnerAddress
             ?: throw TransportException("group owner address was not provided")
         val socket = Socket()
@@ -157,18 +195,18 @@ class WifiDirectTransport(
                 InetSocketAddress(ownerAddress, port),
                 timeoutMs.coerceAtMost(Int.MAX_VALUE.toLong()).toInt(),
             )
-            socket.toLink(peer)
+            socket.toLink(peerName, peerAddress)
         } catch (e: Exception) {
             runCatching { socket.close() }
             throw TransportException("could not reach the group owner at $ownerAddress:$port", e)
         }
     }
 
-    private fun Socket.toLink(peer: WifiP2pDevice): Link = Link(
+    private fun Socket.toLink(peerName: String, peerAddress: String): Link = Link(
         input = getInputStream(),
         output = getOutputStream(),
-        peerName = peer.deviceName ?: "unknown",
-        peerAddress = peer.deviceAddress ?: inetAddress?.hostAddress ?: "unknown",
+        peerName = peerName,
+        peerAddress = peerAddress,
         closer = { runCatching { close() } },
     )
 
@@ -184,7 +222,11 @@ class WifiDirectTransport(
                 when (intent.action) {
                     WifiP2pManager.WIFI_P2P_PEERS_CHANGED_ACTION ->
                         m.requestPeers(ch) { peers ->
-                            val candidate = peers.deviceList.firstOrNull()
+                            // Look for a peer named "iTantra..." to avoid connecting to random smart TVs
+                            val candidate = peers.deviceList.firstOrNull { 
+                                it.deviceName.contains("iTantra", ignoreCase = true) 
+                            } ?: peers.deviceList.firstOrNull() // fallback to first if none match
+                            
                             if (candidate != null) {
                                 discoveredPeer = candidate
                                 peersFound?.countDown()
@@ -202,11 +244,10 @@ class WifiDirectTransport(
             }
         }
         receiver = r
-        // API 34 makes the export flag mandatory: registering without one throws
-        // SecurityException at runtime rather than failing at build time. These are
-        // system broadcasts consumed only by this process, so NOT_EXPORTED is correct.
+        // System broadcasts must be received from outside the app's process, so they 
+        // must be registered as EXPORTED on Android 13+.
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            context.registerReceiver(r, filter, Context.RECEIVER_NOT_EXPORTED)
+            context.registerReceiver(r, filter, Context.RECEIVER_EXPORTED)
         } else {
             @Suppress("UnspecifiedRegisterReceiverFlag")
             context.registerReceiver(r, filter)

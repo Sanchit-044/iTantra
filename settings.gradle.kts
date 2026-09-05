@@ -5,6 +5,9 @@ pluginManagement {
         gradlePluginPortal()
     }
 }
+plugins {
+    id("org.gradle.toolchains.foojay-resolver-convention") version "0.10.0"
+}
 dependencyResolutionManagement {
     repositoriesMode.set(RepositoriesMode.PREFER_SETTINGS)
     repositories {
@@ -28,11 +31,9 @@ val androidSdkPresent: Boolean =
             ?.readText()?.contains("sdk.dir") == true
 
 if (androidSdkPresent) {
+    include(":app")
     include(":android")
     include(":harness")
-    // Install-time asset pack holding the bundled models. The future :app module must
-    // declare `assetPacks += listOf(":models-pack")`; see docs/BUILD.md.
-    include(":models-pack")
 } else {
     logger.lifecycle("[itantra] Android SDK not found -- only :core is configured. Set ANDROID_HOME to build :android/:harness.")
 }

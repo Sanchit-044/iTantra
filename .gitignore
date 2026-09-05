@@ -29,3 +29,5 @@ harness/src/androidTest/assets/roundtrip/**
 *.iml
 *.iws
 .DS_Store
+core/bin/
+*.onnx
