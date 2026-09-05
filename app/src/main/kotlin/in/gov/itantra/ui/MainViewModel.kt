@@ -25,6 +25,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import java.util.concurrent.atomic.AtomicBoolean
 import javax.inject.Inject
 
 enum class ConnectionMode {
@@ -40,6 +41,8 @@ data class BluetoothDeviceInfo(val name: String, val address: String)
 
 data class UiState(
     val isSpeaking: Boolean = false,
+    val isRequestingFloor: Boolean = false,
+    val channelBusy: Boolean = false,
     val recognizedText: String = "",
     val speakLanguage: Language = Language.HINDI,
     val listenLanguage: Language = Language.HINDI,
@@ -64,6 +67,7 @@ class MainViewModel @Inject constructor(
     val uiState: StateFlow<UiState> = _uiState.asStateFlow()
 
     private var transport: Transport? = null
+    private val pttWanted = AtomicBoolean(false)
 
     init {
         loadPairedDevices()
@@ -101,6 +105,66 @@ class MainViewModel @Inject constructor(
 
     override fun onStateChanged(state: ConnectionState) {
         _uiState.update { it.copy(connectionState = state) }
+        if (state == ConnectionState.DISCONNECTED || state == ConnectionState.FAILED) {
+            stopPtt()
+            _uiState.update {
+                it.copy(channelBusy = false, isRequestingFloor = false, isSpeaking = false)
+            }
+        }
+    }
+
+    override fun onChannelBusyChanged(busy: Boolean) {
+        _uiState.update { it.copy(channelBusy = busy) }
+    }
+
+    override fun onFloorGranted() {
+        viewModelScope.launch(Dispatchers.Main) {
+            val currentTransport = transport ?: return@launch
+            if (!pttWanted.get()) {
+                currentTransport.releaseFloor()
+                return@launch
+            }
+            val language = _uiState.value.speakLanguage
+            _uiState.update {
+                it.copy(
+                    isSpeaking = true,
+                    isRequestingFloor = false,
+                    channelBusy = false,
+                    recognizedText = "",
+                    error = null,
+                )
+            }
+            try {
+                startPttUseCase.execute(
+                    language = language,
+                    transport = currentTransport,
+                ) { partialText ->
+                    _uiState.update { it.copy(recognizedText = partialText) }
+                }
+            } catch (e: Exception) {
+                stopPttUseCase.execute(currentTransport)
+                _uiState.update {
+                    it.copy(isSpeaking = false, recognizedText = "Error: ${e.message}")
+                }
+            }
+        }
+    }
+
+    override fun onFloorDenied(reason: String) {
+        pttWanted.set(false)
+        _uiState.update {
+            it.copy(
+                isSpeaking = false,
+                isRequestingFloor = false,
+                channelBusy = reason.contains("busy", ignoreCase = true),
+                recognizedText = if (reason.contains("busy", ignoreCase = true)) {
+                    "Channel busy"
+                } else {
+                    ""
+                },
+                error = null,
+            )
+        }
     }
 
     override fun onPairingCodeAvailable(info: PairingInfo) {
@@ -167,20 +231,26 @@ class MainViewModel @Inject constructor(
 
     fun startPtt() {
         val currentTransport = transport ?: return
-        
-        _uiState.update { it.copy(isSpeaking = true, recognizedText = "") }
-        try {
-            startPttUseCase.execute(language = _uiState.value.speakLanguage, transport = currentTransport) { partialText ->
-                _uiState.update { it.copy(recognizedText = partialText) }
-            }
-        } catch (e: Exception) {
-            _uiState.update { it.copy(isSpeaking = false, recognizedText = "Error: ${e.message}") }
+        val state = _uiState.value
+        if (state.connectionState != ConnectionState.CONNECTED) return
+        if (state.channelBusy) {
+            _uiState.update { it.copy(recognizedText = "Channel busy") }
+            return
         }
+        if (state.isSpeaking || state.isRequestingFloor) return
+        pttWanted.set(true)
+        _uiState.update {
+            it.copy(isRequestingFloor = true, recognizedText = "", error = null)
+        }
+        currentTransport.requestFloor()
     }
 
     fun stopPtt() {
-        stopPttUseCase.execute()
-        _uiState.update { it.copy(isSpeaking = false) }
+        pttWanted.set(false)
+        stopPttUseCase.execute(transport)
+        _uiState.update {
+            it.copy(isSpeaking = false, isRequestingFloor = false, recognizedText = it.recognizedText)
+        }
     }
 
     fun setSpeakLanguage(language: Language) {

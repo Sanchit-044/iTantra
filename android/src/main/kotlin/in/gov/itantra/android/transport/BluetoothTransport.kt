@@ -33,7 +33,7 @@ class BluetoothTransport(
     /** Required when [role] is [Role.CLIENT]: the MAC address of the host handset. */
     private val peerAddress: String? = null,
     private val serviceUuid: UUID = SERVICE_UUID,
-) : StreamTransport(keyAgreement) {
+) : StreamTransport(keyAgreement, winsFloorTies = role == Role.HOST) {
 
     enum class Role { HOST, CLIENT }
 

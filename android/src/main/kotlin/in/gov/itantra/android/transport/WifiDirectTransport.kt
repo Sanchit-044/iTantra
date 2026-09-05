@@ -37,7 +37,7 @@ class WifiDirectTransport(
     keyAgreement: KeyAgreementProvider,
     private val role: Role,
     private val port: Int = DEFAULT_PORT,
-) : StreamTransport(keyAgreement) {
+) : StreamTransport(keyAgreement, winsFloorTies = role == Role.HOST) {
 
     enum class Role { HOST, CLIENT }
 
