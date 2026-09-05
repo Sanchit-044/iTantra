@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Phone
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
@@ -24,7 +25,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.hilt.navigation.compose.hiltViewModel
 
-private enum class MainTab { TALK, ALERT }
+private enum class MainTab { TALK, ALERT, ANALYSIS }
 
 @Composable
 fun ITantraApp(appViewModel: AppViewModel = hiltViewModel(), mainViewModel: MainViewModel = hiltViewModel()) {
@@ -55,7 +56,7 @@ fun MainContent(
     val uiState by mainViewModel.uiState.collectAsState()
     var tab by rememberSaveable { mutableStateOf(MainTab.TALK) }
 
-    BackHandler(enabled = tab == MainTab.ALERT) { tab = MainTab.TALK }
+    BackHandler(enabled = tab != MainTab.TALK) { tab = MainTab.TALK }
 
     if (uiState.pairingInfo != null) {
         AlertDialog(
@@ -93,6 +94,12 @@ fun MainContent(
                     icon = { Icon(Icons.Filled.Warning, contentDescription = null) },
                     label = { Text("Alert") },
                 )
+                NavigationBarItem(
+                    selected = tab == MainTab.ANALYSIS,
+                    onClick = { tab = MainTab.ANALYSIS },
+                    icon = { Icon(Icons.Filled.Info, contentDescription = null) },
+                    label = { Text("Analysis") },
+                )
             }
         },
     ) { padding ->
@@ -104,6 +111,7 @@ fun MainContent(
             when (tab) {
                 MainTab.TALK -> MainScreen(viewModel = mainViewModel, onOpenSettings = onOpenSettings)
                 MainTab.ALERT -> AlertScreen(viewModel = mainViewModel)
+                MainTab.ANALYSIS -> DiagnosticsScreen(onOpenSettings = onOpenSettings)
             }
         }
     }

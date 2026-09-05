@@ -41,13 +41,19 @@ data class SttMetrics(
     val modelLoaded: Boolean,
     /** On-disk size of the resident model, bytes. Null if no model is loaded. */
     val modelSizeBytes: Long?,
-    /** Mean time from end-of-utterance to final result. Null until an utterance runs. */
+    /** Rolling last-10 mean from end-of-utterance to final result. Null until one runs. */
     val avgFinalisationLatencyMs: Double?,
     /** Mean processing time over audio duration. Below 1.0 is faster than real time. */
     val avgRealTimeFactor: Double?,
     val utterancesProcessed: Long,
-    /** Populated only when a Module B2 evaluation has been run on this device. */
+    /**
+     * Corpus WER over the last 10 test-mode pairs. Null when test mode is off or
+     * no pair has been scored -- never a fabricated 0.0.
+     */
     val measuredWer: Double?,
+    val werSampleCount: Int = 0,
+    val testModeActive: Boolean = false,
+    val nextTestPrompt: String? = null,
 ) {
     fun toJson(): String = jsonObject(
         "backend" to jsonString(backend),
@@ -58,6 +64,9 @@ data class SttMetrics(
         "avgRealTimeFactor" to jsonNumber(avgRealTimeFactor),
         "utterancesProcessed" to utterancesProcessed.toString(),
         "measuredWer" to jsonNumber(measuredWer),
+        "werSampleCount" to werSampleCount.toString(),
+        "testModeActive" to testModeActive.toString(),
+        "nextTestPrompt" to jsonString(nextTestPrompt),
     )
 }
 
@@ -76,6 +85,8 @@ data class TtsMetrics(
     val avgRealTimeFactor: Double?,
     val utterancesSynthesised: Long,
     val underruns: Long,
+    /** Times the Android built-in engine actually spoke. Null-safe: 0 means none observed. */
+    val androidFallbackCount: Long = 0,
 ) {
     fun toJson(): String = jsonObject(
         "backend" to jsonString(backend),
@@ -86,6 +97,7 @@ data class TtsMetrics(
         "avgRealTimeFactor" to jsonNumber(avgRealTimeFactor),
         "utterancesSynthesised" to utterancesSynthesised.toString(),
         "underruns" to underruns.toString(),
+        "androidFallbackCount" to androidFallbackCount.toString(),
     )
 }
 
@@ -132,6 +144,10 @@ data class SystemMetrics(
     /** Installed APK size, bytes. */
     val apkSizeBytes: Long?,
     val lowMemory: Boolean,
+    /** On-disk size of currently loaded STT + TTS models. Null if neither is loaded. */
+    val modelRamBytes: Long? = null,
+    val deviceModel: String? = null,
+    val androidVersion: String? = null,
 ) {
     fun toJson(): String = jsonObject(
         "appMemoryBytes" to jsonNumber(appMemoryBytes),
@@ -142,6 +158,9 @@ data class SystemMetrics(
         "cpuLoad" to jsonNumber(cpuLoad),
         "apkSizeBytes" to jsonNumber(apkSizeBytes),
         "lowMemory" to lowMemory.toString(),
+        "modelRamBytes" to jsonNumber(modelRamBytes),
+        "deviceModel" to jsonString(deviceModel),
+        "androidVersion" to jsonString(androidVersion),
     )
 }
 
@@ -155,7 +174,12 @@ interface DiagnosticsService {
 private fun jsonObject(vararg fields: Pair<String, String>): String =
     fields.joinToString(",", "{", "}") { (k, v) -> "\"$k\":$v" }
 
-private fun jsonNumber(v: Number?): String = v?.toString() ?: "null"
+private fun jsonNumber(v: Number?): String {
+    if (v == null) return "null"
+    val d = v.toDouble()
+    if (d.isNaN() || d.isInfinite()) return "null"
+    return v.toString()
+}
 
 private fun jsonString(v: String?): String =
     if (v == null) "null" else "\"" + v.replace("\\", "\\\\").replace("\"", "\\\"") + "\""

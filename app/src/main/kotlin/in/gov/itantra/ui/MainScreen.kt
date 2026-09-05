@@ -1,10 +1,30 @@
 package `in`.gov.itantra.ui
 
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material3.*
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.RadioButton
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -46,10 +66,8 @@ fun MainScreen(
                 Text("Settings")
             }
         }
-        
         Spacer(modifier = Modifier.height(16.dp))
-        
-        // Connection status & controls
+
         Card(
             modifier = Modifier.fillMaxWidth(),
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
@@ -60,10 +78,9 @@ fun MainScreen(
             ) {
                 Text(text = "Status: ${uiState.connectionState.name}")
                 Spacer(modifier = Modifier.height(8.dp))
-                
+
                 if (uiState.connectionState == ConnectionState.DISCONNECTED || uiState.connectionState == ConnectionState.FAILED) {
-                    
-                    // Connection Mode Selector
+
                     Column(modifier = Modifier.fillMaxWidth()) {
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -81,16 +98,22 @@ fun MainScreen(
                                 Text("Join Wi-Fi", style = MaterialTheme.typography.bodySmall)
                             }
                             Row(verticalAlignment = Alignment.CenterVertically) {
-                                RadioButton(selected = uiState.connectionMode == ConnectionMode.BLUETOOTH_CLIENT, onClick = { viewModel.setConnectionMode(ConnectionMode.BLUETOOTH_CLIENT); viewModel.refreshPairedDevices() })
+                                RadioButton(
+                                    selected = uiState.connectionMode == ConnectionMode.BLUETOOTH_CLIENT,
+                                    onClick = {
+                                        viewModel.setConnectionMode(ConnectionMode.BLUETOOTH_CLIENT)
+                                        viewModel.refreshPairedDevices()
+                                    },
+                                )
                                 Text("Join BT", style = MaterialTheme.typography.bodySmall)
                             }
                         }
                     }
-                    
+
                     if (uiState.connectionMode == ConnectionMode.BLUETOOTH_CLIENT) {
                         Text("Select Paired Device:", style = MaterialTheme.typography.labelMedium)
                         LazyColumn(modifier = Modifier.heightIn(max = 100.dp).fillMaxWidth().padding(8.dp)) {
-                            items(uiState.pairedDevices) { device ->
+                            items(uiState.pairedDevices, key = { it.address }) { device ->
                                 val isSelected = uiState.selectedDeviceAddress == device.address
                                 Text(
                                     text = device.name,
@@ -119,7 +142,7 @@ fun MainScreen(
                 }
             }
         }
-        
+
         if (uiState.error != null) {
             Text(
                 text = uiState.error!!,
@@ -130,14 +153,13 @@ fun MainScreen(
 
         Spacer(modifier = Modifier.weight(1f))
 
-        // Live text display
         Text(
             text = if (uiState.recognizedText.isEmpty()) "Ready to speak..." else uiState.recognizedText,
             style = MaterialTheme.typography.bodyLarge,
             color = if (uiState.isSpeaking) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
         )
 
-        Spacer(modifier = Modifier.height(32.dp))
+        Spacer(modifier = Modifier.height(24.dp))
 
         Button(
             onClick = {
@@ -151,7 +173,7 @@ fun MainScreen(
         ) {
             Text(text = if (uiState.isSpeaking) "STOP" else "PTT")
         }
-        
-        Spacer(modifier = Modifier.height(32.dp))
+
+        Spacer(modifier = Modifier.height(16.dp))
     }
 }

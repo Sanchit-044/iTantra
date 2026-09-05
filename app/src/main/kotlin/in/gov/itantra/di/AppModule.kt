@@ -13,6 +13,7 @@ import `in`.gov.itantra.android.audio.AndroidAudioSinkFactory
 import `in`.gov.itantra.android.audio.AudioTrackSink
 import `in`.gov.itantra.android.crypto.KeystoreKeyAgreement
 import `in`.gov.itantra.android.pack.LocalLanguagePackManager
+import `in`.gov.itantra.android.diag.AndroidDiagnosticsService
 import `in`.gov.itantra.android.stt.OnnxCtcSttEngine
 import `in`.gov.itantra.android.tts.VitsOnnxTtsEngine
 import `in`.gov.itantra.core.alert.AlertPlayer
@@ -28,6 +29,7 @@ import `in`.gov.itantra.core.stt.SttEngine
 import `in`.gov.itantra.core.translate.DictionaryTranslationEngine
 import `in`.gov.itantra.core.translate.TranslationEngine
 import `in`.gov.itantra.core.tts.ChunkedSpeaker
+import `in`.gov.itantra.core.diag.DiagnosticsSink
 import `in`.gov.itantra.core.tts.TtsEngine
 import `in`.gov.itantra.core.usecase.ReceivePttTransmissionUseCase
 import `in`.gov.itantra.core.usecase.SendAlertUseCase
@@ -66,6 +68,20 @@ object AppModule {
 
     @Provides
     @Singleton
+    fun provideDiagnosticsService(
+        @ApplicationContext context: Context,
+        sttEngine: SttEngine,
+        ttsEngine: TtsEngine,
+    ): AndroidDiagnosticsService {
+        return AndroidDiagnosticsService(
+            context = context,
+            sttEngine = { sttEngine },
+            ttsEngine = { ttsEngine },
+        )
+    }
+
+    @Provides
+    @Singleton
     fun provideLanguagePackManager(@ApplicationContext context: Context): LanguagePackManager {
         return LocalLanguagePackManager(context)
     }
@@ -83,10 +99,15 @@ object AppModule {
     }
 
     @Provides
+    @Singleton
+    fun provideDiagnosticsSink(diagnostics: AndroidDiagnosticsService): DiagnosticsSink = diagnostics
+
+    @Provides
     fun provideStartPttTransmissionUseCase(
-        sttEngine: SttEngine
+        sttEngine: SttEngine,
+        diagnostics: DiagnosticsSink,
     ): StartPttTransmissionUseCase {
-        return StartPttTransmissionUseCase(sttEngine)
+        return StartPttTransmissionUseCase(sttEngine, diagnostics)
     }
 
     @Provides

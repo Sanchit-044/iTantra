@@ -2,7 +2,7 @@ package `in`.gov.itantra.core.transport
 
 import `in`.gov.itantra.core.crypto.PairingCode
 
-enum class TransportKind { WIFI_DIRECT, BLUETOOTH_RFCOMM, LOOPBACK }
+enum class TransportKind { WIFI_DIRECT, BLUETOOTH_RFCOMM, LAN, LOOPBACK }
 
 enum class ConnectionState { DISCONNECTED, DISCOVERING, HANDSHAKING, CONNECTED, FAILED }
 
