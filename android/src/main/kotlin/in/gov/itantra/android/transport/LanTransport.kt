@@ -25,7 +25,7 @@ class LanTransport(
     private val role: Role,
     private val tcpPort: Int = 8988,
     private val udpPort: Int = 8989
-) : StreamTransport(keyAgreement) {
+) : StreamTransport(keyAgreement, winsFloorTies = role == Role.HOST) {
 
     enum class Role { HOST, CLIENT }
 

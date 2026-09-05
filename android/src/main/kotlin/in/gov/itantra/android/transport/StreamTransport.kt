@@ -8,6 +8,8 @@ import `in`.gov.itantra.core.crypto.PairingCode
 import `in`.gov.itantra.core.crypto.SessionKeyDerivation
 import `in`.gov.itantra.core.transport.Cancellable
 import `in`.gov.itantra.core.transport.ChannelArbiter
+import `in`.gov.itantra.core.transport.FloorController
+import `in`.gov.itantra.core.transport.FloorListener
 import `in`.gov.itantra.core.transport.ConnectionState
 import `in`.gov.itantra.core.transport.FrameReader
 import `in`.gov.itantra.core.transport.MessageType
@@ -43,6 +45,8 @@ import java.util.concurrent.atomic.AtomicLong
 abstract class StreamTransport(
     private val keyAgreement: KeyAgreementProvider,
     private val scheduler: Scheduler = DefaultScheduler(),
+    /** Session host wins a simultaneous PTT press. */
+    private val winsFloorTies: Boolean = false,
 ) : Transport {
 
     /** The byte stream plus who is on the other end. */
@@ -94,13 +98,32 @@ abstract class StreamTransport(
         scheduler = scheduler,
     ).apply {
         listener = object : ChannelArbiter.Listener {
-            override fun onBusyChanged(busy: Boolean) {
-                this@StreamTransport.listener?.onChannelBusyChanged(busy)
-            }
-
             override fun onSendFailed(packet: Packet, reason: String) {
                 sendFailures.incrementAndGet()
                 this@StreamTransport.listener?.onSendFailed(packet, reason)
+            }
+        }
+    }
+
+    private val floor = FloorController(
+        send = { type -> enqueueFloor(type) },
+        scheduler = scheduler,
+        winsTies = winsFloorTies,
+    ).apply {
+        listener = object : FloorListener {
+            override fun onGranted() {
+                this@StreamTransport.listener?.onChannelBusyChanged(false)
+                this@StreamTransport.listener?.onFloorGranted()
+            }
+            override fun onDenied(reason: String) {
+                this@StreamTransport.listener?.onChannelBusyChanged(peerHolds)
+                this@StreamTransport.listener?.onFloorDenied(reason)
+            }
+            override fun onPeerHolding() {
+                this@StreamTransport.listener?.onChannelBusyChanged(true)
+            }
+            override fun onIdle() {
+                this@StreamTransport.listener?.onChannelBusyChanged(false)
             }
         }
     }
@@ -117,7 +140,7 @@ abstract class StreamTransport(
 
     val isPairingConfirmed: Boolean get() = pairingConfirmed.get()
 
-    val isChannelBusy: Boolean get() = arbiter.isBusy
+    val isChannelBusy: Boolean get() = floor.peerHolds
 
     override fun setListener(listener: TransportListener?) {
         this.listener = listener
@@ -220,7 +243,34 @@ abstract class StreamTransport(
             listener?.onSendFailed(packet, "pairing not confirmed; refusing to send content")
             return
         }
+        if (packet.type == MessageType.NORMAL && !floor.hasFloor) {
+            listener?.onSendFailed(packet, "no talk floor; refusing to send speech")
+            return
+        }
         arbiter.submit(packet)
+    }
+
+    override fun requestFloor() {
+        if (state != ConnectionState.CONNECTED) {
+            listener?.onFloorDenied("not connected")
+            return
+        }
+        if (!pairingConfirmed.get()) {
+            listener?.onFloorDenied("pairing not confirmed")
+            return
+        }
+        floor.requestLocal()
+    }
+
+    override fun releaseFloor() {
+        floor.releaseLocal()
+    }
+
+    private fun enqueueFloor(type: MessageType) {
+        if (state != ConnectionState.CONNECTED) return
+        arbiter.submit(
+            Packet.text(type, Language.HINDI, sequence.incrementAndGet(), "")
+        )
     }
 
     /** Send a heartbeat and time the ACK. Populates [lastRoundTripMs]. */
@@ -327,11 +377,20 @@ abstract class StreamTransport(
             }
 
             MessageType.NORMAL, MessageType.ALERT -> listener?.onReceive(packet)
+
+            MessageType.FLOOR_REQUEST,
+            MessageType.FLOOR_GRANT,
+            MessageType.FLOOR_DENY,
+            MessageType.FLOOR_RELEASE -> floor.onRemote(packet.type)
         }
     }
 
     override fun disconnect() {
+        if (state == ConnectionState.CONNECTED) {
+            floor.releaseLocal()
+        }
         running.set(false)
+        floor.reset()
         arbiter.reset()
         readerThread?.interrupt()
         readerThread = null

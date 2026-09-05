@@ -153,25 +153,50 @@ fun MainScreen(
 
         Spacer(modifier = Modifier.weight(1f))
 
+        val status = when {
+            uiState.isSpeaking && uiState.recognizedText.isNotEmpty() -> uiState.recognizedText
+            uiState.isSpeaking -> "Speaking…"
+            uiState.isRequestingFloor -> "Waiting for channel…"
+            uiState.channelBusy -> "Channel busy"
+            uiState.recognizedText.isNotEmpty() -> uiState.recognizedText
+            else -> "Ready to speak..."
+        }
         Text(
-            text = if (uiState.recognizedText.isEmpty()) "Ready to speak..." else uiState.recognizedText,
+            text = status,
             style = MaterialTheme.typography.bodyLarge,
-            color = if (uiState.isSpeaking) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+            color = when {
+                uiState.channelBusy -> MaterialTheme.colorScheme.error
+                uiState.isSpeaking -> MaterialTheme.colorScheme.primary
+                else -> MaterialTheme.colorScheme.onSurface
+            }
         )
 
         Spacer(modifier = Modifier.height(24.dp))
 
+        val pttHeld = uiState.isSpeaking || uiState.isRequestingFloor
         Button(
             onClick = {
-                if (uiState.isSpeaking) viewModel.stopPtt() else viewModel.startPtt()
+                if (pttHeld) viewModel.stopPtt() else viewModel.startPtt()
             },
             modifier = Modifier.size(120.dp),
-            enabled = uiState.connectionState == ConnectionState.CONNECTED,
+            enabled = uiState.connectionState == ConnectionState.CONNECTED &&
+                (pttHeld || !uiState.channelBusy),
             colors = ButtonDefaults.buttonColors(
-                containerColor = if (uiState.isSpeaking) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
+                containerColor = when {
+                    uiState.isSpeaking -> MaterialTheme.colorScheme.error
+                    uiState.channelBusy -> MaterialTheme.colorScheme.surfaceVariant
+                    else -> MaterialTheme.colorScheme.primary
+                }
             )
         ) {
-            Text(text = if (uiState.isSpeaking) "STOP" else "PTT")
+            Text(
+                text = when {
+                    uiState.isSpeaking -> "STOP"
+                    uiState.isRequestingFloor -> "WAIT"
+                    uiState.channelBusy -> "BUSY"
+                    else -> "PTT"
+                }
+            )
         }
 
         Spacer(modifier = Modifier.height(16.dp))

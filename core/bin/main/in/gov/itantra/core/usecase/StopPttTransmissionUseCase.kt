@@ -1,15 +1,16 @@
 package `in`.gov.itantra.core.usecase
 
 import `in`.gov.itantra.core.stt.SttEngine
+import `in`.gov.itantra.core.transport.Transport
 
 /**
- * UseCase for handling Push-to-Talk deactivation.
- * It stops the STT engine.
+ * Ends a PTT turn: stop STT (safe if it never started) and release the talk floor.
  */
 class StopPttTransmissionUseCase(
     private val sttEngine: SttEngine
 ) {
-    fun execute() {
+    fun execute(transport: Transport? = null) {
         sttEngine.stop()
+        transport?.releaseFloor()
     }
 }

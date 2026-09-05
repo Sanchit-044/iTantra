@@ -21,7 +21,24 @@ enum class MessageType(val wire: Byte) {
 
     /** Acknowledgement of a previously received sequence number. */
     ACK(0x04),
+
+    /** PTT floor: this handset wants to talk. */
+    FLOOR_REQUEST(0x05),
+
+    /** PTT floor: peer may start STT. */
+    FLOOR_GRANT(0x06),
+
+    /** PTT floor: peer must not talk (channel already taken). */
+    FLOOR_DENY(0x07),
+
+    /** PTT floor: holder released the channel. */
+    FLOOR_RELEASE(0x08),
     ;
+
+    val isFloorControl: Boolean
+        get() = this == FLOOR_REQUEST || this == FLOOR_GRANT ||
+            this == FLOOR_DENY || this == FLOOR_RELEASE
+
 
     companion object {
         fun fromWire(b: Byte): MessageType? = entries.firstOrNull { it.wire == b }

@@ -21,6 +21,14 @@ class PacketCodecTest {
     ) = Packet.text(type, language, sequence = 42, text = text, timestampMs = 1_700_000_000_000L)
 
     @Test
+    fun `floor control wire codes are unique`() {
+        val types = MessageType.entries.map { it.wire }
+        assertEquals(types.size, types.toSet().size)
+        assertEquals(0x05, MessageType.FLOOR_REQUEST.wire)
+        assertEquals(0x08, MessageType.FLOOR_RELEASE.wire)
+    }
+
+    @Test
     fun `round trips through encode and decode`() {
         val c = crypto()
         val original = samplePacket()
@@ -32,6 +40,21 @@ class PacketCodecTest {
         val decoded = PacketCodec.decodeBody(bodies[0], c)
         assertEquals(original, decoded)
         assertEquals("बाढ़ का पानी बढ़ रहा है", decoded.text)
+    }
+
+    @Test
+    fun `round trips floor control types`() {
+        val c = crypto()
+        for (type in listOf(
+            MessageType.FLOOR_REQUEST,
+            MessageType.FLOOR_GRANT,
+            MessageType.FLOOR_DENY,
+            MessageType.FLOOR_RELEASE,
+        )) {
+            val p = samplePacket(type = type, text = "")
+            val body = FrameReader().offer(PacketCodec.encode(p, c)).single()
+            assertEquals(type, PacketCodec.decodeBody(body, c).type)
+        }
     }
 
     @Test
