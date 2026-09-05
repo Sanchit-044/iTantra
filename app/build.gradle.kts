@@ -53,6 +53,7 @@ kotlin {
 dependencies {
     implementation(project(":core"))
     implementation(project(":android"))
+    // assetPacks is defined inside the android { ... } block below
 
     implementation(libs.kotlin.coroutines.core)
     implementation(libs.kotlin.coroutines.android)

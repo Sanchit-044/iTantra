@@ -30,3 +30,4 @@ harness/src/androidTest/assets/roundtrip/**
 *.iws
 .DS_Store
 core/bin/
+*.onnx
