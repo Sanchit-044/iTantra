@@ -14,6 +14,7 @@ class RecordingSink(override val format: AudioFormat = AudioFormat.TTS_22K) : Au
 
     @Synchronized override fun drain() { drains++ }
     @Synchronized override fun flush() { flushes++ }
+    @Synchronized override fun close() {}
 
     @get:Synchronized
     val sampleCount: Int get() = written.size

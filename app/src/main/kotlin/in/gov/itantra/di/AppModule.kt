@@ -1,19 +1,29 @@
 package `in`.gov.itantra.di
 
 import android.content.Context
+import android.media.AudioAttributes
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
 import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
+import `in`.gov.itantra.android.alert.AndroidForcedAudioFocus
+import `in`.gov.itantra.android.alert.WavTemplateSource
+import `in`.gov.itantra.android.audio.AndroidAudioSinkFactory
+import `in`.gov.itantra.android.audio.AudioTrackSink
 import `in`.gov.itantra.android.crypto.KeystoreKeyAgreement
 import `in`.gov.itantra.android.stt.OnnxCtcSttEngine
-import `in`.gov.itantra.android.transport.WifiDirectTransport
 import `in`.gov.itantra.android.tts.VitsOnnxTtsEngine
+import `in`.gov.itantra.core.alert.AlertPlayer
+import `in`.gov.itantra.core.alert.ForcedAudioFocus
+import `in`.gov.itantra.core.alert.TemplateAudioSource
+import `in`.gov.itantra.core.audio.AudioSinkFactory
 import `in`.gov.itantra.core.crypto.KeyAgreementProvider
 import `in`.gov.itantra.core.stt.SttEngine
-import `in`.gov.itantra.core.transport.Transport
+import `in`.gov.itantra.core.tts.ChunkedSpeaker
 import `in`.gov.itantra.core.tts.TtsEngine
+import `in`.gov.itantra.core.usecase.ReceivePttTransmissionUseCase
+import `in`.gov.itantra.core.usecase.SendAlertUseCase
 import `in`.gov.itantra.core.usecase.StartPttTransmissionUseCase
 import `in`.gov.itantra.core.usecase.StopPttTransmissionUseCase
 import javax.inject.Singleton
@@ -56,15 +66,59 @@ object AppModule {
 
     @Provides
     @Singleton
-    fun provideAudioSinkFactory(): `in`.gov.itantra.core.audio.AudioSinkFactory {
-        return `in`.gov.itantra.android.audio.AndroidAudioSinkFactory()
+    fun provideAudioSinkFactory(): AudioSinkFactory {
+        return AndroidAudioSinkFactory()
     }
 
     @Provides
     fun provideReceivePttTransmissionUseCase(
         ttsEngine: TtsEngine,
-        audioSinkFactory: `in`.gov.itantra.core.audio.AudioSinkFactory
-    ): `in`.gov.itantra.core.usecase.ReceivePttTransmissionUseCase {
-        return `in`.gov.itantra.core.usecase.ReceivePttTransmissionUseCase(ttsEngine, audioSinkFactory)
+        audioSinkFactory: AudioSinkFactory
+    ): ReceivePttTransmissionUseCase {
+        return ReceivePttTransmissionUseCase(ttsEngine, audioSinkFactory)
+    }
+
+    @Provides
+    @Singleton
+    fun provideForcedAudioFocus(@ApplicationContext context: Context): ForcedAudioFocus {
+        return AndroidForcedAudioFocus(context)
+    }
+
+    @Provides
+    @Singleton
+    fun provideTemplateAudioSource(@ApplicationContext context: Context): TemplateAudioSource {
+        return WavTemplateSource(context)
+    }
+
+    @Provides
+    @Singleton
+    fun provideChunkedSpeaker(ttsEngine: TtsEngine): ChunkedSpeaker {
+        return ChunkedSpeaker(ttsEngine)
+    }
+
+    @Provides
+    @Singleton
+    fun provideAlertPlayer(
+        focus: ForcedAudioFocus,
+        templates: TemplateAudioSource,
+        speaker: ChunkedSpeaker,
+    ): AlertPlayer {
+        return AlertPlayer(
+            focus = focus,
+            templates = templates,
+            speaker = speaker,
+            sinkProvider = { format ->
+                AudioTrackSink(
+                    format,
+                    usage = AudioAttributes.USAGE_ALARM,
+                    contentType = AudioAttributes.CONTENT_TYPE_SPEECH,
+                )
+            },
+        )
+    }
+
+    @Provides
+    fun provideSendAlertUseCase(): SendAlertUseCase {
+        return SendAlertUseCase()
     }
 }

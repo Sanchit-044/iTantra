@@ -12,6 +12,7 @@ class ReceivePttTransmissionUseCase(
     private val audioSinkFactory: AudioSinkFactory
 ) {
     suspend fun execute(packet: Packet) {
+        // Alerts are played by AlertPlayer at alarm volume, not as ordinary PTT speech.
         if (packet.type != MessageType.NORMAL || packet.text.isBlank()) return
 
         withContext(Dispatchers.Default) {

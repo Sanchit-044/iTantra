@@ -10,15 +10,22 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import `in`.gov.itantra.android.transport.BluetoothTransport
 import `in`.gov.itantra.android.transport.WifiDirectTransport
 import `in`.gov.itantra.core.Language
+import `in`.gov.itantra.core.alert.AlertContent
+import `in`.gov.itantra.core.alert.AlertPlayer
+import `in`.gov.itantra.core.alert.AlertTemplate
+import `in`.gov.itantra.core.alert.IncomingAlert
 import `in`.gov.itantra.core.crypto.KeyAgreementProvider
 import `in`.gov.itantra.core.transport.ConnectionState
+import `in`.gov.itantra.core.transport.MessageType
 import `in`.gov.itantra.core.transport.Packet
 import `in`.gov.itantra.core.transport.PairingInfo
 import `in`.gov.itantra.core.transport.Transport
 import `in`.gov.itantra.core.transport.TransportListener
 import `in`.gov.itantra.core.usecase.ReceivePttTransmissionUseCase
+import `in`.gov.itantra.core.usecase.SendAlertUseCase
 import `in`.gov.itantra.core.usecase.StartPttTransmissionUseCase
 import `in`.gov.itantra.core.usecase.StopPttTransmissionUseCase
+import java.util.ArrayDeque
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -45,6 +52,10 @@ data class UiState(
     val connectionMode: ConnectionMode = ConnectionMode.WIFI_DIRECT_HOST,
     val pairedDevices: List<BluetoothDeviceInfo> = emptyList(),
     val pairingInfo: PairingInfo? = null,
+    val pairingConfirmed: Boolean = false,
+    val selectedDeviceAddress: String? = null,
+    val alertSending: Boolean = false,
+    val alertStatus: String? = null,
     val error: String? = null
 )
 
@@ -55,13 +66,16 @@ class MainViewModel @Inject constructor(
     private val keyAgreementProvider: KeyAgreementProvider,
     private val startPttUseCase: StartPttTransmissionUseCase,
     private val stopPttUseCase: StopPttTransmissionUseCase,
-    private val receivePttUseCase: ReceivePttTransmissionUseCase
+    private val receivePttUseCase: ReceivePttTransmissionUseCase,
+    private val sendAlertUseCase: SendAlertUseCase,
+    private val alertPlayer: AlertPlayer,
 ) : ViewModel(), TransportListener {
 
     private val _uiState = MutableStateFlow(UiState())
     val uiState: StateFlow<UiState> = _uiState.asStateFlow()
 
     private var transport: Transport? = null
+    private val deferredNormals = ArrayDeque<Packet>()
 
     init {
         loadPairedDevices()
@@ -98,7 +112,14 @@ class MainViewModel @Inject constructor(
     // --- Transport Listener ---
 
     override fun onStateChanged(state: ConnectionState) {
-        _uiState.update { it.copy(connectionState = state) }
+        _uiState.update {
+            val stillLinked = state == ConnectionState.CONNECTED || state == ConnectionState.HANDSHAKING
+            it.copy(
+                connectionState = state,
+                pairingConfirmed = if (stillLinked) it.pairingConfirmed else false,
+                pairingInfo = if (stillLinked) it.pairingInfo else null,
+            )
+        }
     }
 
     override fun onPairingCodeAvailable(info: PairingInfo) {
@@ -108,10 +129,49 @@ class MainViewModel @Inject constructor(
     override fun onReceive(packet: Packet) {
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                receivePttUseCase.execute(packet)
+                when (packet.type) {
+                    MessageType.ALERT -> {
+                        alertPlayer.play(
+                            IncomingAlert(
+                                content = AlertTemplate.fromWirePayload(packet.text),
+                                language = packet.language,
+                                sequence = packet.sequence,
+                                receivedAtMs = System.currentTimeMillis(),
+                            )
+                        )
+                        drainDeferredNormals()
+                    }
+                    MessageType.NORMAL -> playNormalOrDefer(packet)
+                    else -> Unit
+                }
             } catch (e: Exception) {
                 _uiState.update { it.copy(error = "Playback error: ${e.message}") }
             }
+        }
+    }
+
+    private suspend fun playNormalOrDefer(packet: Packet) {
+        val accepted = alertPlayer.tryPlayNormal(packet.sequence) { }
+        if (accepted) {
+            receivePttUseCase.execute(packet)
+        } else {
+            synchronized(deferredNormals) {
+                if (deferredNormals.size < MAX_DEFERRED_NORMAL) {
+                    deferredNormals.addLast(packet)
+                }
+            }
+        }
+    }
+
+    private suspend fun drainDeferredNormals() {
+        while (true) {
+            val next = synchronized(deferredNormals) { deferredNormals.pollFirst() } ?: break
+            val accepted = alertPlayer.tryPlayNormal(next.sequence) { }
+            if (!accepted) {
+                synchronized(deferredNormals) { deferredNormals.addFirst(next) }
+                break
+            }
+            receivePttUseCase.execute(next)
         }
     }
 
@@ -135,7 +195,8 @@ class MainViewModel @Inject constructor(
                 
                 newTransport.setListener(this@MainViewModel)
                 transport = newTransport
-                
+                _uiState.update { it.copy(pairingConfirmed = false, error = null) }
+
                 newTransport.connect()
             } catch (e: Exception) {
                 _uiState.update { it.copy(error = "Connection failed: ${e.message}") }
@@ -149,12 +210,42 @@ class MainViewModel @Inject constructor(
 
     fun confirmPairing() {
         transport?.confirmPairing()
-        _uiState.update { it.copy(pairingInfo = null) }
+        _uiState.update { it.copy(pairingInfo = null, pairingConfirmed = true) }
     }
     
     fun dismissPairing() {
         transport?.disconnect()
-        _uiState.update { it.copy(pairingInfo = null) }
+        _uiState.update { it.copy(pairingInfo = null, pairingConfirmed = false) }
+    }
+
+    fun selectDevice(address: String) {
+        _uiState.update { it.copy(selectedDeviceAddress = address) }
+    }
+
+    fun sendAlertTemplate(template: AlertTemplate) {
+        sendAlert(AlertContent.Template(template))
+    }
+
+    fun sendCustomAlert(text: String) {
+        sendAlert(AlertContent.Custom(text))
+    }
+
+    private fun sendAlert(content: AlertContent) {
+        val currentTransport = transport ?: return
+        viewModelScope.launch(Dispatchers.IO) {
+            _uiState.update { it.copy(alertSending = true, error = null, alertStatus = null) }
+            try {
+                sendAlertUseCase.execute(
+                    transport = currentTransport,
+                    language = _uiState.value.speakLanguage,
+                    content = content,
+                    pairingConfirmed = _uiState.value.pairingConfirmed,
+                )
+                _uiState.update { it.copy(alertSending = false, alertStatus = "Alert sent") }
+            } catch (e: Exception) {
+                _uiState.update { it.copy(alertSending = false, error = e.message) }
+            }
+        }
     }
 
     fun clearError() {
@@ -185,5 +276,9 @@ class MainViewModel @Inject constructor(
 
     fun setListenLanguage(language: Language) {
         _uiState.update { it.copy(listenLanguage = language) }
+    }
+
+    companion object {
+        private const val MAX_DEFERRED_NORMAL = 8
     }
 }

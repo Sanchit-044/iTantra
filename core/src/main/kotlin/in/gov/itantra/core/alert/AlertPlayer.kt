@@ -110,19 +110,34 @@ class AlertPlayer(
     private fun renderAlert(alert: IncomingAlert) {
         when (val content = alert.content) {
             is AlertContent.Template -> {
-                val clip = templates.load(content.template, alert.language)
-                val sink = sinkProvider(clip.format)
-                writeFully(sink, clip)
-                sink.drain()
+                val clip = try {
+                    templates.load(content.template, alert.language)
+                } catch (_: Exception) {
+                    null
+                }
+                if (clip != null) {
+                    val sink = sinkProvider(clip.format)
+                    try {
+                        writeFully(sink, clip)
+                        sink.drain()
+                    } finally {
+                        sink.close()
+                    }
+                } else {
+                    speakCustom(content.template.phrase(alert.language), alert.language)
+                }
             }
 
-            is AlertContent.Custom -> {
-                // Routed through Module B3. Note this still runs inside the focus
-                // lambda: the TTS path gets the identical escalation, which is the
-                // thing the brief asked to be verified rather than assumed.
-                val sink = sinkProvider(AudioFormat.TTS_22K)
-                speaker.speak(content.text, alert.language, sink).await()
-            }
+            is AlertContent.Custom -> speakCustom(content.text, alert.language)
+        }
+    }
+
+    private fun speakCustom(text: String, language: Language) {
+        val sink = sinkProvider(AudioFormat.TTS_22K)
+        try {
+            speaker.speak(text, language, sink).await()
+        } finally {
+            sink.close()
         }
     }
 

@@ -8,46 +8,19 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.hilt.navigation.compose.hiltViewModel
 import `in`.gov.itantra.core.transport.ConnectionState
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun MainScreen(viewModel: MainViewModel = viewModel()) {
+fun MainScreen(viewModel: MainViewModel = hiltViewModel()) {
     val uiState by viewModel.uiState.collectAsState()
-    var selectedDeviceAddress by remember { mutableStateOf<String?>(null) }
-
-    // Pairing confirmation dialog
-    if (uiState.pairingInfo != null) {
-        AlertDialog(
-            onDismissRequest = { viewModel.dismissPairing() },
-            title = { Text("Confirm Pairing") },
-            text = { 
-                Text("Do you see the same code on the other device?\n\nCode: ${uiState.pairingInfo?.code}")
-            },
-            confirmButton = {
-                Button(onClick = { viewModel.confirmPairing() }) {
-                    Text("Yes, Connect")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { viewModel.dismissPairing() }) {
-                    Text("Cancel")
-                }
-            }
-        )
-    }
 
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .systemBarsPadding()
             .padding(16.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
@@ -100,12 +73,12 @@ fun MainScreen(viewModel: MainViewModel = viewModel()) {
                         Text("Select Paired Device:", style = MaterialTheme.typography.labelMedium)
                         LazyColumn(modifier = Modifier.heightIn(max = 100.dp).fillMaxWidth().padding(8.dp)) {
                             items(uiState.pairedDevices) { device ->
-                                val isSelected = selectedDeviceAddress == device.address
+                                val isSelected = uiState.selectedDeviceAddress == device.address
                                 Text(
                                     text = device.name,
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .clickable { selectedDeviceAddress = device.address }
+                                        .clickable { viewModel.selectDevice(device.address) }
                                         .padding(4.dp),
                                     color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
                                 )
@@ -116,8 +89,8 @@ fun MainScreen(viewModel: MainViewModel = viewModel()) {
                     Spacer(modifier = Modifier.height(8.dp))
 
                     Button(
-                        onClick = { viewModel.connect(selectedDeviceAddress) },
-                        enabled = uiState.connectionMode != ConnectionMode.BLUETOOTH_CLIENT || selectedDeviceAddress != null
+                        onClick = { viewModel.connect(uiState.selectedDeviceAddress) },
+                        enabled = uiState.connectionMode != ConnectionMode.BLUETOOTH_CLIENT || uiState.selectedDeviceAddress != null
                     ) {
                         Text("Connect")
                     }
