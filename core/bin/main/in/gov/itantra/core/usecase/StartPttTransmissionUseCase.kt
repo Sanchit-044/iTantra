@@ -8,6 +8,7 @@ import `in`.gov.itantra.core.stt.SttEngine
 import `in`.gov.itantra.core.stt.SttException
 import `in`.gov.itantra.core.stt.SttListener
 import `in`.gov.itantra.core.stt.SttResult
+import `in`.gov.itantra.core.diag.AppLog
 import `in`.gov.itantra.core.diag.DiagnosticsSink
 import `in`.gov.itantra.core.transport.MessageType
 import `in`.gov.itantra.core.transport.Packet
@@ -35,8 +36,11 @@ class StartPttTransmissionUseCase(
         onError: (String) -> Unit = {},
     ) {
         if (sttEngine.activeLanguage != language) {
+            AppLog.d("StartPttUseCase", "Loading STT model for language: $language")
             sttEngine.loadModel(language)
         }
+        
+        AppLog.d("StartPttUseCase", "Starting STT engine, sendLive=$sendLive")
 
         sttEngine.start(object : SttListener {
             override fun onPartial(text: String) {
@@ -54,8 +58,12 @@ class StartPttTransmissionUseCase(
                         cancelled = cancelled,
                     )
                 }
-                if (cancelled || result.text.isBlank()) return
+                if (cancelled || result.text.isBlank()) {
+                    AppLog.d("StartPttUseCase", "Ignoring empty or cancelled STT result (cancelled=$cancelled)")
+                    return
+                }
                 val text = result.text.trim()
+                AppLog.d("StartPttUseCase", "Final STT text ready: $text")
                 
                 onPartialResult(text)
                 onFinalResult(text)
@@ -68,18 +76,21 @@ class StartPttTransmissionUseCase(
                         text = text,
                     )
                     try {
-                        transport.send(packet)
+                        AppLog.d("StartPttUseCase", "Sent packet live: sq=${packet.sequence}")
                         return
-                    } catch (_: Exception) {
+                    } catch (e: Exception) {
+                        AppLog.w("StartPttUseCase", "Failed to send live packet: ${e.message}, queuing it instead")
                         // Fall through and queue so the utterance is not lost.
                     }
                 }
 
+                AppLog.d("StartPttUseCase", "Queuing offline packet")
                 val queued = outboundQueue.enqueue(language, text)
                 if (queued != null) onQueued(queued)
             }
 
             override fun onError(error: SttException) {
+                AppLog.e("StartPttUseCase", "STT Error: ${error.message}", error)
                 onError(error.message ?: "Speech recognition failed")
             }
         })

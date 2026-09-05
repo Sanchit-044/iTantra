@@ -7,6 +7,6 @@ import dagger.hilt.android.HiltAndroidApp
 class ITantraApplication : Application() {
     override fun onCreate() {
         super.onCreate()
-        // Initialize any necessary components here
+        `in`.gov.itantra.core.diag.AppLog.logger = `in`.gov.itantra.android.diag.AndroidLogger()
     }
 }

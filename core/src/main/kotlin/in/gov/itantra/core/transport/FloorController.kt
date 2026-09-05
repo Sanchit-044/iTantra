@@ -1,5 +1,7 @@
 package `in`.gov.itantra.core.transport
 
+import `in`.gov.itantra.core.diag.AppLog
+
 /**
  * Half-duplex PTT floor. The microphone must not open until [FloorState.HOLDING].
  *
@@ -36,6 +38,7 @@ class FloorController(
     val peerHolds: Boolean get() = synchronized(lock) { state == FloorState.PEER_HOLDING }
 
     fun requestLocal() {
+        AppLog.d("FloorController", "requestLocal() invoked")
         val action = synchronized(lock) {
             when (state) {
                 FloorState.IDLE -> {
@@ -52,6 +55,7 @@ class FloorController(
     }
 
     fun releaseLocal() {
+        AppLog.d("FloorController", "releaseLocal() invoked")
         val shouldNotifyIdle = synchronized(lock) {
             if (state != FloorState.HOLDING && state != FloorState.REQUESTING) {
                 return
@@ -65,6 +69,7 @@ class FloorController(
 
     fun onRemote(type: MessageType) {
         if (!type.isFloorControl) return
+        AppLog.d("FloorController", "onRemote() received floor control packet: $type")
         val action = synchronized(lock) {
             when (type) {
                 MessageType.FLOOR_REQUEST -> onRemoteRequestLocked()
@@ -78,6 +83,7 @@ class FloorController(
     }
 
     fun reset() {
+        AppLog.d("FloorController", "reset() invoked")
         synchronized(lock) { enterLocked(FloorState.IDLE) }
         listener?.onIdle()
     }

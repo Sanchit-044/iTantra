@@ -50,6 +50,42 @@ class ReceivePttTransmissionUseCaseTest {
         assertEquals(Language.TAMIL, tts.activeLanguage)
     }
 
+    @Test
+    fun `playText synthesizes queued item directly`() = runBlocking {
+        val tts = FakeTtsEngine()
+        val sink = RecordingSink()
+        val useCase = ReceivePttTransmissionUseCase(
+            ttsEngine = tts,
+            audioSinkFactory = factory(sink),
+            translationEngine = DictionaryTranslationEngine(),
+        )
+        useCase.playText("बाद में भेजें", Language.HINDI)
+        assertEquals(listOf("बाद में भेजें"), tts.synthesisedChunks)
+        assertEquals(Language.HINDI, tts.activeLanguage)
+        assertTrue(sink.sampleCount > 0)
+    }
+
+    @Test
+    fun `ignores empty text in execute and playText`() = runBlocking {
+        val tts = FakeTtsEngine()
+        val sink = RecordingSink()
+        val useCase = ReceivePttTransmissionUseCase(
+            ttsEngine = tts,
+            audioSinkFactory = factory(sink),
+            translationEngine = DictionaryTranslationEngine(),
+        )
+        
+        useCase.execute(
+            Packet.text(MessageType.NORMAL, Language.HINDI, 1, "   "),
+            currentLanguage = Language.TAMIL,
+        )
+        
+        useCase.playText("  ", Language.HINDI)
+        
+        assertTrue(tts.synthesisedChunks.isEmpty())
+        assertEquals(0, sink.sampleCount)
+    }
+
     private fun factory(sink: RecordingSink) = object : AudioSinkFactory {
         override fun createSink(format: AudioFormat): AudioSink = sink
     }

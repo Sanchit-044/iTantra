@@ -1,5 +1,6 @@
 package `in`.gov.itantra.core.usecase
 
+import `in`.gov.itantra.core.diag.AppLog
 import `in`.gov.itantra.core.stt.SttEngine
 import `in`.gov.itantra.core.transport.Transport
 
@@ -10,6 +11,7 @@ class StopPttTransmissionUseCase(
     private val sttEngine: SttEngine
 ) {
     fun execute(transport: Transport? = null) {
+        AppLog.d("StopPttUseCase", "execute() invoked")
         sttEngine.stop()
         transport?.releaseFloor()
     }

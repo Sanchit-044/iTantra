@@ -9,6 +9,7 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import `in`.gov.itantra.android.diag.AndroidDiagnosticsService
 import `in`.gov.itantra.android.notify.QueuedMessageNotifier
+import `in`.gov.itantra.core.diag.AppLog
 import `in`.gov.itantra.android.transport.BluetoothTransport
 import `in`.gov.itantra.android.transport.LanTransport
 import `in`.gov.itantra.android.transport.StreamTransport
@@ -154,6 +155,7 @@ class MainViewModel @Inject constructor(
 
     // --- Transport Listener ---
     override fun onStateChanged(state: ConnectionState) {
+        AppLog.d("MainViewModel", "Transport state changed to: $state")
         _uiState.update {
             val stillLinked = state == ConnectionState.CONNECTED || state == ConnectionState.HANDSHAKING
             it.copy(
@@ -175,6 +177,7 @@ class MainViewModel @Inject constructor(
     }
 
     override fun onFloorGranted() {
+        AppLog.d("MainViewModel", "Floor granted, starting PTT")
         viewModelScope.launch(Dispatchers.Main) {
             val currentTransport = transport ?: return@launch
             if (!pttWanted.get()) {
@@ -227,6 +230,7 @@ class MainViewModel @Inject constructor(
     }
 
     override fun onFloorDenied(reason: String) {
+        AppLog.w("MainViewModel", "Floor denied: $reason")
         pttWanted.set(false)
         _uiState.update {
             it.copy(
@@ -248,6 +252,7 @@ class MainViewModel @Inject constructor(
     }
 
     override fun onReceive(packet: Packet) {
+        AppLog.d("MainViewModel", "Received packet: type=${packet.type}, language=${packet.language}")
         viewModelScope.launch(Dispatchers.IO) {
             try {
                 when (packet.type) {
@@ -408,6 +413,7 @@ class MainViewModel @Inject constructor(
                 return
             }
             if (state.isSpeaking || state.isRequestingFloor) return
+            AppLog.d("MainViewModel", "startPtt: Requesting floor for live PTT")
             pttWanted.set(true)
             _uiState.update {
                 it.copy(isRequestingFloor = true, recognizedText = "", error = null)
@@ -415,6 +421,7 @@ class MainViewModel @Inject constructor(
             transport?.requestFloor()
         } else {
             if (state.isSpeaking) return
+            AppLog.d("MainViewModel", "startPtt: Starting queued offline PTT")
             _uiState.update { it.copy(isSpeaking = true, recognizedText = "", error = null) }
             try {
                 startPttUseCase.execute(
@@ -437,6 +444,7 @@ class MainViewModel @Inject constructor(
     }
 
     fun stopPtt() {
+        AppLog.d("MainViewModel", "stopPtt: Stopping PTT")
         pttWanted.set(false)
         stopPttUseCase.execute(transport)
         _uiState.update {
