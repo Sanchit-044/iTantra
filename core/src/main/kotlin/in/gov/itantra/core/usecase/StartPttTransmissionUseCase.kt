@@ -19,7 +19,12 @@ class StartPttTransmissionUseCase(
 ) {
     private val sequenceCounter = AtomicInteger(0)
 
-    fun execute(language: Language, transport: Transport, onPartialResult: (String) -> Unit) {
+    fun execute(
+        language: Language,
+        transport: Transport,
+        onPartialResult: (String) -> Unit,
+        onFinalResult: (String) -> Unit = {},
+    ) {
         // Ensure the correct language model is loaded
         if (sttEngine.activeLanguage != language) {
             sttEngine.loadModel(language)
@@ -33,7 +38,8 @@ class StartPttTransmissionUseCase(
 
             override fun onFinal(result: SttResult) {
                 if (result.text.isBlank()) return
-                
+                onFinalResult(result.text)
+
                 // Emit as a complete sentence packet over transport
                 val packet = Packet.text(
                     type = MessageType.NORMAL,

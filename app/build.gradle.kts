@@ -20,7 +20,7 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
         // Restrict language resources to supported languages to save APK size
-        resourceConfigurations.addAll(listOf("en", "hi", "ta", "bn"))
+        resourceConfigurations.addAll(listOf("en", "hi", "ta", "bn", "gu", "mr", "kn", "ml", "te", "or"))
 
         ndk {
             // Drop x86/x86_64 to save tens of MBs from ONNX native libs

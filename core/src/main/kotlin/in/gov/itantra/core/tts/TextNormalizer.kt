@@ -38,9 +38,9 @@ class TextNormalizer(
     // ------------------------------------------------------------------ digits
 
     /**
-     * Maps Devanagari, Tamil and Bengali digit codepoints onto ASCII 0-9 so that a
-     * single set of numeric rules serves all three scripts. Users type in their own
-     * script; incoming transport messages may use either.
+     * Maps Indic digit codepoints onto ASCII 0-9 so a single set of numeric rules
+     * serves every supported script. Users type in their own script; incoming
+     * transport messages may use either.
      */
     fun foldNativeDigits(s: String): String {
         if (s.none { it.code in NATIVE_DIGIT_RANGE }) return s
@@ -48,9 +48,14 @@ class TextNormalizer(
         for (ch in s) {
             sb.append(
                 when (ch.code) {
-                    in 0x0966..0x096F -> ('0' + (ch.code - 0x0966)) // Devanagari
+                    in 0x0966..0x096F -> ('0' + (ch.code - 0x0966)) // Devanagari (Hindi, Marathi)
                     in 0x09E6..0x09EF -> ('0' + (ch.code - 0x09E6)) // Bengali
+                    in 0x0AE6..0x0AEF -> ('0' + (ch.code - 0x0AE6)) // Gujarati
+                    in 0x0B66..0x0B6F -> ('0' + (ch.code - 0x0B66)) // Odia
                     in 0x0BE6..0x0BEF -> ('0' + (ch.code - 0x0BE6)) // Tamil
+                    in 0x0C66..0x0C6F -> ('0' + (ch.code - 0x0C66)) // Telugu
+                    in 0x0CE6..0x0CEF -> ('0' + (ch.code - 0x0CE6)) // Kannada
+                    in 0x0D66..0x0D6F -> ('0' + (ch.code - 0x0D66)) // Malayalam
                     else -> ch
                 }
             )
@@ -163,7 +168,7 @@ class TextNormalizer(
         /** Digit runs at or beyond this length are spoken digit by digit. */
         const val DIGITWISE_THRESHOLD = 7
 
-        private val NATIVE_DIGIT_RANGE = 0x0966..0x0BEF
+        private val NATIVE_DIGIT_RANGE = 0x0966..0x0D6F
 
         private val DATE_DMY = Regex("""\b(\d{1,2})[/\-.](\d{1,2})[/\-.](\d{2,4})\b""")
         private val DATE_YMD = Regex("""\b(\d{4})[/\-](\d{1,2})[/\-](\d{1,2})\b""")
