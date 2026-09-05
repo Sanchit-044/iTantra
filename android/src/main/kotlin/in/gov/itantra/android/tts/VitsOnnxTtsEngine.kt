@@ -4,6 +4,7 @@ import ai.onnxruntime.OnnxTensor
 import ai.onnxruntime.OrtEnvironment
 import ai.onnxruntime.OrtSession
 import android.content.Context
+import `in`.gov.itantra.android.pack.LanguagePackPaths
 import `in`.gov.itantra.core.Language
 import `in`.gov.itantra.core.audio.AudioClip
 import `in`.gov.itantra.core.audio.AudioFormat
@@ -114,23 +115,33 @@ class VitsOnnxTtsEngine(
     }
 
     private fun loadVoiceLocked(language: Language) {
-        if (activeLanguage == language && session != null) return
+        if (activeLanguage == language && (session != null || ttsReady)) {
+            applyNativeLocale(language)
+            return
+        }
         val descriptor = voices[language]
             ?: throw TtsException("no bundled VITS voice for ${language.code}")
 
         // Free before allocating: two resident voices would breach the memory budget.
         unloadVoiceLocked()
+        applyNativeLocale(language)
 
         try {
             val env = OrtEnvironment.getEnvironment()
-            
-            val modelFile = java.io.File(context.cacheDir, "vits_model_${language.code}.onnx")
-            if (!modelFile.exists()) {
-                context.assets.open(descriptor.modelAsset).use { input ->
-                    modelFile.outputStream().use { output ->
-                        input.copyTo(output)
+
+            val packModel = LanguagePackPaths.ttsModel(context, language)
+            val modelFile = if (packModel.exists() && packModel.length() > 0L) {
+                packModel
+            } else {
+                val cached = java.io.File(context.cacheDir, "vits_model_${language.code}.onnx")
+                if (!cached.exists()) {
+                    context.assets.open(descriptor.modelAsset).use { input ->
+                        cached.outputStream().use { output ->
+                            input.copyTo(output)
+                        }
                     }
                 }
+                cached
             }
 
             val options = OrtSession.SessionOptions().apply {
@@ -152,9 +163,15 @@ class VitsOnnxTtsEngine(
             activeLanguage = language
             state = TtsState.VOICE_LOADED
         } catch (e: Exception) {
-            state = TtsState.ERROR
-            throw TtsException("failed to load VITS voice for ${language.code}", e)
+            // System TTS remains the hackathon playback path when ONNX is absent.
+            activeLanguage = language
+            state = TtsState.VOICE_LOADED
+            android.util.Log.w("iTantra-TTS", "VITS pack missing for ${language.code}: ${e.message}")
         }
+    }
+
+    private fun applyNativeLocale(language: Language) {
+        nativeTts?.language = java.util.Locale.forLanguageTag(language.bcp47)
     }
 
     override fun unloadVoice() {
@@ -210,6 +227,7 @@ class VitsOnnxTtsEngine(
                     params.putString(TextToSpeech.Engine.KEY_PARAM_UTTERANCE_ID, "demo_utt")
                     
                     // Force playback on Media stream (Loudspeaker)
+                    applyNativeLocale(language)
                     val attrs = android.media.AudioAttributes.Builder()
                         .setUsage(android.media.AudioAttributes.USAGE_MEDIA)
                         .setContentType(android.media.AudioAttributes.CONTENT_TYPE_SPEECH)

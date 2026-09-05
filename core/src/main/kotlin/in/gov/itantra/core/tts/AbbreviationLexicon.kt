@@ -136,10 +136,62 @@ class AbbreviationLexicon(
             paise = "পয়সা",
         )
 
+        val ENGLISH = AbbreviationLexicon(
+            language = Language.ENGLISH,
+            abbreviations = mapOf(
+                "NDRF" to "National Disaster Response Force",
+                "SDRF" to "State Disaster Response Force",
+                "NDMA" to "National Disaster Management Authority",
+                "IMD" to "India Meteorological Department",
+                "ISRO" to "Indian Space Research Organisation",
+                "IST" to "Indian Standard Time",
+                "SOS" to "emergency message",
+                "GPS" to "G P S",
+                "Dr." to "Doctor",
+                "No." to "number",
+                "approx." to "approximately",
+                "etc." to "etcetera",
+            ),
+            months = listOf(
+                "January", "February", "March", "April", "May", "June",
+                "July", "August", "September", "October", "November", "December",
+            ),
+            units = mapOf(
+                "km" to "kilometers", "km/h" to "kilometers per hour", "kmph" to "kilometers per hour",
+                "m" to "meters", "cm" to "centimeters", "mm" to "millimeters",
+                "kg" to "kilograms", "g" to "grams", "mg" to "milligrams",
+                "l" to "liters", "ml" to "milliliters",
+                "hr" to "hour", "hrs" to "hours", "min" to "minutes", "sec" to "seconds",
+            ),
+            hourWord = "hours",
+            minuteWord = "minutes",
+            rupees = "rupees",
+            paise = "paise",
+        )
+
         fun forLanguage(language: Language): AbbreviationLexicon = when (language) {
             Language.HINDI -> HINDI
             Language.TAMIL -> TAMIL
             Language.BENGALI -> BENGALI
+            Language.ENGLISH -> ENGLISH
+            Language.GUJARATI,
+            Language.MARATHI,
+            Language.KANNADA,
+            Language.MALAYALAM,
+            Language.TELUGU,
+            Language.ODIA -> ENGLISH.copyFor(language)
         }
+
+        private fun AbbreviationLexicon.copyFor(language: Language): AbbreviationLexicon =
+            AbbreviationLexicon(
+                language = language,
+                abbreviations = abbreviations,
+                months = months,
+                units = units,
+                hourWord = hourWord,
+                minuteWord = minuteWord,
+                rupees = rupees,
+                paise = paise,
+            )
     }
 }

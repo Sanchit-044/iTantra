@@ -55,7 +55,7 @@ class SttEvaluationHarnessTest {
         assertEquals(SkipReason.NO_MODEL_AVAILABLE, report.skipped[Language.BENGALI])
 
         val findings = report.findings()
-        assertEquals(2, findings.count { it.startsWith("BLOCKER") })
+        assertEquals(Language.entries.size - 1, findings.count { it.startsWith("BLOCKER") })
         assertTrue(findings.any { it.contains("தமிழ்") }, "Tamil was not named in the findings")
         assertTrue(findings.any { it.contains("বাংলা") }, "Bengali was not named in the findings")
     }

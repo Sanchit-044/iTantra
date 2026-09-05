@@ -157,8 +157,9 @@ class AlertPlayerTest {
         val paths = Language.entries.flatMap { lang ->
             AlertTemplate.entries.map { it.assetPath(lang) }
         }
-        assertEquals(15, paths.size)
-        assertEquals(15, paths.toSet().size, "template asset paths collide")
+        val expected = Language.entries.size * AlertTemplate.entries.size
+        assertEquals(expected, paths.size)
+        assertEquals(expected, paths.toSet().size, "template asset paths collide")
     }
 
     // ------------------------------------------------- non-interruptibility

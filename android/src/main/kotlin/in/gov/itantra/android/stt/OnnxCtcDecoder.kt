@@ -6,10 +6,12 @@ import ai.onnxruntime.OrtSession
 import android.content.Context
 import `in`.gov.itantra.core.Language
 import `in`.gov.itantra.core.audio.AudioClip
+import `in`.gov.itantra.android.pack.LanguagePackPaths
 import `in`.gov.itantra.core.stt.ModelRegistry
 import `in`.gov.itantra.core.stt.SttBackend
 import `in`.gov.itantra.core.stt.SttException
 import org.json.JSONObject
+import java.io.File
 import java.nio.FloatBuffer
 import kotlin.math.sqrt
 
@@ -48,14 +50,20 @@ class OnnxCtcDecoder(
 
         try {
             val env = OrtEnvironment.getEnvironment()
-            
-            val modelFile = java.io.File(context.cacheDir, "ctc_model_${language.code}.onnx")
-            if (!modelFile.exists()) {
-                context.assets.open(descriptor.assetPath).use { input ->
-                    modelFile.outputStream().use { output ->
-                        input.copyTo(output)
+
+            val packModel = LanguagePackPaths.sttModel(context, language)
+            val modelFile = if (packModel.exists() && packModel.length() > 0L) {
+                packModel
+            } else {
+                val cached = File(context.cacheDir, "ctc_model_${language.code}.onnx")
+                if (!cached.exists()) {
+                    context.assets.open(descriptor.assetPath).use { input ->
+                        cached.outputStream().use { output ->
+                            input.copyTo(output)
+                        }
                     }
                 }
+                cached
             }
             
             val options = OrtSession.SessionOptions().apply {
@@ -64,7 +72,12 @@ class OnnxCtcDecoder(
                 setOptimizationLevel(OrtSession.SessionOptions.OptLevel.ALL_OPT)
             }
             session = env.createSession(modelFile.absolutePath, options)
-            vocabulary = CtcVocabulary.fromAsset(context, vocabAssetFor(language))
+            val packVocab = LanguagePackPaths.sttVocab(context, language)
+            vocabulary = if (packVocab.exists() && packVocab.length() > 0L) {
+                CtcVocabulary.fromFile(packVocab)
+            } else {
+                CtcVocabulary.fromAsset(context, vocabAssetFor(language))
+            }
             loadedModelSizeBytes = modelFile.length()
             loadedLanguage = language
         } catch (e: Exception) {
@@ -191,10 +204,17 @@ class CtcVocabulary(
     companion object {
         private val SPECIAL_TOKENS = setOf("<pad>", "<s>", "</s>", "<unk>")
 
+        fun fromFile(file: File): CtcVocabulary =
+            fromJson(JSONObject(file.readText(Charsets.UTF_8)))
+
         fun fromAsset(context: Context, assetPath: String): CtcVocabulary {
             val json = JSONObject(
                 context.assets.open(assetPath).use { it.readBytes().toString(Charsets.UTF_8) }
             )
+            return fromJson(json)
+        }
+
+        private fun fromJson(json: JSONObject): CtcVocabulary {
             // HuggingFace vocab.json is token -> id; invert it.
             val keys = json.keys()
             val pairs = mutableListOf<Pair<String, Int>>()

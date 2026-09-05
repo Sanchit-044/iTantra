@@ -14,12 +14,15 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.hilt.navigation.compose.hiltViewModel
 import `in`.gov.itantra.core.transport.ConnectionState
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun MainScreen(viewModel: MainViewModel = viewModel()) {
+fun MainScreen(
+    onOpenSettings: () -> Unit = {},
+    viewModel: MainViewModel = hiltViewModel(),
+) {
     val uiState by viewModel.uiState.collectAsState()
     var selectedDeviceAddress by remember { mutableStateOf<String?>(null) }
 
@@ -51,10 +54,25 @@ fun MainScreen(viewModel: MainViewModel = viewModel()) {
             .padding(16.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Text(
-            text = "iTantra Walkie-Talkie",
-            style = MaterialTheme.typography.headlineMedium
-        )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "iTantra Walkie-Talkie",
+                    style = MaterialTheme.typography.headlineSmall
+                )
+                Text(
+                    text = "Language: ${uiState.currentLanguage.endonym} (${uiState.currentLanguage.englishName})",
+                    style = MaterialTheme.typography.bodyMedium
+                )
+            }
+            TextButton(onClick = onOpenSettings) {
+                Text("Settings")
+            }
+        }
         
         Spacer(modifier = Modifier.height(16.dp))
         

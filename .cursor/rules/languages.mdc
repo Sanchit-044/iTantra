@@ -1,0 +1,18 @@
+---
+description: Language, LID, translation, and pack-install rules
+alwaysApply: true
+---
+
+# Languages
+
+- Set: hi, gu, mr, kn, ml, ta, te, or, bn, en. Default **Hindi**.
+- Wire: HI/TA/BN stay `0x01/0x02/0x03`. Do not renumber.
+- **No separate speak vs listen.** `current` is both STT and TTS.
+- Empty install set → Hindi. Never allow zero languages.
+- LID only if 2+ installed; result must be in that set. Unsure → current, else Hindi if installed.
+- After detect, update `current` so inbound audio is translated into that language.
+- Translate **only on receive**. Send original text + source language.
+- Missing translation → user-visible error / download, not wrong-voice TTS.
+- Packs: install only ticked languages. `INTERNET` is for packs only.
+
+Picker: `LanguageSelectionScreen` (first launch + Settings). Persist: `PrefsLanguageSettingsStore`.

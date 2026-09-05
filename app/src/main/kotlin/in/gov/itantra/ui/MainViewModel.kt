@@ -8,9 +8,14 @@ import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import `in`.gov.itantra.android.transport.BluetoothTransport
+import `in`.gov.itantra.android.transport.LanTransport
 import `in`.gov.itantra.android.transport.WifiDirectTransport
 import `in`.gov.itantra.core.Language
 import `in`.gov.itantra.core.crypto.KeyAgreementProvider
+import `in`.gov.itantra.core.lang.LanguageSettingsStore
+import `in`.gov.itantra.core.stt.LanguageIdEngine
+import `in`.gov.itantra.core.stt.resolveSpokenLanguage
+import `in`.gov.itantra.core.translate.TranslationUnavailableException
 import `in`.gov.itantra.core.transport.ConnectionState
 import `in`.gov.itantra.core.transport.Packet
 import `in`.gov.itantra.core.transport.PairingInfo
@@ -39,8 +44,8 @@ data class BluetoothDeviceInfo(val name: String, val address: String)
 data class UiState(
     val isSpeaking: Boolean = false,
     val recognizedText: String = "",
-    val speakLanguage: Language = Language.HINDI,
-    val listenLanguage: Language = Language.HINDI,
+    val currentLanguage: Language = Language.DEFAULT,
+    val installedLanguages: Set<Language> = setOf(Language.DEFAULT),
     val connectionState: ConnectionState = ConnectionState.DISCONNECTED,
     val connectionMode: ConnectionMode = ConnectionMode.WIFI_DIRECT_HOST,
     val pairedDevices: List<BluetoothDeviceInfo> = emptyList(),
@@ -55,7 +60,9 @@ class MainViewModel @Inject constructor(
     private val keyAgreementProvider: KeyAgreementProvider,
     private val startPttUseCase: StartPttTransmissionUseCase,
     private val stopPttUseCase: StopPttTransmissionUseCase,
-    private val receivePttUseCase: ReceivePttTransmissionUseCase
+    private val receivePttUseCase: ReceivePttTransmissionUseCase,
+    private val languageSettings: LanguageSettingsStore,
+    private val languageIdEngine: LanguageIdEngine,
 ) : ViewModel(), TransportListener {
 
     private val _uiState = MutableStateFlow(UiState())
@@ -65,6 +72,16 @@ class MainViewModel @Inject constructor(
 
     init {
         loadPairedDevices()
+        viewModelScope.launch {
+            languageSettings.settings.collect { snap ->
+                _uiState.update {
+                    it.copy(
+                        currentLanguage = snap.current,
+                        installedLanguages = snap.installed,
+                    )
+                }
+            }
+        }
     }
 
     override fun onCleared() {
@@ -72,7 +89,7 @@ class MainViewModel @Inject constructor(
         transport?.setListener(null)
         transport?.disconnect()
     }
-    
+
     fun setConnectionMode(mode: ConnectionMode) {
         _uiState.update { it.copy(connectionMode = mode) }
     }
@@ -81,8 +98,8 @@ class MainViewModel @Inject constructor(
         try {
             val adapter = BluetoothAdapter.getDefaultAdapter()
             if (adapter != null && adapter.isEnabled) {
-                val devices = adapter.bondedDevices.map { 
-                    BluetoothDeviceInfo(it.name ?: "Unknown", it.address) 
+                val devices = adapter.bondedDevices.map {
+                    BluetoothDeviceInfo(it.name ?: "Unknown", it.address)
                 }
                 _uiState.update { it.copy(pairedDevices = devices) }
             }
@@ -95,8 +112,6 @@ class MainViewModel @Inject constructor(
         loadPairedDevices()
     }
 
-    // --- Transport Listener ---
-
     override fun onStateChanged(state: ConnectionState) {
         _uiState.update { it.copy(connectionState = state) }
     }
@@ -108,21 +123,21 @@ class MainViewModel @Inject constructor(
     override fun onReceive(packet: Packet) {
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                receivePttUseCase.execute(packet)
+                receivePttUseCase.execute(packet, _uiState.value.currentLanguage)
+            } catch (e: TranslationUnavailableException) {
+                _uiState.update { it.copy(error = e.message) }
             } catch (e: Exception) {
                 _uiState.update { it.copy(error = "Playback error: ${e.message}") }
             }
         }
     }
 
-    // --- Actions ---
-
     fun connect(peerAddress: String? = null) {
         viewModelScope.launch(Dispatchers.IO) {
             try {
                 transport?.setListener(null)
                 transport?.disconnect()
-                
+
                 val newTransport = when (_uiState.value.connectionMode) {
                     ConnectionMode.WIFI_DIRECT_HOST -> WifiDirectTransport(context, keyAgreementProvider, WifiDirectTransport.Role.HOST)
                     ConnectionMode.WIFI_DIRECT_CLIENT -> WifiDirectTransport(context, keyAgreementProvider, WifiDirectTransport.Role.CLIENT)
@@ -131,11 +146,12 @@ class MainViewModel @Inject constructor(
                         if (peerAddress == null) throw Exception("Please select a device to connect to")
                         BluetoothTransport(context, keyAgreementProvider, BluetoothTransport.Role.CLIENT, peerAddress)
                     }
+
                 }
-                
+
                 newTransport.setListener(this@MainViewModel)
                 transport = newTransport
-                
+
                 newTransport.connect()
             } catch (e: Exception) {
                 _uiState.update { it.copy(error = "Connection failed: ${e.message}") }
@@ -151,7 +167,7 @@ class MainViewModel @Inject constructor(
         transport?.confirmPairing()
         _uiState.update { it.copy(pairingInfo = null) }
     }
-    
+
     fun dismissPairing() {
         transport?.disconnect()
         _uiState.update { it.copy(pairingInfo = null) }
@@ -163,12 +179,30 @@ class MainViewModel @Inject constructor(
 
     fun startPtt() {
         val currentTransport = transport ?: return
-        
-        _uiState.update { it.copy(isSpeaking = true, recognizedText = "") }
+        val snap = _uiState.value
+        val spoken = languageIdEngine.resolveSpokenLanguage(
+            installed = snap.installedLanguages,
+            current = snap.currentLanguage,
+        )
+        if (spoken != snap.currentLanguage) {
+            viewModelScope.launch { languageSettings.setCurrentLanguage(spoken) }
+        }
+
+        _uiState.update { it.copy(isSpeaking = true, recognizedText = "", currentLanguage = spoken, error = null) }
         try {
-            startPttUseCase.execute(language = _uiState.value.speakLanguage, transport = currentTransport) { partialText ->
-                _uiState.update { it.copy(recognizedText = partialText) }
-            }
+            startPttUseCase.execute(
+                language = spoken,
+                transport = currentTransport,
+                onPartialResult = { partialText ->
+                    _uiState.update { it.copy(recognizedText = partialText) }
+                },
+                onFinalResult = { finalText ->
+                    val refined = languageIdEngine.detectFromText(finalText, snap.installedLanguages)
+                    if (refined != null && refined != spoken) {
+                        viewModelScope.launch { languageSettings.setCurrentLanguage(refined) }
+                    }
+                },
+            )
         } catch (e: Exception) {
             _uiState.update { it.copy(isSpeaking = false, recognizedText = "Error: ${e.message}") }
         }
@@ -177,13 +211,5 @@ class MainViewModel @Inject constructor(
     fun stopPtt() {
         stopPttUseCase.execute()
         _uiState.update { it.copy(isSpeaking = false) }
-    }
-
-    fun setSpeakLanguage(language: Language) {
-        _uiState.update { it.copy(speakLanguage = language) }
-    }
-
-    fun setListenLanguage(language: Language) {
-        _uiState.update { it.copy(listenLanguage = language) }
     }
 }

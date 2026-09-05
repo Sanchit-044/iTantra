@@ -1,6 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
+    <!-- Used only to download the language packs the user selected. STT/TTS/radio stay offline after that. -->
+    <uses-permission android:name="android.permission.INTERNET" />
+
     <application
         android:name=".ITantraApplication"
         android:allowBackup="true"

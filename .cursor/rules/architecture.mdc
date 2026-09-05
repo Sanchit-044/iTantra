@@ -1,0 +1,15 @@
+---
+description: Module split, Android vs JVM, and where new code goes
+globs: iTantra/**/*.{kt,kts}
+alwaysApply: false
+---
+
+# Architecture
+
+- Device-independent logic → `:core` + JUnit. If it does not need Android, do not put it in `:app` or `:android`.
+- Platform IO (ONNX, mic, speaker, radio, Keystore, files) → `:android`.
+- Compose / Hilt / Activity → `:app` only. Single Activity.
+- `settings.gradle.kts` omits Android modules without SDK. `:core:test` must keep working.
+- Room is unused. Do not add a database unless asked.
+- One STT + one TTS in RAM. Unload before load. CPU ONNX only (no NNAPI/GPU).
+- Packet auth is AES-256-GCM + header AAD. Do not add HMAC “because Features.md says so.”

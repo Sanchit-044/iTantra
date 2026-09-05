@@ -1,0 +1,14 @@
+---
+description: STT, TTS, PTT use cases, and transport behavior
+globs: iTantra/**/{stt,tts,translate,usecase,transport,crypto}/**/*.kt
+alwaysApply: false
+---
+
+# Speech and radio
+
+- STT: IndicWav2Vec CTC ONNX, 800 ms silence endpointer. Vosk is gone.
+- TTS shipping path: VITS ONNX. Android TTS is fallback only when the graph is missing; `loadVoice` must survive missing files.
+- Receive use case takes `currentLanguage` and a `TranslationEngine`. Same language → no translate.
+- PTT start takes the resolved spoken language (LID/current), not hardcoded Hindi.
+- Transports share `PacketCodec`. Heartbeats stay internal. Pairing code must be confirmed before content.
+- Alerts and diagnostics exist in `:core`/`:android` only. Do not claim they are in the UI.
