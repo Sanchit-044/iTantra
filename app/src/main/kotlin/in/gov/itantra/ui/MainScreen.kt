@@ -137,23 +137,78 @@ fun MainScreen(viewModel: MainViewModel = viewModel()) {
             )
         }
 
+        if (uiState.outboundPending > 0) {
+            Text(
+                text = "${uiState.outboundPending} waiting to send" +
+                    if (uiState.outboundFailed > 0) " (${uiState.outboundFailed} failed, will retry)" else "",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.padding(top = 8.dp)
+            )
+        }
+
+        if (uiState.inbox.isNotEmpty()) {
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 8.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)
+            ) {
+                Column(modifier = Modifier.padding(12.dp)) {
+                    Text("Queued inbox — tap Play. Nothing auto-plays.", style = MaterialTheme.typography.labelMedium)
+                    Spacer(Modifier.height(4.dp))
+                    LazyColumn(modifier = Modifier.heightIn(max = 140.dp).fillMaxWidth()) {
+                        items(uiState.inbox, key = { it.id }) { item ->
+                            Row(
+                                modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
+                                    Text(
+                                        text = if (item.unread) "New · ${item.language.endonym}" else item.language.endonym,
+                                        style = MaterialTheme.typography.labelSmall,
+                                    )
+                                    Text(
+                                        text = item.text,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        maxLines = 2,
+                                    )
+                                }
+                                TextButton(
+                                    onClick = { viewModel.playInbox(item.id) },
+                                    enabled = uiState.playingInboxId == null,
+                                ) {
+                                    Text(if (uiState.playingInboxId == item.id) "Playing" else "Play")
+                                }
+                                TextButton(onClick = { viewModel.dismissInbox(item.id) }) {
+                                    Text("Dismiss")
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         Spacer(modifier = Modifier.weight(1f))
 
-        // Live text display
         Text(
-            text = if (uiState.recognizedText.isEmpty()) "Ready to speak..." else uiState.recognizedText,
+            text = when {
+                uiState.recognizedText.isNotEmpty() -> uiState.recognizedText
+                uiState.connectionState == ConnectionState.CONNECTED && uiState.pairingConfirmed -> "Ready to speak..."
+                else -> "Not connected — PTT will save and send later"
+            },
             style = MaterialTheme.typography.bodyLarge,
             color = if (uiState.isSpeaking) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
         )
 
-        Spacer(modifier = Modifier.height(32.dp))
+        Spacer(modifier = Modifier.height(24.dp))
 
         Button(
             onClick = {
                 if (uiState.isSpeaking) viewModel.stopPtt() else viewModel.startPtt()
             },
             modifier = Modifier.size(120.dp),
-            enabled = uiState.connectionState == ConnectionState.CONNECTED,
             colors = ButtonDefaults.buttonColors(
                 containerColor = if (uiState.isSpeaking) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
             )
@@ -161,6 +216,6 @@ fun MainScreen(viewModel: MainViewModel = viewModel()) {
             Text(text = if (uiState.isSpeaking) "STOP" else "PTT")
         }
         
-        Spacer(modifier = Modifier.height(32.dp))
+        Spacer(modifier = Modifier.height(24.dp))
     }
 }

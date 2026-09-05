@@ -21,6 +21,19 @@ class PacketCodecTest {
     ) = Packet.text(type, language, sequence = 42, text = text, timestampMs = 1_700_000_000_000L)
 
     @Test
+    fun `round trips a queued store-and-forward packet`() {
+        val c = crypto()
+        val original = samplePacket(type = MessageType.QUEUED, text = "बाद में भेजें")
+        val decoded = PacketCodec.decodeBody(
+            FrameReader().offer(PacketCodec.encode(original, c)).single(),
+            c,
+        )
+        assertEquals(original, decoded)
+        assertTrue(decoded.isQueued)
+        assertFalse(decoded.isAlert)
+    }
+
+    @Test
     fun `round trips through encode and decode`() {
         val c = crypto()
         val original = samplePacket()

@@ -218,7 +218,7 @@ abstract class StreamTransport(
         // carry no content, are allowed through before the operators confirm the code.
         if (!pairingConfirmed.get() && packet.type != MessageType.HEARTBEAT) {
             listener?.onSendFailed(packet, "pairing not confirmed; refusing to send content")
-            return
+            throw TransportException("pairing not confirmed; refusing to send content")
         }
         arbiter.submit(packet)
     }
@@ -326,7 +326,7 @@ abstract class StreamTransport(
                 }
             }
 
-            MessageType.NORMAL, MessageType.ALERT -> listener?.onReceive(packet)
+            MessageType.NORMAL, MessageType.ALERT, MessageType.QUEUED -> listener?.onReceive(packet)
         }
     }
 

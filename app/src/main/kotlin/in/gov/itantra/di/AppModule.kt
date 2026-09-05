@@ -7,15 +7,20 @@ import dagger.hilt.InstallIn
 import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
 import `in`.gov.itantra.android.crypto.KeystoreKeyAgreement
+import `in`.gov.itantra.android.notify.QueuedMessageNotifier
+import `in`.gov.itantra.android.queue.FileQueueStore
 import `in`.gov.itantra.android.stt.OnnxCtcSttEngine
-import `in`.gov.itantra.android.transport.WifiDirectTransport
 import `in`.gov.itantra.android.tts.VitsOnnxTtsEngine
 import `in`.gov.itantra.core.crypto.KeyAgreementProvider
+import `in`.gov.itantra.core.queue.InboundMessageInbox
+import `in`.gov.itantra.core.queue.OutboundMessageQueue
+import `in`.gov.itantra.core.queue.QueueStore
 import `in`.gov.itantra.core.stt.SttEngine
-import `in`.gov.itantra.core.transport.Transport
 import `in`.gov.itantra.core.tts.TtsEngine
+import `in`.gov.itantra.core.usecase.FlushQueuedMessagesUseCase
 import `in`.gov.itantra.core.usecase.StartPttTransmissionUseCase
 import `in`.gov.itantra.core.usecase.StopPttTransmissionUseCase
+import java.util.concurrent.atomic.AtomicInteger
 import javax.inject.Singleton
 
 @Module
@@ -41,10 +46,48 @@ object AppModule {
     }
 
     @Provides
+    @Singleton
+    fun provideQueueStore(@ApplicationContext context: Context): QueueStore {
+        return FileQueueStore(context)
+    }
+
+    @Provides
+    @Singleton
+    fun provideOutboundQueue(store: QueueStore): OutboundMessageQueue {
+        return OutboundMessageQueue(store)
+    }
+
+    @Provides
+    @Singleton
+    fun provideInbox(store: QueueStore): InboundMessageInbox {
+        return InboundMessageInbox(store)
+    }
+
+    @Provides
+    @Singleton
+    fun providePacketSequence(): AtomicInteger = AtomicInteger(0)
+
+    @Provides
+    @Singleton
+    fun provideNotifier(@ApplicationContext context: Context): QueuedMessageNotifier {
+        return QueuedMessageNotifier(context)
+    }
+
+    @Provides
     fun provideStartPttTransmissionUseCase(
-        sttEngine: SttEngine
+        sttEngine: SttEngine,
+        outboundQueue: OutboundMessageQueue,
+        sequence: AtomicInteger,
     ): StartPttTransmissionUseCase {
-        return StartPttTransmissionUseCase(sttEngine)
+        return StartPttTransmissionUseCase(sttEngine, outboundQueue, sequence)
+    }
+
+    @Provides
+    fun provideFlushQueuedMessagesUseCase(
+        outboundQueue: OutboundMessageQueue,
+        sequence: AtomicInteger,
+    ): FlushQueuedMessagesUseCase {
+        return FlushQueuedMessagesUseCase(outboundQueue, sequence)
     }
 
     @Provides
