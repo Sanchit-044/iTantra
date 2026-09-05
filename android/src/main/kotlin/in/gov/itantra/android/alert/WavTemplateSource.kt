@@ -36,9 +36,7 @@ class WavTemplateSource(
         val bytes = try {
             context.assets.open(path).use { it.readBytes() }
         } catch (e: Exception) {
-            // A missing template asset is a packaging error, not a runtime condition.
-            // Failing loudly here is correct: silently substituting TTS would hide a
-            // shipping defect until an operator needed the alert.
+            // AlertPlayer catches this and speaks the template phrase through TTS.
             throw IllegalStateException("bundled alert asset missing: $path", e)
         }
 
@@ -49,6 +47,12 @@ class WavTemplateSource(
 
     /** Pre-loads the clips for one language, e.g. just after a language switch. */
     fun preload(language: Language) {
-        AlertTemplate.entries.take(maxCachedClips).forEach { load(it, language) }
+        AlertTemplate.entries.take(maxCachedClips).forEach { template ->
+            try {
+                load(template, language)
+            } catch (_: Exception) {
+                // Missing WAV is fine: playback falls back to TTS.
+            }
+        }
     }
 }

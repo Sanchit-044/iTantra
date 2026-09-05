@@ -3,82 +3,97 @@ package `in`.gov.itantra.core.alert
 import `in`.gov.itantra.core.Language
 
 /**
- * The five fixed alert templates that ship pre-rendered as WAV, one file per template
- * per language (15 files total).
- *
- * OPEN QUESTION -- these five are a placeholder. The brief specifies "the 5 fixed
- * templates" without naming them, and the actual set is an operational decision for
- * whoever owns the field protocol, not an engineering one. The enum is wired
- * end-to-end so swapping the members costs only a rename plus new audio assets.
+ * The five F-07 alert templates. Each ships as a pre-rendered WAV per language
+ * (`alerts/<lang>/<assetKey>.wav`, 15 files).
  */
 enum class AlertTemplate(val assetKey: String) {
-    EVACUATE_IMMEDIATELY("evacuate"),
-    MOVE_TO_HIGHER_GROUND("higher_ground"),
-    MEDICAL_EMERGENCY("medical"),
-    HOLD_POSITION("hold_position"),
+    EMERGENCY_ASSISTANCE("emergency"),
     ALL_CLEAR("all_clear"),
+    EVACUATE_IMMEDIATELY("evacuate"),
+    STAY_IN_POSITION("stay_position"),
+    MEDICAL_HELP("medical"),
     ;
 
-    /** Asset path convention: alerts/<lang>/<key>.wav */
     fun assetPath(language: Language): String = "alerts/${language.code}/$assetKey.wav"
+
+    fun phrase(language: Language): String = when (this) {
+        EMERGENCY_ASSISTANCE -> when (language) {
+            Language.HINDI -> "आपातकाल — सहायता चाहिए"
+            Language.TAMIL -> "அவசரம் — உதவி தேவை"
+            Language.BENGALI -> "জরুরি — সাহায্য চাই"
+            else -> "Emergency — Assistance needed"
+        }
+        ALL_CLEAR -> when (language) {
+            Language.HINDI -> "सब ठीक है"
+            Language.TAMIL -> "அனைத்தும் பாதுகாப்பு"
+            Language.BENGALI -> "সব ঠিক আছে"
+            else -> "All clear"
+        }
+        EVACUATE_IMMEDIATELY -> when (language) {
+            Language.HINDI -> "तुरंत निकलें"
+            Language.TAMIL -> "உடனடியாக வெளியேறுங்கள்"
+            Language.BENGALI -> "অবিলম্বে সরিয়ে যান"
+            else -> "Evacuate immediately"
+        }
+        STAY_IN_POSITION -> when (language) {
+            Language.HINDI -> "अपनी जगह पर रहें"
+            Language.TAMIL -> "இருக்கும் இடத்தில் இருங்கள்"
+            Language.BENGALI -> "অবস্থানে থাকুন"
+            else -> "Stay in position"
+        }
+        MEDICAL_HELP -> when (language) {
+            Language.HINDI -> "चिकित्सा सहायता चाहिए"
+            Language.TAMIL -> "மருத்துவ உதவி தேவை"
+            Language.BENGALI -> "চিকিৎসা সাহায্য দরকার"
+            else -> "Medical help needed"
+        }
+    }
+
+    companion object {
+        const val WIRE_PREFIX = "tpl:"
+
+        fun fromAssetKey(key: String): AlertTemplate? =
+            entries.firstOrNull { it.assetKey == key }
+
+        fun fromWirePayload(text: String): AlertContent {
+            val trimmed = text.trim()
+            if (trimmed.startsWith(WIRE_PREFIX)) {
+                val key = trimmed.removePrefix(WIRE_PREFIX)
+                val template = fromAssetKey(key)
+                if (template != null) return AlertContent.Template(template)
+            }
+            return AlertContent.Custom(trimmed)
+        }
+    }
 }
 
-/**
- * What an alert should say.
- *
- * Both variants are handled by the same playback path in [AlertPlayer]; see the note
- * there on why that is enforced structurally rather than by convention.
- */
 sealed interface AlertContent {
-    /** One of the five bundled templates; played from a pre-rendered WAV. */
     data class Template(val template: AlertTemplate) : AlertContent
 
-    /** Free text; routed through the Module B3 TTS engine. */
     data class Custom(val text: String) : AlertContent
+
+    fun toWirePayload(): String = when (this) {
+        is Template -> AlertTemplate.WIRE_PREFIX + template.assetKey
+        is Custom -> text.trim()
+    }
 }
 
 data class IncomingAlert(
     val content: AlertContent,
     val language: Language,
-    /** Sequence number of the packet that carried this alert, for de-duplication. */
     val sequence: Int,
     val receivedAtMs: Long,
 )
 
-/**
- * Acquires and releases forced alarm-stream audio focus.
- *
- * The Android implementation requests AUDIOFOCUS_GAIN_TRANSIENT on the alarm stream,
- * raises alarm volume to maximum, and restores the previous volume afterwards. It is
- * an interface so that Module B6's central guarantee -- that *every* alert path forces
- * focus -- can be asserted in a plain JVM test with a recording fake, rather than
- * hoped for on a device.
- */
 interface ForcedAudioFocus {
-
-    /**
-     * Runs [block] while holding forced alarm focus at maximum volume.
-     *
-     * Implementations must restore the previous volume and abandon focus even if
-     * [block] throws; an alert that crashes mid-playback must not leave the handset
-     * pinned at maximum alarm volume permanently.
-     */
     fun <T> withForcedAlarmAudio(block: () -> T): T
-
-    /** True while focus is currently held. */
     val isHeld: Boolean
 }
 
-/** Observability for alert playback. */
 interface AlertListener {
     fun onAlertStarted(alert: IncomingAlert) {}
     fun onAlertCompleted(alert: IncomingAlert, durationMs: Long) {}
-
-    /** A packet arrived mid-alert and was held rather than played. */
     fun onDeferredDuringAlert(sequence: Int) {}
-
-    /** A second alert arrived while one was playing. */
     fun onAlertQueued(alert: IncomingAlert, queueDepth: Int) {}
-
     fun onAlertFailed(alert: IncomingAlert, reason: String) {}
 }

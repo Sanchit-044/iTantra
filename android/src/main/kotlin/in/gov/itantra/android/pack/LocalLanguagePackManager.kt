@@ -55,9 +55,11 @@ class LocalLanguagePackManager(
         onProgress(PackProgress(null, 1f, "Done"))
     }
 
-    override suspend fun uninstall(language: Language) = withContext(Dispatchers.IO) {
-        LanguagePackPaths.sttDir(context, language).deleteRecursively()
-        LanguagePackPaths.ttsDir(context, language).deleteRecursively()
+    override suspend fun uninstall(language: Language) {
+        withContext(Dispatchers.IO) {
+            LanguagePackPaths.sttDir(context, language).deleteRecursively()
+            LanguagePackPaths.ttsDir(context, language).deleteRecursively()
+        }
     }
 
     private fun installLanguage(language: Language) {

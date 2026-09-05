@@ -78,7 +78,7 @@ class AlertPlayerTest {
     @Test
     fun `audio is written while focus is held on both paths`() {
         for (content in listOf(
-            AlertContent.Template(AlertTemplate.MEDICAL_EMERGENCY),
+            AlertContent.Template(AlertTemplate.MEDICAL_HELP),
             AlertContent.Custom("चिकित्सा आपातकाल"),
         )) {
             var focusHeldDuringWrite: Boolean? = null
@@ -91,6 +91,7 @@ class AlertPlayerTest {
                 }
                 override fun drain() {}
                 override fun flush() {}
+                override fun close() {}
             }
             val p = AlertPlayer(
                 focus = f,
@@ -115,26 +116,50 @@ class AlertPlayerTest {
     }
 
     @Test
-    fun `focus is released even when playback fails`() {
+    fun `missing template wav falls back to tts and still releases focus`() {
         val f = FakeForcedAudioFocus()
         val failing = object : TemplateAudioSource {
             override fun load(template: AlertTemplate, language: Language) =
                 throw IllegalStateException("asset missing")
         }
-        var failure: String? = null
+        val tts = FakeTtsEngine()
         val p = AlertPlayer(
             focus = f,
             templates = failing,
-            speaker = ChunkedSpeaker(FakeTtsEngine()),
+            speaker = ChunkedSpeaker(tts),
             sinkProvider = { RecordingSink() },
+        )
+        p.play(alert(AlertContent.Template(AlertTemplate.STAY_IN_POSITION)))
+        assertFalse(f.isHeld, "focus leaked after a missing WAV fallback")
+        assertTrue(tts.synthesisedChunks.isNotEmpty(), "TTS fallback was not used")
+    }
+
+    @Test
+    fun `focus is released even when playback fails`() {
+        val f = FakeForcedAudioFocus()
+        var failure: String? = null
+        val p = AlertPlayer(
+            focus = f,
+            templates = FakeTemplateAudioSource(),
+            speaker = ChunkedSpeaker(FakeTtsEngine()),
+            sinkProvider = {
+                object : AudioSink {
+                    override val format = AudioFormat.TTS_22K
+                    override fun write(samples: ShortArray, offset: Int, count: Int): Int =
+                        throw IllegalStateException("sink failed")
+                    override fun drain() {}
+                    override fun flush() {}
+                    override fun close() {}
+                }
+            },
             listener = object : AlertListener {
                 override fun onAlertFailed(alert: IncomingAlert, reason: String) { failure = reason }
             },
         )
-        p.play(alert(AlertContent.Template(AlertTemplate.HOLD_POSITION)))
+        p.play(alert(AlertContent.Template(AlertTemplate.STAY_IN_POSITION)))
 
         assertFalse(f.isHeld, "focus leaked after a failed alert -- handset stuck at max volume")
-        assertEquals("asset missing", failure)
+        assertEquals("sink failed", failure)
     }
 
     @Test
@@ -157,8 +182,9 @@ class AlertPlayerTest {
         val paths = Language.entries.flatMap { lang ->
             AlertTemplate.entries.map { it.assetPath(lang) }
         }
-        assertEquals(15, paths.size)
-        assertEquals(15, paths.toSet().size, "template asset paths collide")
+        val expected = Language.entries.size * AlertTemplate.entries.size
+        assertEquals(expected, paths.size)
+        assertEquals(expected, paths.toSet().size, "template asset paths collide")
     }
 
     // ------------------------------------------------- non-interruptibility
