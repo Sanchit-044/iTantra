@@ -138,6 +138,7 @@ class OnnxCtcSttEngine(
         val frame = ShortArray(FRAME_SAMPLES)
         val utterance = GrowableAudioBuffer(AudioFormat.STT_16K.samplesForMs(4_000))
         val maxSamples = AudioFormat.STT_16K.samplesForMs(maxUtteranceMs.toInt())
+        val fullTranscript = StringBuilder()
 
         var speaking = false
         var lastPartialAtMs = 0L
@@ -162,8 +163,22 @@ class OnnxCtcSttEngine(
                     }
 
                     SilenceEndpointer.Event.ENDPOINT -> {
-                        trigger = EndpointTrigger.SILENCE
-                        break
+                        // Pause Detection: The speaker paused for a breath. 
+                        // Decode the chunk, append with a comma to recreate cadence, and reset buffer!
+                        if (utterance.size > 0) {
+                            val clip = utterance.snapshot()
+                            val text = decoder.decode(clip, language)
+                            if (text.isNotBlank()) {
+                                if (fullTranscript.isNotEmpty()) fullTranscript.append(", ")
+                                fullTranscript.append(text)
+                                
+                                // Fire a partial to immediately show the punctuation
+                                listener.onPartial(fullTranscript.toString())
+                            }
+                            utterance.reset()
+                            endpointer.reset()
+                            speaking = false
+                        }
                     }
 
                     SilenceEndpointer.Event.NONE -> Unit
@@ -180,7 +195,7 @@ class OnnxCtcSttEngine(
                 val now = System.currentTimeMillis()
                 if (speaking && now - lastPartialAtMs >= partialIntervalMs) {
                     lastPartialAtMs = now
-                    schedulePartial(utterance.snapshot(), language, listener)
+                    schedulePartial(utterance.snapshot(), language, listener, fullTranscript.toString())
                 }
             }
 
@@ -200,8 +215,16 @@ class OnnxCtcSttEngine(
 
             val endOfSpeechMs = System.currentTimeMillis()
             val clip = utterance.snapshot()
-            // Always a fresh full decode; never a recycled partial.
-            val text = decoder.decode(clip, language)
+            
+            // Decode the final trailing chunk
+            val text = if (clip.pcm.isNotEmpty()) decoder.decode(clip, language) else ""
+            
+            var finalTranscript = fullTranscript.toString()
+            if (text.isNotBlank()) {
+                if (finalTranscript.isNotEmpty()) finalTranscript += ", "
+                finalTranscript += text
+            }
+            
             val finalisationMs = System.currentTimeMillis() - endOfSpeechMs
 
             finalisationLatency.recordMs(finalisationMs)
@@ -209,7 +232,7 @@ class OnnxCtcSttEngine(
 
             listener.onFinal(
                 SttResult(
-                    text = text,
+                    text = finalTranscript,
                     language = language,
                     // Greedy CTC exposes no calibrated confidence. Reporting a
                     // fabricated one would be worse than reporting none.
@@ -231,12 +254,13 @@ class OnnxCtcSttEngine(
     }
 
     /** Runs a partial decode unless one is already in flight; skips rather than queues. */
-    private fun schedulePartial(clip: AudioClip, language: Language, listener: SttListener) {
+    private fun schedulePartial(clip: AudioClip, language: Language, listener: SttListener, prefix: String) {
         if (!partialInFlight.compareAndSet(false, true)) return
         partialExecutor.execute {
             try {
                 val text = decoder.decode(clip, language)
-                if (text.isNotBlank() && listening.get()) listener.onPartial(text)
+                val fullText = if (prefix.isEmpty()) text else if (text.isBlank()) prefix else "$prefix, $text"
+                if (fullText.isNotBlank() && listening.get()) listener.onPartial(fullText)
             } catch (e: Exception) {
                 // A failed partial is not worth surfacing; the final decode is what
                 // matters and it runs independently.

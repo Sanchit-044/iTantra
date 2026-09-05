@@ -83,10 +83,6 @@ fun MainScreen(viewModel: MainViewModel = viewModel()) {
                                 RadioButton(selected = uiState.connectionMode == ConnectionMode.BLUETOOTH_HOST, onClick = { viewModel.setConnectionMode(ConnectionMode.BLUETOOTH_HOST) })
                                 Text("Host BT", style = MaterialTheme.typography.bodySmall)
                             }
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                RadioButton(selected = uiState.connectionMode == ConnectionMode.LAN_HOST, onClick = { viewModel.setConnectionMode(ConnectionMode.LAN_HOST) })
-                                Text("Host LAN", style = MaterialTheme.typography.bodySmall)
-                            }
                         }
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -96,10 +92,6 @@ fun MainScreen(viewModel: MainViewModel = viewModel()) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 RadioButton(selected = uiState.connectionMode == ConnectionMode.BLUETOOTH_CLIENT, onClick = { viewModel.setConnectionMode(ConnectionMode.BLUETOOTH_CLIENT); viewModel.refreshPairedDevices() })
                                 Text("Join BT", style = MaterialTheme.typography.bodySmall)
-                            }
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                RadioButton(selected = uiState.connectionMode == ConnectionMode.LAN_CLIENT, onClick = { viewModel.setConnectionMode(ConnectionMode.LAN_CLIENT) })
-                                Text("Join LAN", style = MaterialTheme.typography.bodySmall)
                             }
                         }
                     }

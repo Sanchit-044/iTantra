@@ -58,6 +58,7 @@ class WifiDirectTransport(
 
     @SuppressLint("MissingPermission") // Location / NEARBY_WIFI_DEVICES checked by the caller.
     override fun openLink(timeoutMs: Long): Link {
+        android.util.Log.d("iTantra-WiFi", "openLink started. Role: $role, Timeout: $timeoutMs")
         val m = manager ?: throw TransportException("this device has no Wi-Fi Direct support")
         val deadline = System.currentTimeMillis() + timeoutMs
 
@@ -84,10 +85,17 @@ class WifiDirectTransport(
             }
 
             if (role == Role.HOST) {
+                android.util.Log.d("iTantra-WiFi", "Host: Creating P2P Group...")
                 val groupCreated = CountDownLatch(1)
                 m.createGroup(ch, object : WifiP2pManager.ActionListener {
-                    override fun onSuccess() { groupCreated.countDown() }
-                    override fun onFailure(reason: Int) { groupCreated.countDown() }
+                    override fun onSuccess() { 
+                        android.util.Log.d("iTantra-WiFi", "Host: Group created successfully")
+                        groupCreated.countDown() 
+                    }
+                    override fun onFailure(reason: Int) { 
+                        android.util.Log.e("iTantra-WiFi", "Host: Failed to create group. Reason: $reason")
+                        groupCreated.countDown() 
+                    }
                 })
                 groupCreated.await(5000, TimeUnit.MILLISECONDS)
                 
@@ -101,21 +109,29 @@ class WifiDirectTransport(
             } else {
                 // Not connected or fast-path failed. Enter robust retry loop.
                 while (System.currentTimeMillis() < deadline) {
+                    android.util.Log.d("iTantra-WiFi", "Client: Starting peer discovery...")
                     peersFound = CountDownLatch(1)
                     connected = CountDownLatch(1)
                     
                     discoverPeers(m, ch)
                     
                     if (peersFound?.await(5000, TimeUnit.MILLISECONDS) != true) {
+                        android.util.Log.d("iTantra-WiFi", "Client: Peer discovery timed out. Retrying...")
                         // Retry discovery
                         continue
                     }
                     
-                    val peer = discoveredPeer ?: continue
+                    val peer = discoveredPeer
+                    if (peer == null) {
+                        android.util.Log.d("iTantra-WiFi", "Client: No target peer found yet. Waiting 2s before retry...")
+                        Thread.sleep(2000)
+                        continue
+                    }
+                    android.util.Log.d("iTantra-WiFi", "Client: Found target peer: ${peer.deviceName} (${peer.deviceAddress})")
                     
                     invite(m, ch, peer)
                     
-                    if (connected?.await(15000, TimeUnit.MILLISECONDS) == true) {
+                    if (connected?.await(30000, TimeUnit.MILLISECONDS) == true) {
                         val info = connectionInfo
                         if (info != null && info.groupFormed && !info.isGroupOwner) {
                             val peerName = peer.deviceName ?: "unknown"
@@ -154,8 +170,9 @@ class WifiDirectTransport(
     private fun invite(m: WifiP2pManager, ch: WifiP2pManager.Channel, peer: WifiP2pDevice) {
         val config = WifiP2pConfig().apply {
             deviceAddress = peer.deviceAddress
-            // Nudge group ownership toward whichever side invites, for predictability.
-            groupOwnerIntent = GROUP_OWNER_INTENT
+            // HACKATHON FIX: We are joining an existing group created by the Host. 
+            // We MUST NOT demand to be the owner, or the connection will instantly fail with a conflict!
+            groupOwnerIntent = 0
         }
         m.connect(ch, config, object : WifiP2pManager.ActionListener {
             override fun onSuccess() = Unit
@@ -167,6 +184,7 @@ class WifiDirectTransport(
     }
 
     private fun acceptAsOwner(peerName: String, peerAddress: String, timeoutMs: Long): Link {
+        android.util.Log.d("iTantra-WiFi", "Host: Opening ServerSocket on port $port, waiting ${timeoutMs}ms for client...")
         val server = ServerSocket().apply {
             reuseAddress = true
             bind(InetSocketAddress(port))
@@ -175,10 +193,12 @@ class WifiDirectTransport(
         serverSocket = server
         return try {
             val socket = server.accept()
+            android.util.Log.d("iTantra-WiFi", "Host: Client connected!")
             server.close()
             serverSocket = null
             socket.toLink(peerName, peerAddress)
         } catch (e: Exception) {
+            android.util.Log.e("iTantra-WiFi", "Host: Failed to accept client socket", e)
             runCatching { server.close() }
             serverSocket = null
             throw TransportException("peer did not open a socket within ${timeoutMs}ms", e)
@@ -188,6 +208,8 @@ class WifiDirectTransport(
     private fun connectToOwner(info: WifiP2pInfo, peerName: String, peerAddress: String, timeoutMs: Long): Link {
         val ownerAddress = info.groupOwnerAddress
             ?: throw TransportException("group owner address was not provided")
+        
+        android.util.Log.d("iTantra-WiFi", "Client: Opening Socket to GO at $ownerAddress:$port, timeout ${timeoutMs}ms")
         val socket = Socket()
         return try {
             socket.bind(null)
@@ -195,8 +217,10 @@ class WifiDirectTransport(
                 InetSocketAddress(ownerAddress, port),
                 timeoutMs.coerceAtMost(Int.MAX_VALUE.toLong()).toInt(),
             )
+            android.util.Log.d("iTantra-WiFi", "Client: Successfully connected to GO socket!")
             socket.toLink(peerName, peerAddress)
         } catch (e: Exception) {
+            android.util.Log.e("iTantra-WiFi", "Client: Failed to connect to GO socket", e)
             runCatching { socket.close() }
             throw TransportException("could not reach the group owner at $ownerAddress:$port", e)
         }
@@ -222,10 +246,10 @@ class WifiDirectTransport(
                 when (intent.action) {
                     WifiP2pManager.WIFI_P2P_PEERS_CHANGED_ACTION ->
                         m.requestPeers(ch) { peers ->
-                            // Look for a peer named "iTantra..." to avoid connecting to random smart TVs
-                            val candidate = peers.deviceList.firstOrNull { 
-                                it.deviceName.contains("iTantra", ignoreCase = true) 
-                            } ?: peers.deviceList.firstOrNull() // fallback to first if none match
+                            // Look for a peer that is ALREADY a Group Owner (our Host device)
+                            val candidate = peers.deviceList.firstOrNull { it.isGroupOwner }
+                                ?: peers.deviceList.firstOrNull { it.deviceName.contains("iTantra", ignoreCase = true) } 
+                                ?: peers.deviceList.firstOrNull() // fallback to first if none match
                             
                             if (candidate != null) {
                                 discoveredPeer = candidate

@@ -34,6 +34,9 @@ class StartPttTransmissionUseCase(
             override fun onFinal(result: SttResult) {
                 if (result.text.isBlank()) return
                 
+                // Show the final transmitted text on the sending phone's UI
+                onPartialResult(result.text)
+                
                 // Emit as a complete sentence packet over transport
                 val packet = Packet.text(
                     type = MessageType.NORMAL,

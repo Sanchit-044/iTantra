@@ -31,9 +31,7 @@ enum class ConnectionMode {
     WIFI_DIRECT_HOST,
     WIFI_DIRECT_CLIENT,
     BLUETOOTH_HOST,
-    BLUETOOTH_CLIENT,
-    LAN_HOST,
-    LAN_CLIENT
+    BLUETOOTH_CLIENT
 }
 
 data class BluetoothDeviceInfo(val name: String, val address: String)
@@ -133,8 +131,6 @@ class MainViewModel @Inject constructor(
                         if (peerAddress == null) throw Exception("Please select a device to connect to")
                         BluetoothTransport(context, keyAgreementProvider, BluetoothTransport.Role.CLIENT, peerAddress)
                     }
-                    ConnectionMode.LAN_HOST -> `in`.gov.itantra.android.transport.LanTransport(context, keyAgreementProvider, `in`.gov.itantra.android.transport.LanTransport.Role.HOST)
-                    ConnectionMode.LAN_CLIENT -> `in`.gov.itantra.android.transport.LanTransport(context, keyAgreementProvider, `in`.gov.itantra.android.transport.LanTransport.Role.CLIENT)
                 }
                 
                 newTransport.setListener(this@MainViewModel)
