@@ -45,9 +45,7 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
-    aaptOptions{
-        ignoreAssetsPattern = "models"
-    }
+
 }
 
 kotlin {
