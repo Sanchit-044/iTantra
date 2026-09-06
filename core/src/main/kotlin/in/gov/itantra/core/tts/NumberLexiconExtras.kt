@@ -48,14 +48,15 @@ internal object NumberLexiconExtras {
         negative: String,
     ): NumberLexicon {
         val prefix = language.code
-        val ones = (0..9).map { "$prefix-n$it" }
-        val teens = (10..19).map { "$prefix-n$it" }
-        val tens = (2..9).map { "$prefix-t${it * 10}" }
-        val combining = (2..9).map { "$prefix-c${it * 10}" }
+        val digitNames = listOf("zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine")
+        val ones = (0..9).map { "$prefix-n-${digitNames[it]}" }
+        val teens = (10..19).map { "$prefix-n-teen-${digitNames[it - 10]}" }
+        val tens = (2..9).map { "$prefix-t-${digitNames[it]}" }
+        val combining = (2..9).map { "$prefix-c-${digitNames[it]}" }
         return NumberLexicon(
             language = language,
             units = NumberLexicon.composeUnits(ones, teens, tens, combining),
-            hundreds = (1..9).map { "$prefix-h${it * 100}" },
+            hundreds = (1..9).map { "$prefix-h-${digitNames[it]}" },
             thousand = thousand,
             lakh = lakh,
             crore = crore,

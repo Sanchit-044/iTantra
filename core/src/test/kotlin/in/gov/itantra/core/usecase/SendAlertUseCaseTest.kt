@@ -75,6 +75,8 @@ private class FakeAlertTransport : Transport {
     override fun connect(timeoutMs: Long) = Unit
     override fun confirmPairing() = Unit
     override fun send(packet: Packet) { sent += packet }
+    override fun requestFloor() = Unit
+    override fun releaseFloor() = Unit
     override fun disconnect() = Unit
     override val lastRoundTripMs: Long? = null
     override val stats = TransportStats()

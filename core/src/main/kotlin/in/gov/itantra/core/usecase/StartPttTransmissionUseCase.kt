@@ -76,6 +76,7 @@ class StartPttTransmissionUseCase(
                         text = text,
                     )
                     try {
+                        transport.send(packet)
                         AppLog.d("StartPttUseCase", "Sent packet live: sq=${packet.sequence}")
                         return
                     } catch (e: Exception) {

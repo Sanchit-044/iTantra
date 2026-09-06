@@ -63,6 +63,7 @@ class ReceivePttTransmissionUseCase(
                 }
 
                 AppLog.d("ReceivePttUseCase", "Feeding ${audioClip.pcm.size} samples to AudioSink")
+                val sink = audioSinkFactory.createSink(audioClip.format)
                 try {
                     var offset = 0
                     while (offset < audioClip.pcm.size) {

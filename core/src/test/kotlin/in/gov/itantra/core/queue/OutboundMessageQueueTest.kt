@@ -187,6 +187,8 @@ private class FakeTransport(
         if (n >= failOn) throw IllegalStateException("link down")
         sent += packet
     }
+    override fun requestFloor() = Unit
+    override fun releaseFloor() = Unit
     override fun disconnect() = Unit
     override val lastRoundTripMs: Long? = null
     override val stats = TransportStats()
