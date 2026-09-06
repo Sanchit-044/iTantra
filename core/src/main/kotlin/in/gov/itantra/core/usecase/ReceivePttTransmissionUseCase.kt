@@ -7,6 +7,7 @@ import `in`.gov.itantra.core.transport.Packet
 import `in`.gov.itantra.core.translate.TranslationEngine
 import `in`.gov.itantra.core.diag.AppLog
 import `in`.gov.itantra.core.translate.translateOrSame
+import `in`.gov.itantra.core.tts.ChunkedSpeaker
 import `in`.gov.itantra.core.tts.TtsEngine
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
@@ -19,6 +20,13 @@ class ReceivePttTransmissionUseCase(
     private val translationEngine: TranslationEngine,
 ) {
     private val playLock = Mutex()
+
+    fun preload(language: Language) {
+        if (ttsEngine.activeLanguage != language) {
+            AppLog.d("ReceivePttUseCase", "Preloading TTS voice for language: $language")
+            ttsEngine.loadVoice(language)
+        }
+    }
 
     /**
      * Live walkie-talkie path only. [MessageType.QUEUED] is ignored here so a
@@ -55,23 +63,12 @@ class ReceivePttTransmissionUseCase(
                     AppLog.d("ReceivePttUseCase", "Loading TTS voice for language: $language")
                     ttsEngine.loadVoice(language)
                 }
-                AppLog.d("ReceivePttUseCase", "Synthesizing text...")
-                val audioClip = ttsEngine.synthesize(cleaned, language)
-                if (audioClip.pcm.isEmpty()) {
-                    AppLog.w("ReceivePttUseCase", "Synthesized audio is empty!")
-                    return@withContext
-                }
-
-                AppLog.d("ReceivePttUseCase", "Feeding ${audioClip.pcm.size} samples to AudioSink")
+                AppLog.d("ReceivePttUseCase", "Speaking text chunked...")
+                val sink = audioSinkFactory.createSink(ttsEngine.outputFormat)
                 try {
-                    var offset = 0
-                    while (offset < audioClip.pcm.size) {
-                        val remaining = audioClip.pcm.size - offset
-                        val written = sink.write(audioClip.pcm, offset, remaining)
-                        if (written <= 0) break
-                        offset += written
-                    }
-                    sink.drain()
+                    val speaker = ChunkedSpeaker(ttsEngine)
+                    val handle = speaker.speak(cleaned, language, sink)
+                    handle.await()
                 } finally {
                     sink.close()
                 }

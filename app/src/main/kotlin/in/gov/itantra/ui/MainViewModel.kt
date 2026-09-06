@@ -115,6 +115,14 @@ class MainViewModel @Inject constructor(
                         installedLanguages = snap.installed,
                     )
                 }
+                viewModelScope.launch(Dispatchers.IO) {
+                    try {
+                        startPttUseCase.preload(snap.current)
+                        receivePttUseCase.preload(snap.current)
+                    } catch (e: Exception) {
+                        AppLog.w("MainViewModel", "Failed to preload models: ${e.message}")
+                    }
+                }
             }
         }
         outboundQueue.purgeExpired()
@@ -214,6 +222,7 @@ class MainViewModel @Inject constructor(
                         _uiState.update { it.copy(recognizedText = partialText) }
                     },
                     onFinalResult = { finalText ->
+                        _uiState.update { it.copy(recognizedText = finalText) }
                         val refined = languageIdEngine.detectFromText(finalText, snap.installedLanguages)
                         if (refined != null && refined != spoken) {
                             viewModelScope.launch { languageSettings.setCurrentLanguage(refined) }
@@ -340,7 +349,8 @@ class MainViewModel @Inject constructor(
                 _uiState.update { it.copy(pairingConfirmed = false, error = null) }
                 diagnostics.attachedTransport = newTransport
                 diagnostics.currentLanguage = _uiState.value.currentLanguage
-                newTransport.connect()
+                // Pass a 2-minute timeout since P2P setup involves manual user discovery and pairing
+                newTransport.connect(120_000)
             } catch (e: Exception) {
                 _uiState.update { it.copy(error = "Connection failed: ${e.message}") }
             }
@@ -431,7 +441,9 @@ class MainViewModel @Inject constructor(
                     onPartialResult = { partial ->
                         _uiState.update { it.copy(recognizedText = partial) }
                     },
-                    onFinalResult = { },
+                    onFinalResult = { finalText ->
+                        _uiState.update { it.copy(recognizedText = finalText) }
+                    },
                     onQueued = { publishQueues() },
                     onError = { message ->
                         _uiState.update { it.copy(isSpeaking = false, recognizedText = "Error: $message") }

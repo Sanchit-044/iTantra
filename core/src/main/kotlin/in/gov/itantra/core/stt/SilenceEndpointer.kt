@@ -143,8 +143,8 @@ class SilenceEndpointer(
     }
 
     companion object {
-        /** The sentence-boundary silence specified for iTantra. */
-        const val DEFAULT_SILENCE_TIMEOUT_MS = 800L
+        /** Default silent period before closing an utterance. */
+        const val DEFAULT_SILENCE_TIMEOUT_MS = 1200L
 
         /**
          * Starts low and is raised by observed ambient noise. Never seeded from the

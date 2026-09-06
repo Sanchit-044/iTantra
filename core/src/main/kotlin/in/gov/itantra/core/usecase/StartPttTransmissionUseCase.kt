@@ -26,6 +26,13 @@ class StartPttTransmissionUseCase(
     private val outboundQueue: OutboundMessageQueue,
     private val sequence: AtomicInteger = AtomicInteger(0),
 ) {
+    fun preload(language: Language) {
+        if (sttEngine.activeLanguage != language) {
+            AppLog.d("StartPttUseCase", "Preloading STT model for language: $language")
+            sttEngine.loadModel(language)
+        }
+    }
+
     fun execute(
         language: Language,
         transport: Transport?,
@@ -65,33 +72,44 @@ class StartPttTransmissionUseCase(
                 val text = result.text.trim()
                 AppLog.d("StartPttUseCase", "Final STT text ready: $text")
                 
-                onPartialResult(text)
-                onFinalResult(text)
+                try {
+                    onPartialResult(text)
+                    onFinalResult(text)
 
-                if (sendLive && transport != null) {
-                    val packet = Packet.text(
-                        type = MessageType.NORMAL,
-                        language = language,
-                        sequence = sequence.incrementAndGet(),
-                        text = text,
-                    )
-                    try {
-                        AppLog.d("StartPttUseCase", "Sent packet live: sq=${packet.sequence}")
-                        return
-                    } catch (e: Exception) {
-                        AppLog.w("StartPttUseCase", "Failed to send live packet: ${e.message}, queuing it instead")
-                        // Fall through and queue so the utterance is not lost.
+                    if (sendLive && transport != null) {
+                        val packet = Packet.text(
+                            type = MessageType.NORMAL,
+                            language = language,
+                            sequence = sequence.incrementAndGet(),
+                            text = text,
+                        )
+                        try {
+                            transport.send(packet)
+                            AppLog.d("StartPttUseCase", "Sent packet live: sq=${packet.sequence}")
+                            return
+                        } catch (e: Exception) {
+                            AppLog.w("StartPttUseCase", "Failed to send live packet: ${e.message}, queuing it instead")
+                            // Fall through and queue so the utterance is not lost.
+                        }
                     }
-                }
 
-                AppLog.d("StartPttUseCase", "Queuing offline packet")
-                val queued = outboundQueue.enqueue(language, text)
-                if (queued != null) onQueued(queued)
+                    AppLog.d("StartPttUseCase", "Queuing offline packet")
+                    val queued = outboundQueue.enqueue(language, text)
+                    if (queued != null) onQueued(queued)
+                } finally {
+                    AppLog.d("StartPttUseCase", "Releasing floor after STT final")
+                    transport?.releaseFloor()
+                }
             }
 
             override fun onError(error: SttException) {
-                AppLog.e("StartPttUseCase", "STT Error: ${error.message}", error)
-                onError(error.message ?: "Speech recognition failed")
+                try {
+                    AppLog.e("StartPttUseCase", "STT Error: ${error.message}", error)
+                    onError(error.message ?: "Speech recognition failed")
+                } finally {
+                    AppLog.d("StartPttUseCase", "Releasing floor after STT error")
+                    transport?.releaseFloor()
+                }
             }
         })
     }

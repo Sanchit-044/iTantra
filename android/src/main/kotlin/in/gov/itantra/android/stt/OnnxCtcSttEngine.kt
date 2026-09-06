@@ -75,8 +75,8 @@ class OnnxCtcSttEngine(
     private val partialInFlight = AtomicBoolean(false)
 
     private var worker: Thread? = null
-    private val partialExecutor = Executors.newSingleThreadExecutor { r ->
-        Thread(r, "itantra-stt-partial").apply { isDaemon = true }
+    private val decodeExecutor = Executors.newSingleThreadExecutor { r ->
+        Thread(r, "itantra-stt-decode").apply { isDaemon = true }
     }
 
     override fun loadModel(language: Language) {
@@ -131,7 +131,7 @@ class OnnxCtcSttEngine(
 
     override fun close() {
         unloadModel()
-        partialExecutor.shutdownNow()
+        decodeExecutor.shutdownNow()
     }
 
     private fun captureLoop(language: Language, listener: SttListener) {
@@ -164,20 +164,27 @@ class OnnxCtcSttEngine(
 
                     SilenceEndpointer.Event.ENDPOINT -> {
                         // Pause Detection: The speaker paused for a breath. 
-                        // Decode the chunk, append with a comma to recreate cadence, and reset buffer!
+                        // Queue the chunk for background decode, and reset buffer!
                         if (utterance.size > 0) {
                             val clip = utterance.snapshot()
-                            val text = decoder.decode(clip, language)
-                            if (text.isNotBlank()) {
-                                if (fullTranscript.isNotEmpty()) fullTranscript.append(", ")
-                                fullTranscript.append(text)
-                                
-                                // Fire a partial to immediately show the punctuation
-                                listener.onPartial(fullTranscript.toString())
+                            speaking = false
+                            
+                            decodeExecutor.execute {
+                                try {
+                                    val text = decoder.decode(clip, language)
+                                    if (text.isNotBlank()) {
+                                        if (fullTranscript.isNotEmpty()) fullTranscript.append(", ")
+                                        fullTranscript.append(text)
+                                        
+                                        // Fire a partial to immediately show the punctuation
+                                        if (listening.get()) listener.onPartial(fullTranscript.toString())
+                                    }
+                                } catch (e: Exception) {
+                                    // Ignore background endpoint decode errors
+                                }
                             }
                             utterance.reset()
                             endpointer.reset()
-                            speaking = false
                         }
                     }
 
@@ -195,7 +202,7 @@ class OnnxCtcSttEngine(
                 val now = System.currentTimeMillis()
                 if (speaking && now - lastPartialAtMs >= partialIntervalMs) {
                     lastPartialAtMs = now
-                    schedulePartial(utterance.snapshot(), language, listener, fullTranscript.toString())
+                    schedulePartial(utterance.snapshot(), language, listener, fullTranscript)
                 }
             }
 
@@ -216,32 +223,44 @@ class OnnxCtcSttEngine(
             val endOfSpeechMs = System.currentTimeMillis()
             val clip = utterance.snapshot()
             
-            // Decode the final trailing chunk
-            val text = if (clip.pcm.isNotEmpty()) decoder.decode(clip, language) else ""
-            
-            var finalTranscript = fullTranscript.toString()
-            if (text.isNotBlank()) {
-                if (finalTranscript.isNotEmpty()) finalTranscript += ", "
-                finalTranscript += text
+            // Queue the final decode and block the capture thread until it's done.
+            // This ensures onFinal is called in order, strictly after all queued chunks.
+            val latch = java.util.concurrent.CountDownLatch(1)
+            decodeExecutor.execute {
+                try {
+                    // Decode the final trailing chunk
+                    val text = if (clip.pcm.isNotEmpty()) decoder.decode(clip, language) else ""
+                    
+                    if (text.isNotBlank()) {
+                        if (fullTranscript.isNotEmpty()) fullTranscript.append(", ")
+                        fullTranscript.append(text)
+                    }
+                    
+                    val finalisationMs = System.currentTimeMillis() - endOfSpeechMs
+
+                    finalisationLatency.recordMs(finalisationMs)
+                    realTimeFactor.record(finalisationMs, clip.durationMs)
+
+                    listener.onFinal(
+                        SttResult(
+                            text = fullTranscript.toString(),
+                            language = language,
+                            // Greedy CTC exposes no calibrated confidence. Reporting a
+                            // fabricated one would be worse than reporting none.
+                            confidence = null,
+                            trigger = trigger,
+                            utteranceDurationMs = endOfSpeechMs - startedAtMs,
+                            finalisationLatencyMs = finalisationMs,
+                        )
+                    )
+                } catch (e: Exception) {
+                    state = SttState.ERROR
+                    listener.onError(SttException("Final STT decode failed", e))
+                } finally {
+                    latch.countDown()
+                }
             }
-            
-            val finalisationMs = System.currentTimeMillis() - endOfSpeechMs
-
-            finalisationLatency.recordMs(finalisationMs)
-            realTimeFactor.record(finalisationMs, clip.durationMs)
-
-            listener.onFinal(
-                SttResult(
-                    text = finalTranscript,
-                    language = language,
-                    // Greedy CTC exposes no calibrated confidence. Reporting a
-                    // fabricated one would be worse than reporting none.
-                    confidence = null,
-                    trigger = trigger,
-                    utteranceDurationMs = endOfSpeechMs - startedAtMs,
-                    finalisationLatencyMs = finalisationMs,
-                )
-            )
+            latch.await()
         } catch (e: Exception) {
             state = SttState.ERROR
             listener.onError(SttException("STT capture loop failed", e))
@@ -254,11 +273,12 @@ class OnnxCtcSttEngine(
     }
 
     /** Runs a partial decode unless one is already in flight; skips rather than queues. */
-    private fun schedulePartial(clip: AudioClip, language: Language, listener: SttListener, prefix: String) {
+    private fun schedulePartial(clip: AudioClip, language: Language, listener: SttListener, fullTranscript: StringBuilder) {
         if (!partialInFlight.compareAndSet(false, true)) return
-        partialExecutor.execute {
+        decodeExecutor.execute {
             try {
                 val text = decoder.decode(clip, language)
+                val prefix = fullTranscript.toString()
                 val fullText = if (prefix.isEmpty()) text else if (text.isBlank()) prefix else "$prefix, $text"
                 if (fullText.isNotBlank() && listening.get()) listener.onPartial(fullText)
             } catch (e: Exception) {
