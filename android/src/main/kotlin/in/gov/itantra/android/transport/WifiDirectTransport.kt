@@ -71,7 +71,17 @@ class WifiDirectTransport(
 
         try {
             // Fast-path: Check if already connected via sticky broadcast
-            if (connected?.await(1000, TimeUnit.MILLISECONDS) == true) {
+            val fastPathCheck = CountDownLatch(1)
+            m.requestConnectionInfo(ch) { info ->
+                if (info.groupFormed) {
+                    connectionInfo = info
+                    connected?.countDown()
+                }
+                fastPathCheck.countDown()
+            }
+            fastPathCheck.await(2000, TimeUnit.MILLISECONDS)
+            
+            if (connected?.await(100, TimeUnit.MILLISECONDS) == true) {
                 val info = connectionInfo
                 if (info != null && info.groupFormed) {
                     val peerName = discoveredPeer?.deviceName ?: "Connected Peer"
@@ -85,24 +95,41 @@ class WifiDirectTransport(
             }
 
             if (role == Role.HOST) {
-                android.util.Log.d("iTantra-WiFi", "Host: Creating P2P Group...")
-                val groupCreated = CountDownLatch(1)
-                m.createGroup(ch, object : WifiP2pManager.ActionListener {
-                    override fun onSuccess() { 
-                        android.util.Log.d("iTantra-WiFi", "Host: Group created successfully")
-                        groupCreated.countDown() 
+                while (System.currentTimeMillis() < deadline) {
+                    android.util.Log.d("iTantra-WiFi", "Host: Creating P2P Group...")
+                    val groupCreated = CountDownLatch(1)
+                    var createFailedReason: Int? = null
+                    m.createGroup(ch, object : WifiP2pManager.ActionListener {
+                        override fun onSuccess() { 
+                            android.util.Log.d("iTantra-WiFi", "Host: Group created successfully")
+                            groupCreated.countDown() 
+                        }
+                        override fun onFailure(reason: Int) { 
+                            android.util.Log.e("iTantra-WiFi", "Host: Failed to create group. Reason: $reason")
+                            createFailedReason = reason
+                            groupCreated.countDown() 
+                        }
+                    })
+                    groupCreated.await(5000, TimeUnit.MILLISECONDS)
+                    
+                    if (createFailedReason != null) {
+                        if (createFailedReason == WifiP2pManager.BUSY) {
+                            android.util.Log.d("iTantra-WiFi", "Host: Device BUSY, removing stale group before retry")
+                            m.removeGroup(ch, null)
+                        }
+                        Thread.sleep(1000)
+                        continue
                     }
-                    override fun onFailure(reason: Int) { 
-                        android.util.Log.e("iTantra-WiFi", "Host: Failed to create group. Reason: $reason")
-                        groupCreated.countDown() 
-                    }
-                })
-                groupCreated.await(5000, TimeUnit.MILLISECONDS)
-                
-                if (connected?.await(10000, TimeUnit.MILLISECONDS) == true) {
-                    val info = connectionInfo
-                    if (info != null && info.groupFormed && info.isGroupOwner) {
-                        return acceptAsOwner("Connected Peer", "unknown", remaining(deadline))
+
+                    if (connected?.await(10000, TimeUnit.MILLISECONDS) == true) {
+                        val info = connectionInfo
+                        if (info != null && info.groupFormed && info.isGroupOwner) {
+                            return acceptAsOwner("Connected Peer", "unknown", remaining(deadline))
+                        }
+                    } else {
+                        android.util.Log.d("iTantra-WiFi", "Host: Timeout waiting for interface to come up. Cleaning up and retrying...")
+                        m.removeGroup(ch, null)
+                        Thread.sleep(1000)
                     }
                 }
                 throw TransportException("Failed to host Wi-Fi Direct group")
@@ -129,15 +156,29 @@ class WifiDirectTransport(
                     }
                     android.util.Log.d("iTantra-WiFi", "Client: Found target peer: ${peer.deviceName} (${peer.deviceAddress})")
                     
-                    invite(m, ch, peer)
+                    val success = invite(m, ch, peer)
+                    if (!success) {
+                        android.util.Log.e("iTantra-WiFi", "Client: invite failed. Reason: $lastFailureReason")
+                        if (lastFailureReason == WifiP2pManager.BUSY) {
+                            android.util.Log.d("iTantra-WiFi", "Client: Device BUSY, cancelling connect before retry")
+                            m.cancelConnect(ch, null)
+                            m.removeGroup(ch, null)
+                        }
+                        Thread.sleep(1000)
+                        continue
+                    }
                     
-                    if (connected?.await(30000, TimeUnit.MILLISECONDS) == true) {
+                    if (connected?.await(20000, TimeUnit.MILLISECONDS) == true) {
                         val info = connectionInfo
                         if (info != null && info.groupFormed && !info.isGroupOwner) {
                             val peerName = peer.deviceName ?: "unknown"
                             val peerAddr = peer.deviceAddress ?: "unknown"
                             return connectToOwner(info, peerName, peerAddr, remaining(deadline))
                         }
+                    } else {
+                        android.util.Log.d("iTantra-WiFi", "Client: Timeout waiting for group to form. Cleaning up...")
+                        m.cancelConnect(ch, null)
+                        m.removeGroup(ch, null)
                     }
                 }
                 throw TransportException("Failed to connect to Host within ${timeoutMs}ms master timeout")
@@ -167,20 +208,27 @@ class WifiDirectTransport(
     }
 
     @SuppressLint("MissingPermission")
-    private fun invite(m: WifiP2pManager, ch: WifiP2pManager.Channel, peer: WifiP2pDevice) {
+    private fun invite(m: WifiP2pManager, ch: WifiP2pManager.Channel, peer: WifiP2pDevice): Boolean {
         val config = WifiP2pConfig().apply {
             deviceAddress = peer.deviceAddress
             // HACKATHON FIX: We are joining an existing group created by the Host. 
             // We MUST NOT demand to be the owner, or the connection will instantly fail with a conflict!
             groupOwnerIntent = 0
         }
+        val inviteSent = CountDownLatch(1)
+        var success = false
         m.connect(ch, config, object : WifiP2pManager.ActionListener {
-            override fun onSuccess() = Unit
+            override fun onSuccess() {
+                success = true
+                inviteSent.countDown()
+            }
             override fun onFailure(reason: Int) {
                 lastFailureReason = reason
-                connected?.countDown()
+                inviteSent.countDown()
             }
         })
+        inviteSent.await(5000, TimeUnit.MILLISECONDS)
+        return success
     }
 
     private fun acceptAsOwner(peerName: String, peerAddress: String, timeoutMs: Long): Link {
