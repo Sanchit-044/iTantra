@@ -1,6 +1,6 @@
 ---
 description: STT, TTS, PTT, alerts, queue, and transport behavior
-globs: iTantra/**/{stt,tts,translate,usecase,transport,crypto,alert,queue,diag}/**/*.kt
+globs: iTantra/**/{stt,tts,translate,usecase,transport,crypto,alert,queue,diag,discover}/**/*.kt
 alwaysApply: false
 ---
 
@@ -14,3 +14,4 @@ alwaysApply: false
 - **Alerts (UI + engine):** packet `0x02`, `SendAlertUseCase` + `AlertScreen`. Send only when connected and paired. Auto-play via `AlertPlayer` (alarm volume). Missing WAV → TTS. Next alert queues; NORMAL waits (`tryPlayNormal`).
 - **Queue:** `QUEUED` `0x09`, 30-day TTL. Inbox does not autoplay. Alerts are not queued.
 - Analysis tab reads `AndroidDiagnosticsService`. Do not invent metrics.
+- Radar is discovery only: Wi-Fi Direct peers + BLE ads of our UUID. RSSI → near/mid/far. Tap joins via existing connect. Not GPS.

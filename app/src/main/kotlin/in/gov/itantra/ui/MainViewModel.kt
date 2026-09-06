@@ -15,6 +15,7 @@ import `in`.gov.itantra.android.transport.LanTransport
 import `in`.gov.itantra.android.transport.StreamTransport
 import `in`.gov.itantra.android.transport.WifiDirectTransport
 import `in`.gov.itantra.core.Language
+import `in`.gov.itantra.core.discover.NearbyPeer
 import `in`.gov.itantra.core.alert.AlertContent
 import `in`.gov.itantra.core.alert.AlertPlayer
 import `in`.gov.itantra.core.alert.AlertTemplate
@@ -347,7 +348,22 @@ class MainViewModel @Inject constructor(
     }
 
     // --- Actions ---
-    fun connect(peerAddress: String? = null) {
+    fun connectToNearbyPeer(peer: NearbyPeer) {
+        when {
+            peer.hasWifi -> {
+                setConnectionMode(ConnectionMode.WIFI_DIRECT_CLIENT)
+                connect(peerAddress = peer.wifiAddress, preferredWifiAddress = peer.wifiAddress)
+            }
+            peer.hasBluetooth -> {
+                val address = peer.bluetoothAddress ?: return
+                setConnectionMode(ConnectionMode.BLUETOOTH_CLIENT)
+                selectDevice(address)
+                connect(peerAddress = address)
+            }
+        }
+    }
+
+    fun connect(peerAddress: String? = null, preferredWifiAddress: String? = null) {
         viewModelScope.launch(Dispatchers.IO) {
             try {
                 transport?.setListener(null)
@@ -355,7 +371,12 @@ class MainViewModel @Inject constructor(
 
                 val newTransport = when (_uiState.value.connectionMode) {
                     ConnectionMode.WIFI_DIRECT_HOST -> WifiDirectTransport(context, keyAgreementProvider, WifiDirectTransport.Role.HOST)
-                    ConnectionMode.WIFI_DIRECT_CLIENT -> WifiDirectTransport(context, keyAgreementProvider, WifiDirectTransport.Role.CLIENT)
+                    ConnectionMode.WIFI_DIRECT_CLIENT -> WifiDirectTransport(
+                        context,
+                        keyAgreementProvider,
+                        WifiDirectTransport.Role.CLIENT,
+                        preferredPeerAddress = preferredWifiAddress ?: peerAddress,
+                    )
                     ConnectionMode.BLUETOOTH_HOST -> BluetoothTransport(context, keyAgreementProvider, BluetoothTransport.Role.HOST)
                     ConnectionMode.BLUETOOTH_CLIENT -> {
                         val address = peerAddress ?: _uiState.value.selectedDeviceAddress
