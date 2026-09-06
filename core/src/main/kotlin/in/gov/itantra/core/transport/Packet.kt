@@ -39,6 +39,12 @@ enum class MessageType(val wire: Byte) {
      * must not auto-play it -- the operator opens it from the inbox.
      */
     QUEUED(0x09),
+
+    /**
+     * Operator identity after pairing. Name plus an optional tiny JPEG.
+     * Never played as speech.
+     */
+    PROFILE(0x0A),
     ;
 
     val isFloorControl: Boolean

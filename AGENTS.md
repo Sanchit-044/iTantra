@@ -47,8 +47,9 @@ App flow: first launch → language picker → download selected packs → **Tal
 - LID: `ScriptLanguageId`, `LanguageIdEngine.resolveSpokenLanguage`
 - Translation: `TranslationEngine`, `DictionaryTranslationEngine` (demo phrases only)
 - Packs: `LanguagePackManager`, `android/.../pack/LocalLanguagePackManager`
-- UI: `ITantraApp` (Talk \| Alert \| Analysis), `LanguageSelectionScreen`, `MainScreen`, `AlertScreen`, `DiagnosticsScreen`, `MainViewModel`
-- Persistence: `PrefsLanguageSettingsStore` (`setupDone`, `installed`, `current`)
+- UI: `ITantraApp` (Talk \| Alert \| Analysis), `ProfileScreen`, `LanguageSelectionScreen`, `MainScreen`, `AlertScreen`, `DiagnosticsScreen`, `MainViewModel`
+- Persistence: `PrefsLanguageSettingsStore` (`setupDone`, `installed`, `current`); `FileProfileStore` (name + `filesDir/profile/avatar.jpg`)
+- After pairing confirm: PROFILE `0x0A` (name + thumbnail). `UiState.localProfile` / `peerProfile` for Talk and the map branch.
 
 ## Docs vs code
 

@@ -21,6 +21,11 @@ import `in`.gov.itantra.core.alert.AlertTemplate
 import `in`.gov.itantra.core.alert.IncomingAlert
 import `in`.gov.itantra.core.crypto.KeyAgreementProvider
 import `in`.gov.itantra.core.lang.LanguageSettingsStore
+import `in`.gov.itantra.core.profile.OperatorProfile
+import `in`.gov.itantra.core.profile.ProfileCodec
+import `in`.gov.itantra.profile.FileProfileStore
+import java.io.File
+import java.util.concurrent.atomic.AtomicInteger
 import `in`.gov.itantra.core.stt.LanguageIdEngine
 import `in`.gov.itantra.core.stt.resolveSpokenLanguage
 import `in`.gov.itantra.core.translate.TranslationEngine
@@ -79,7 +84,15 @@ data class UiState(
     val outboundFailed: Int = 0,
     val inbox: List<InboxMessage> = emptyList(),
     val playingInboxId: String? = null,
-)
+    val localProfile: OperatorProfile = OperatorProfile(),
+    val peerProfile: OperatorProfile? = null,
+    val radioPeerName: String? = null,
+) {
+    val talkingToName: String
+        get() = peerProfile?.displayName
+            ?: radioPeerName?.takeIf { it.isNotBlank() }
+            ?: OperatorProfile.FALLBACK_NAME
+}
 
 @HiltViewModel
 @SuppressLint("MissingPermission")
@@ -99,6 +112,7 @@ class MainViewModel @Inject constructor(
     private val outboundQueue: OutboundMessageQueue,
     private val inbox: InboundMessageInbox,
     private val notifier: QueuedMessageNotifier,
+    private val profileStore: FileProfileStore,
 ) : ViewModel(), TransportListener {
 
     private val _uiState = MutableStateFlow(UiState())
@@ -118,6 +132,11 @@ class MainViewModel @Inject constructor(
                         installedLanguages = snap.installed,
                     )
                 }
+            }
+        }
+        viewModelScope.launch {
+            profileStore.profile.collect { snap ->
+                _uiState.update { it.copy(localProfile = snap) }
             }
         }
         outboundQueue.purgeExpired()
@@ -165,6 +184,8 @@ class MainViewModel @Inject constructor(
                 connectionState = state,
                 pairingConfirmed = if (stillLinked) it.pairingConfirmed else false,
                 pairingInfo = if (stillLinked) it.pairingInfo else null,
+                peerProfile = if (stillLinked) it.peerProfile else null,
+                radioPeerName = if (stillLinked) it.radioPeerName else null,
             )
         }
         if (state == ConnectionState.DISCONNECTED || state == ConnectionState.FAILED) {
@@ -252,7 +273,14 @@ class MainViewModel @Inject constructor(
     }
 
     override fun onPairingCodeAvailable(info: PairingInfo) {
-        _uiState.update { it.copy(pairingInfo = info, pairingConfirmed = false) }
+        _uiState.update {
+            it.copy(
+                pairingInfo = info,
+                pairingConfirmed = false,
+                radioPeerName = info.peerName,
+                peerProfile = null,
+            )
+        }
     }
 
     override fun onReceive(packet: Packet) {
@@ -289,6 +317,7 @@ class MainViewModel @Inject constructor(
                         drainDeferredNormals()
                     }
                     MessageType.NORMAL -> playNormalOrDefer(packet)
+                    MessageType.PROFILE -> handlePeerProfile(packet)
                     else -> Unit
                 }
             } catch (e: TranslationUnavailableException) {
@@ -357,7 +386,9 @@ class MainViewModel @Inject constructor(
 
                 newTransport.setListener(this@MainViewModel)
                 transport = newTransport
-                _uiState.update { it.copy(pairingConfirmed = false, error = null) }
+                _uiState.update {
+                    it.copy(pairingConfirmed = false, error = null, peerProfile = null)
+                }
                 diagnostics.attachedTransport = newTransport
                 diagnostics.currentLanguage = _uiState.value.currentLanguage
                 newTransport.connect()
@@ -370,7 +401,9 @@ class MainViewModel @Inject constructor(
     fun disconnect() {
         transport?.disconnect()
         // Keep the last transport attached so session counters remain visible.
-        _uiState.update { it.copy(pairingConfirmed = false, pairingInfo = null) }
+        _uiState.update {
+            it.copy(pairingConfirmed = false, pairingInfo = null, peerProfile = null, radioPeerName = null)
+        }
     }
 
     fun confirmPairing() {
@@ -382,12 +415,15 @@ class MainViewModel @Inject constructor(
             return
         }
         _uiState.update { it.copy(pairingInfo = null, pairingConfirmed = true) }
+        sendLocalProfile()
         flushQueue()
     }
 
     fun dismissPairing() {
         transport?.disconnect()
-        _uiState.update { it.copy(pairingInfo = null, pairingConfirmed = false) }
+        _uiState.update {
+            it.copy(pairingInfo = null, pairingConfirmed = false, peerProfile = null, radioPeerName = null)
+        }
     }
 
     fun selectDevice(address: String) {
@@ -497,8 +533,57 @@ class MainViewModel @Inject constructor(
         inbox.discard(id)
         publishQueues()
     }
+    private val profileSequence = AtomicInteger(0)
+
+    private fun sendLocalProfile() {
+        val tx = transport ?: return
+        if (!isLiveReady()) return
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val local = profileStore.snapshot
+                val payload = ProfileCodec.encode(local.name, profileStore.thumbnailJpeg())
+                tx.send(
+                    Packet(
+                        type = MessageType.PROFILE,
+                        language = _uiState.value.currentLanguage,
+                        sequence = profileSequence.incrementAndGet(),
+                        timestampMs = System.currentTimeMillis(),
+                        payload = payload,
+                    )
+                )
+            } catch (e: Exception) {
+                AppLog.w("MainViewModel", "PROFILE send failed: ${e.message}")
+            }
+        }
+    }
+
+    private fun handlePeerProfile(packet: Packet) {
+        val decoded = ProfileCodec.decode(packet.payload) ?: return
+        val cachedPath = writePeerThumbnail(decoded.thumbnailJpeg)
+        _uiState.update {
+            it.copy(
+                peerProfile = decoded.copy(
+                    photoPath = cachedPath,
+                    photoPresent = cachedPath != null || decoded.photoPresent,
+                ),
+            )
+        }
+    }
+
+    private fun writePeerThumbnail(jpeg: ByteArray?): String? {
+        if (jpeg == null || jpeg.isEmpty()) return null
+        return try {
+            val file = File(context.cacheDir, PEER_THUMB_FILE)
+            file.writeBytes(jpeg)
+            file.absolutePath
+        } catch (_: Exception) {
+            null
+        }
+    }
+
     companion object {
         private const val MAX_DEFERRED_NORMAL = 8
+        private const val PEER_THUMB_FILE = "peer-avatar.jpg"
     }
 
     private fun handleQueuedInbound(packet: Packet) {
