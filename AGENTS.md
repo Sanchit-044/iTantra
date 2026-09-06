@@ -47,9 +47,15 @@ App flow: first launch → language picker → download selected packs → **Tal
 - LID: `ScriptLanguageId`, `LanguageIdEngine.resolveSpokenLanguage`
 - Translation: `TranslationEngine`, `DictionaryTranslationEngine` (demo phrases only)
 - Packs: `LanguagePackManager`, `android/.../pack/LocalLanguagePackManager`
+<<<<<<< HEAD
 - UI: `ITantraApp` (Talk \| Alert \| Analysis \| Radar), `LanguageSelectionScreen`, `MainScreen`, `AlertScreen`, `DiagnosticsScreen`, `RadarScreen`, `MainViewModel`
 - Persistence: `PrefsLanguageSettingsStore` (`setupDone`, `installed`, `current`, `uiLanguage`)
 - App chrome: `UiStrings` keyed by `uiLanguage` (English ∪ installed). Speech `current` is separate.
+=======
+- UI: `ITantraApp` (Talk \| Alert \| Analysis), `ProfileScreen`, `LanguageSelectionScreen`, `MainScreen`, `AlertScreen`, `DiagnosticsScreen`, `MainViewModel`
+- Persistence: `PrefsLanguageSettingsStore` (`setupDone`, `installed`, `current`); `FileProfileStore` (name + `filesDir/profile/avatar.jpg`)
+- After pairing confirm: PROFILE `0x0A` (name + thumbnail). `UiState.localProfile` / `peerProfile` for Talk and the map branch.
+>>>>>>> origin/feat/profile
 
 ## Docs vs code
 

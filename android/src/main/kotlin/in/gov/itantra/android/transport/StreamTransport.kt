@@ -376,7 +376,8 @@ abstract class StreamTransport(
                 }
             }
 
-            MessageType.NORMAL, MessageType.ALERT, MessageType.QUEUED -> listener?.onReceive(packet)
+            MessageType.NORMAL, MessageType.ALERT, MessageType.QUEUED, MessageType.PROFILE ->
+                listener?.onReceive(packet)
 
             MessageType.FLOOR_REQUEST,
             MessageType.FLOOR_GRANT,

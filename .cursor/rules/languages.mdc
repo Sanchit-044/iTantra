@@ -16,4 +16,6 @@ alwaysApply: true
 - Missing translation → user-visible error / download, not wrong-voice TTS.
 - Packs: install only ticked languages. `INTERNET` is for packs only.
 
-Picker: `LanguageSelectionScreen` (first launch + Settings). Persist: `PrefsLanguageSettingsStore`. After a language is added, also add `AlertTemplate.phrase()` for that language.
+Picker: `LanguageSelectionScreen` (after compulsory profile, and Settings). Persist: `PrefsLanguageSettingsStore`. After a language is added, also add `AlertTemplate.phrase()` for that language.
+
+Profile (name + photo) is separate from speech `current`. After pairing, PROFILE `0x0A` carries the operator name; STT/TTS are unchanged.

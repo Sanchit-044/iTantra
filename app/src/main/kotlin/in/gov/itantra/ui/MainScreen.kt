@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Button
@@ -62,6 +63,23 @@ fun MainScreen(
                     ),
                     style = MaterialTheme.typography.bodyMedium
                 )
+                if (uiState.pairingConfirmed || uiState.peerProfile != null) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.padding(top = 8.dp),
+                    ) {
+                        ProfileAvatar(
+                            path = uiState.peerProfile?.photoPath,
+                            bytes = uiState.peerProfile?.thumbnailJpeg,
+                            modifier = Modifier.size(36.dp),
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            text = "Talking to ${uiState.talkingToName}",
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                    }
+                }
             }
             TextButton(onClick = onOpenSettings) {
                 Text(chrome.settings)

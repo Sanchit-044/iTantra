@@ -26,6 +26,7 @@ class PacketCodecTest {
         assertEquals(types.size, types.toSet().size)
         assertEquals(0x05, MessageType.FLOOR_REQUEST.wire)
         assertEquals(0x08, MessageType.FLOOR_RELEASE.wire)
+        assertEquals(0x0A, MessageType.PROFILE.wire)
     }
 
     @Test
@@ -53,6 +54,24 @@ class PacketCodecTest {
         val decoded = PacketCodec.decodeBody(bodies[0], c)
         assertEquals(original, decoded)
         assertEquals("बाढ़ का पानी बढ़ रहा है", decoded.text)
+    }
+
+    @Test
+    fun `round trips a profile packet`() {
+        val c = crypto()
+        val original = Packet(
+            type = MessageType.PROFILE,
+            language = Language.HINDI,
+            sequence = 7,
+            timestampMs = 1_700_000_000_000L,
+            payload = byteArrayOf(1, 2, 3, 4),
+        )
+        val decoded = PacketCodec.decodeBody(
+            FrameReader().offer(PacketCodec.encode(original, c)).single(),
+            c,
+        )
+        assertEquals(original, decoded)
+        assertEquals(MessageType.PROFILE, decoded.type)
     }
 
     @Test

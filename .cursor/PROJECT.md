@@ -47,7 +47,8 @@ Each phone stores:
 - `installed` — languages the user ticked (packs on disk)
 - `current` — the one language used for **both STT and TTS**
 - `uiLanguage` — menus and buttons. Allowed set is **English ∪ installed**. English does not need an English speech pack. Unticking the UI language snaps `uiLanguage` to English. Speech `current` is independent (speak Hindi, menus English).
-- `setupDone` — first-launch picker already completed
+- `setupDone` — first-launch language picker already completed
+- operator profile — compulsory display name + photo in app files (`filesDir/profile/avatar.jpg`). Not the Wi-Fi Direct / Bluetooth name. Not used by STT/TTS.
 
 Hindi is default for speech. Empty selection → Hindi, never crash or empty set.
 
@@ -59,18 +60,21 @@ App chrome is a Kotlin table (`UiStrings`), not `res/values-hi`. Missing or blan
 
 ```
 Launch
+  ├─ profile incomplete → Profile (name + photo required)
   ├─ setupDone = false → Language picker (Hindi pre-ticked), chrome in English
   │                      1) Tick speech packs  2) Show the app in: English ∪ ticked
   │                      Continue → install only selected packs
   │                      + shared translation pack marker
   │                      current = Hindi (unless Hindi unticked)
   │                      uiLanguage = chosen chrome language
-  └─ setupDone = true  → Main shell (Talk | Alert | Analysis | Radar) in uiLanguage
-                         Settings (gear / Settings) → same picker + app-language switcher
+  └─ both done         → Main shell (Talk | Alert | Analysis | Radar) in uiLanguage
+                         Settings (gear / Settings) → hub: Profile | Languages (same picker + app-language switcher)
 
 Talk
   Connect: Wi-Fi host/join, BT host/join
   Pairing: 6-digit code, both operators confirm (dialog is on the shell)
+  After confirm: each phone sends PROFILE (0x0A) name + tiny JPEG. Talk shows “Talking to {peer}”.
+  Map (other branch) reads the same `uiState.peerProfile` / `localProfile`.
   Live PTT: request floor → STT → send {text, source language}
   Offline PTT: if not connected, store text in outbound queue (not live send)
   Inbox: queued inbound text; Play / Dismiss; no autoplay
@@ -146,6 +150,9 @@ Handshake: ECDH P-256 (Android Keystore) → HKDF-SHA256 → AES-256-GCM. Header
 | FLOOR_DENY | 0x07 |
 | FLOOR_RELEASE | 0x08 |
 | QUEUED | 0x09 |
+| PROFILE | 0x0A |
+
+PROFILE is identity only — never TTS. Old APKs that do not know 0x0A discard it; Talk then keeps the radio peer name.
 
 No REST, no gRPC, no user auth.
 
@@ -187,14 +194,18 @@ Kotlin 2.1, Gradle 8.13, AGP 8.13, minSdk 24, compileSdk 35, JDK 17, Compose Mat
 
 `PrefsLanguageSettingsStore` — SharedPreferences `itantra_language`: `setup_done`, `installed` (comma codes), `current`, `ui_language`. Missing `ui_language` → English.
 
+`FileProfileStore` — SharedPreferences `itantra_profile`: `profile_done`, `profile_name`. Photo: `filesDir/profile/avatar.jpg`. Peer thumbnail cache: `cacheDir/peer-avatar.jpg`.
+
 ## UI map
 
 | Screen | File | When |
 |--------|------|------|
-| Language picker | `LanguageSelectionScreen` | First launch and Settings |
-| Router | `ITantraApp` + `AppViewModel` | SETUP / MAIN / SETTINGS |
+| Profile | `ProfileScreen` | First launch (before languages) and Settings |
+| Language picker | `LanguageSelectionScreen` | First launch after profile, and Settings |
+| Settings hub | `SettingsHubScreen` | Profile + Languages |
+| Router | `ITantraApp` + `AppViewModel` | profile / languages / MAIN / settings |
 | Main shell | `ITantraApp.MainContent` | Bottom nav Talk \| Alert \| Analysis \| Radar; pairing dialog here |
-| Talk | `MainScreen` | Connect, PTT, inbox, Settings |
+| Talk | `MainScreen` | Connect, PTT, inbox, Settings, talking-to peer |
 | Alert | `AlertScreen` | 5 templates + free text; disabled until paired |
 | Analysis | `DiagnosticsScreen` | Diagnostics snapshot |
 | Radar | `RadarScreen` | Wi-Fi Direct + iTantra BLE proximity plot; tap to join |
@@ -205,6 +216,7 @@ Single Activity (`MainActivity`). Permissions: mic, BT, nearby Wi-Fi / location.
 
 - `core/.../Language.kt` — enum + wire codes
 - `core/.../lang/` — `LanguageSelection`, `LanguageSettings`, `LanguageSettingsStore`, `UiLanguage`, `UiStrings`
+- `core/.../profile/` — `OperatorProfile`, `ProfileStore`, `ProfileCodec`
 - `core/.../stt/` — `SttEngine`, `SilenceEndpointer`, `ModelRegistry`, `LanguageIdEngine`, `ScriptLanguageId`
 - `core/.../tts/` — engines, normalizer, lexicons, chunker
 - `core/.../translate/` — `TranslationEngine`, `DictionaryTranslationEngine`
@@ -225,6 +237,7 @@ Single Activity (`MainActivity`). Permissions: mic, BT, nearby Wi-Fi / location.
 - `android/.../transport/` — WifiDirect, Bluetooth, Lan, StreamTransport
 - `app/.../ui/` — Activity, ITantraApp, Main, Alert, Diagnostics, Radar, LanguageSelection, ViewModels
 - `app/.../lang/PrefsLanguageSettingsStore.kt`
+- `app/.../profile/FileProfileStore.kt`
 - `app/.../di/AppModule.kt`
 
 ## Constraints (ISRO / design)

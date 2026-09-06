@@ -31,22 +31,40 @@ import `in`.gov.itantra.core.lang.UiStrings
 private enum class MainTab { TALK, ALERT, ANALYSIS, RADAR }
 
 @Composable
-fun ITantraApp(appViewModel: AppViewModel = hiltViewModel(), mainViewModel: MainViewModel = hiltViewModel()) {
+fun ITantraApp(
+    appViewModel: AppViewModel = hiltViewModel(),
+    mainViewModel: MainViewModel = hiltViewModel(),
+) {
     val destination by appViewModel.destination.collectAsState()
-    
+
     when (destination) {
-        AppDestination.SETUP -> LanguageSelectionScreen(
+        AppDestination.SETUP_PROFILE -> ProfileScreen(
+            isSetup = true,
+            onFinished = { },
+        )
+        AppDestination.SETUP_LANGUAGES -> LanguageSelectionScreen(
             isSetup = true,
             onFinished = { appViewModel.closeSettings() },
         )
-        AppDestination.SETTINGS -> LanguageSelectionScreen(
-            isSetup = false,
-            onFinished = { appViewModel.closeSettings() },
+        AppDestination.SETTINGS_HUB -> SettingsHubScreen(
+            onOpenProfile = { appViewModel.openSettingsProfile() },
+            onOpenLanguages = { appViewModel.openSettingsLanguages() },
             onBack = { appViewModel.closeSettings() },
+            mainViewModel = mainViewModel,
+        )
+        AppDestination.SETTINGS_PROFILE -> ProfileScreen(
+            isSetup = false,
+            onFinished = { appViewModel.closeSettingsPage() },
+            onBack = { appViewModel.closeSettingsPage() },
+        )
+        AppDestination.SETTINGS_LANGUAGES -> LanguageSelectionScreen(
+            isSetup = false,
+            onFinished = { appViewModel.closeSettingsPage() },
+            onBack = { appViewModel.closeSettingsPage() },
         )
         AppDestination.MAIN -> MainContent(
             mainViewModel = mainViewModel,
-            onOpenSettings = { appViewModel.openSettings() }
+            onOpenSettings = { appViewModel.openSettings() },
         )
     }
 }
@@ -54,7 +72,7 @@ fun ITantraApp(appViewModel: AppViewModel = hiltViewModel(), mainViewModel: Main
 @Composable
 fun MainContent(
     mainViewModel: MainViewModel,
-    onOpenSettings: () -> Unit
+    onOpenSettings: () -> Unit,
 ) {
     val uiState by mainViewModel.uiState.collectAsState()
     val chrome = UiStrings.forLanguage(uiState.uiLanguage)
