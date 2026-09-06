@@ -35,4 +35,28 @@ class LanguageSelectionTest {
             LanguageSelection.normalizeCurrent(Language.HINDI, setOf(Language.TAMIL)),
         )
     }
+
+    @Test
+    fun `settings snap ui language to english when pack is removed`() {
+        val snapped = LanguageSettings(
+            setupDone = true,
+            installed = setOf(Language.HINDI),
+            current = Language.HINDI,
+            uiLanguage = Language.TAMIL,
+        ).normalized
+        assertEquals(Language.ENGLISH, snapped.uiLanguage)
+        assertEquals(Language.HINDI, snapped.current)
+    }
+
+    @Test
+    fun `settings keep english ui without an english speech pack`() {
+        val snapped = LanguageSettings(
+            setupDone = true,
+            installed = setOf(Language.TAMIL),
+            current = Language.TAMIL,
+            uiLanguage = Language.ENGLISH,
+        ).normalized
+        assertEquals(Language.ENGLISH, snapped.uiLanguage)
+        assertEquals(Language.TAMIL, snapped.current)
+    }
 }

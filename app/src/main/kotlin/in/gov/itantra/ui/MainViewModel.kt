@@ -65,6 +65,7 @@ data class UiState(
     val channelBusy: Boolean = false,
     val recognizedText: String = "",
     val currentLanguage: Language = Language.DEFAULT,
+    val uiLanguage: Language = Language.ENGLISH,
     val installedLanguages: Set<Language> = setOf(Language.DEFAULT),
     val connectionState: ConnectionState = ConnectionState.DISCONNECTED,
     val connectionMode: ConnectionMode = ConnectionMode.WIFI_DIRECT_HOST,
@@ -73,8 +74,7 @@ data class UiState(
     val pairingConfirmed: Boolean = false,
     val selectedDeviceAddress: String? = null,
     val alertSending: Boolean = false,
-    val alertStatus: String? = null,
-    val error: String? = null,
+    val notice: UserNotice? = null,
     val outboundPending: Int = 0,
     val outboundFailed: Int = 0,
     val inbox: List<InboxMessage> = emptyList(),
@@ -112,9 +112,11 @@ class MainViewModel @Inject constructor(
         loadPairedDevices()
         viewModelScope.launch {
             languageSettings.settings.collect { snap ->
+                val previousUi = _uiState.value.uiLanguage
                 _uiState.update {
                     it.copy(
                         currentLanguage = snap.current,
+                        uiLanguage = snap.uiLanguage,
                         installedLanguages = snap.installed,
                     )
                 }
@@ -125,6 +127,9 @@ class MainViewModel @Inject constructor(
                     } catch (e: Exception) {
                         AppLog.w("MainViewModel", "Failed to preload models: ${e.message}")
                     }
+                }
+                if (snap.uiLanguage != previousUi && inbox.unreadCount() > 0) {
+                    publishQueues(notifyIfUnread = true)
                 }
             }
         }
@@ -214,7 +219,7 @@ class MainViewModel @Inject constructor(
                     channelBusy = false,
                     recognizedText = "",
                     currentLanguage = spoken,
-                    error = null,
+                    notice = null,
                 )
             }
             try {
@@ -236,7 +241,7 @@ class MainViewModel @Inject constructor(
             } catch (e: Exception) {
                 stopPttUseCase.execute(currentTransport)
                 _uiState.update {
-                    it.copy(isSpeaking = false, recognizedText = "Error: ${e.message}")
+                    it.copy(isSpeaking = false, notice = UserNotice.GenericError(e.message))
                 }
             }
         }
@@ -250,12 +255,8 @@ class MainViewModel @Inject constructor(
                 isSpeaking = false,
                 isRequestingFloor = false,
                 channelBusy = reason.contains("busy", ignoreCase = true),
-                recognizedText = if (reason.contains("busy", ignoreCase = true)) {
-                    "Channel busy"
-                } else {
-                    ""
-                },
-                error = null,
+                recognizedText = "",
+                notice = null,
             )
         }
     }
@@ -301,9 +302,9 @@ class MainViewModel @Inject constructor(
                     else -> Unit
                 }
             } catch (e: TranslationUnavailableException) {
-                _uiState.update { it.copy(error = e.message) }
+                _uiState.update { it.copy(notice = UserNotice.Raw(e.message)) }
             } catch (e: Exception) {
-                _uiState.update { it.copy(error = "Playback error: ${e.message}") }
+                _uiState.update { it.copy(notice = UserNotice.PlaybackError(e.message)) }
             }
         }
     }
@@ -358,7 +359,10 @@ class MainViewModel @Inject constructor(
                     ConnectionMode.BLUETOOTH_HOST -> BluetoothTransport(context, keyAgreementProvider, BluetoothTransport.Role.HOST)
                     ConnectionMode.BLUETOOTH_CLIENT -> {
                         val address = peerAddress ?: _uiState.value.selectedDeviceAddress
-                        if (address == null) throw Exception("Please select a device to connect to")
+                        if (address.isNullOrBlank()) {
+                            _uiState.update { it.copy(notice = UserNotice.PleaseSelectDevice) }
+                            return@launch
+                        }
                         BluetoothTransport(context, keyAgreementProvider, BluetoothTransport.Role.CLIENT, address)
                     }
 
@@ -366,13 +370,13 @@ class MainViewModel @Inject constructor(
 
                 newTransport.setListener(this@MainViewModel)
                 transport = newTransport
-                _uiState.update { it.copy(pairingConfirmed = false, error = null) }
+                _uiState.update { it.copy(pairingConfirmed = false, notice = null) }
                 diagnostics.attachedTransport = newTransport
                 diagnostics.currentLanguage = _uiState.value.currentLanguage
                 // Pass a 2-minute timeout since P2P setup involves manual user discovery and pairing
                 newTransport.connect(120_000)
             } catch (e: Exception) {
-                _uiState.update { it.copy(error = "Connection failed: ${e.message}") }
+                _uiState.update { it.copy(notice = UserNotice.ConnectionFailed(e.message)) }
             }
         }
     }
@@ -388,7 +392,7 @@ class MainViewModel @Inject constructor(
         try {
             tx.confirmPairing()
         } catch (e: Exception) {
-            _uiState.update { it.copy(error = "Pairing failed: ${e.message}") }
+            _uiState.update { it.copy(notice = UserNotice.PairingFailed(e.message)) }
             return
         }
         _uiState.update { it.copy(pairingInfo = null, pairingConfirmed = true) }
@@ -409,13 +413,19 @@ class MainViewModel @Inject constructor(
     }
 
     fun sendCustomAlert(text: String) {
-        sendAlert(AlertContent.Custom(text))
+        val trimmed = text.trim()
+        if (trimmed.isEmpty()) return
+        sendAlert(AlertContent.Custom(trimmed))
     }
 
     private fun sendAlert(content: AlertContent) {
-        val currentTransport = transport ?: return
+        val currentTransport = transport
+        if (currentTransport == null) {
+            _uiState.update { it.copy(notice = UserNotice.ConnectionFailed(null)) }
+            return
+        }
         viewModelScope.launch(Dispatchers.IO) {
-            _uiState.update { it.copy(alertSending = true, error = null, alertStatus = null) }
+            _uiState.update { it.copy(alertSending = true, notice = null) }
             try {
                 sendAlertUseCase.execute(
                     transport = currentTransport,
@@ -423,15 +433,15 @@ class MainViewModel @Inject constructor(
                     content = content,
                     pairingConfirmed = _uiState.value.pairingConfirmed,
                 )
-                _uiState.update { it.copy(alertSending = false, alertStatus = "Alert sent") }
+                _uiState.update { it.copy(alertSending = false, notice = UserNotice.AlertSent) }
             } catch (e: Exception) {
-                _uiState.update { it.copy(alertSending = false, error = e.message) }
+                _uiState.update { it.copy(alertSending = false, notice = UserNotice.Raw(e.message)) }
             }
         }
     }
 
     fun clearError() {
-        _uiState.update { it.copy(error = null) }
+        _uiState.update { it.copy(notice = null) }
     }
 
     fun startPtt() {
@@ -439,20 +449,19 @@ class MainViewModel @Inject constructor(
         val isConnected = state.connectionState == ConnectionState.CONNECTED
         if (isConnected) {
             if (state.channelBusy) {
-                _uiState.update { it.copy(recognizedText = "Channel busy") }
                 return
             }
             if (state.isSpeaking || state.isRequestingFloor) return
             AppLog.d("MainViewModel", "startPtt: Requesting floor for live PTT")
             pttWanted.set(true)
             _uiState.update {
-                it.copy(isRequestingFloor = true, recognizedText = "", error = null)
+                it.copy(isRequestingFloor = true, recognizedText = "", notice = null)
             }
             transport?.requestFloor()
         } else {
             if (state.isSpeaking) return
             AppLog.d("MainViewModel", "startPtt: Starting queued offline PTT")
-            _uiState.update { it.copy(isSpeaking = true, recognizedText = "", error = null) }
+            _uiState.update { it.copy(isSpeaking = true, recognizedText = "", notice = null) }
             try {
                 startPttUseCase.execute(
                     language = state.currentLanguage,
@@ -466,11 +475,15 @@ class MainViewModel @Inject constructor(
                     },
                     onQueued = { publishQueues() },
                     onError = { message ->
-                        _uiState.update { it.copy(isSpeaking = false, recognizedText = "Error: $message") }
+                        _uiState.update {
+                            it.copy(isSpeaking = false, notice = UserNotice.GenericError(message))
+                        }
                     }
                 )
             } catch (e: Exception) {
-                _uiState.update { it.copy(isSpeaking = false, recognizedText = "Error: ${e.message}") }
+                _uiState.update {
+                    it.copy(isSpeaking = false, notice = UserNotice.GenericError(e.message))
+                }
             }
         }
     }
@@ -489,7 +502,7 @@ class MainViewModel @Inject constructor(
         val item = inbox.find(id) ?: return
         if (_uiState.value.playingInboxId != null) return
         viewModelScope.launch(Dispatchers.IO) {
-            _uiState.update { it.copy(playingInboxId = id, error = null) }
+            _uiState.update { it.copy(playingInboxId = id, notice = null) }
             try {
                 receivePttUseCase.execute(
                     Packet.text(MessageType.NORMAL, item.language, 0, item.text),
@@ -497,7 +510,7 @@ class MainViewModel @Inject constructor(
                 )
                 inbox.markRead(id)
             } catch (e: Exception) {
-                _uiState.update { it.copy(error = "Playback error: ${e.message}") }
+                _uiState.update { it.copy(notice = UserNotice.PlaybackError(e.message)) }
             } finally {
                 _uiState.update { it.copy(playingInboxId = null) }
                 publishQueues()
@@ -518,7 +531,7 @@ class MainViewModel @Inject constructor(
         val stored = inbox.offer(id, packet.language, packet.text, packet.timestampMs)
         publishQueues()
         if (stored != null) {
-            notifier.notifyUnread(inbox.unreadCount(), stored.text)
+            notifier.notifyUnread(inbox.unreadCount(), stored.text, _uiState.value.uiLanguage)
         }
     }
 
@@ -529,7 +542,7 @@ class MainViewModel @Inject constructor(
             try {
                 flushQueuedUseCase.execute(tx, pairingConfirmed = true)
             } catch (e: Exception) {
-                _uiState.update { it.copy(error = "Queue send failed: ${e.message}") }
+                _uiState.update { it.copy(notice = UserNotice.QueueSendFailed(e.message)) }
             } finally {
                 publishQueues()
             }
@@ -549,7 +562,7 @@ class MainViewModel @Inject constructor(
         if (unread == 0) notifier.cancel()
         else if (notifyIfUnread) {
             val preview = inbox.snapshot().firstOrNull { it.unread }?.text.orEmpty()
-            notifier.notifyUnread(unread, preview)
+            notifier.notifyUnread(unread, preview, _uiState.value.uiLanguage)
         }
         _uiState.update {
             it.copy(

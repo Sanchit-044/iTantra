@@ -25,6 +25,7 @@ data class LanguageSettings(
     val setupDone: Boolean = false,
     val installed: Set<Language> = setOf(Language.DEFAULT),
     val current: Language = Language.DEFAULT,
+    val uiLanguage: Language = Language.ENGLISH,
 ) {
     val normalized: LanguageSettings
         get() {
@@ -32,6 +33,7 @@ data class LanguageSettings(
             return copy(
                 installed = installed,
                 current = LanguageSelection.normalizeCurrent(current, installed),
+                uiLanguage = UiLanguage.normalize(uiLanguage, installed),
             )
         }
 }

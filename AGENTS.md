@@ -48,7 +48,8 @@ App flow: first launch → language picker → download selected packs → **Tal
 - Translation: `TranslationEngine`, `DictionaryTranslationEngine` (demo phrases only)
 - Packs: `LanguagePackManager`, `android/.../pack/LocalLanguagePackManager`
 - UI: `ITantraApp` (Talk \| Alert \| Analysis), `LanguageSelectionScreen`, `MainScreen`, `AlertScreen`, `DiagnosticsScreen`, `MainViewModel`
-- Persistence: `PrefsLanguageSettingsStore` (`setupDone`, `installed`, `current`)
+- Persistence: `PrefsLanguageSettingsStore` (`setupDone`, `installed`, `current`, `uiLanguage`)
+- App chrome: `UiStrings` keyed by `uiLanguage` (English ∪ installed). Speech `current` is separate.
 
 ## Docs vs code
 

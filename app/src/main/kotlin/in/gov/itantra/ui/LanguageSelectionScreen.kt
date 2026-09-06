@@ -1,5 +1,6 @@
 package `in`.gov.itantra.ui
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -28,6 +29,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import `in`.gov.itantra.core.Language
+import `in`.gov.itantra.core.lang.UiStrings
 
 @Composable
 fun LanguageSelectionScreen(
@@ -37,6 +39,15 @@ fun LanguageSelectionScreen(
     viewModel: LanguageSelectionViewModel = hiltViewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    val chrome = if (isSetup || !uiState.setupDone) {
+        UiStrings.forLanguage(Language.ENGLISH)
+    } else {
+        UiStrings.forLanguage(uiState.uiLanguage)
+    }
+
+    LaunchedEffect(isSetup) {
+        if (!isSetup) viewModel.reloadFromStore()
+    }
 
     LaunchedEffect(uiState.finished) {
         if (uiState.finished) {
@@ -45,62 +56,73 @@ fun LanguageSelectionScreen(
         }
     }
 
+    val setupAppPage = isSetup && uiState.page == LanguageSetupPage.APP_LANGUAGE
+    val setupPacksPage = isSetup && uiState.page == LanguageSetupPage.PACKS
+
+    BackHandler(enabled = setupAppPage && !uiState.busy) {
+        viewModel.backToPacks()
+    }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
             .systemBarsPadding()
             .padding(16.dp),
     ) {
-        Text(
-            text = if (isSetup) "Choose your languages" else "Languages",
-            style = MaterialTheme.typography.headlineSmall,
-        )
-        Spacer(modifier = Modifier.height(8.dp))
-        Text(
-            text = "The same language is used for speaking and listening. " +
-                "Hindi is selected by default. Only the languages you tick are kept on this phone.",
-            style = MaterialTheme.typography.bodyMedium,
-        )
-        Spacer(modifier = Modifier.height(16.dp))
-
         LazyColumn(
             modifier = Modifier.weight(1f),
             verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
-            items(Language.entries.toList(), key = { it.code }) { language ->
-                val selected = language in uiState.selected
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable(enabled = !uiState.busy) { viewModel.toggle(language) }
-                        .padding(vertical = 4.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Checkbox(
-                        checked = selected,
-                        onCheckedChange = { viewModel.toggle(language) },
-                        enabled = !uiState.busy,
+            if (!isSetup || setupPacksPage) {
+                item(key = "packs-title") {
+                    Text(
+                        text = if (isSetup) chrome.chooseLanguages else chrome.languagesTitle,
+                        style = MaterialTheme.typography.headlineSmall,
                     )
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(text = language.endonym, style = MaterialTheme.typography.titleMedium)
-                        Text(
-                            text = language.englishName + if (language == Language.DEFAULT) "  ·  default" else "",
-                            style = MaterialTheme.typography.bodySmall,
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = if (isSetup) chrome.chooseLanguagesBody else chrome.speechHelp,
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                }
+                items(Language.entries.toList(), key = { "pack-${it.code}" }) { language ->
+                    PackRow(
+                        language = language,
+                        selected = language in uiState.selected,
+                        current = uiState.current == language,
+                        busy = uiState.busy,
+                        chrome = chrome,
+                        onToggle = { viewModel.toggle(language) },
+                        onCurrent = { viewModel.setCurrent(language) },
+                    )
+                }
+            }
+
+            if (!isSetup || setupAppPage) {
+                item(key = "ui-title") {
+                    if (!isSetup) Spacer(modifier = Modifier.height(20.dp))
+                    Text(text = chrome.appLanguageTitle, style = MaterialTheme.typography.headlineSmall)
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(text = chrome.appLanguageBody, style = MaterialTheme.typography.bodyMedium)
+                    Spacer(modifier = Modifier.height(12.dp))
+                }
+                items(uiState.appLanguageOptions, key = { "ui-${it.code}" }) { language ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable(enabled = !uiState.busy) { viewModel.setUiLanguage(language) }
+                            .padding(vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        RadioButton(
+                            selected = uiState.uiLanguage == language,
+                            onClick = { viewModel.setUiLanguage(language) },
+                            enabled = !uiState.busy,
                         )
-                    }
-                    if (selected) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.clickable(enabled = !uiState.busy) {
-                                viewModel.setCurrent(language)
-                            },
-                        ) {
-                            RadioButton(
-                                selected = uiState.current == language,
-                                onClick = { viewModel.setCurrent(language) },
-                                enabled = !uiState.busy,
-                            )
-                            Text("Active", style = MaterialTheme.typography.labelSmall)
+                        Column {
+                            Text(language.endonym, style = MaterialTheme.typography.titleMedium)
+                            Text(language.englishName, style = MaterialTheme.typography.bodySmall)
                         }
                     }
                 }
@@ -126,19 +148,66 @@ fun LanguageSelectionScreen(
 
         Spacer(modifier = Modifier.height(12.dp))
         Button(
-            onClick = { viewModel.confirm() },
+            onClick = {
+                if (setupPacksPage) viewModel.goToAppLanguage() else viewModel.confirm()
+            },
             enabled = !uiState.busy && uiState.selected.isNotEmpty(),
             modifier = Modifier.fillMaxWidth(),
         ) {
-            Text(if (isSetup) "Continue" else "Save")
+            Text(if (isSetup) chrome.continueLabel else chrome.save)
         }
-        if (onBack != null) {
+        if (setupAppPage) {
+            TextButton(
+                onClick = { viewModel.backToPacks() },
+                enabled = !uiState.busy,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text(chrome.back)
+            }
+        } else if (onBack != null) {
             TextButton(
                 onClick = onBack,
                 enabled = !uiState.busy,
                 modifier = Modifier.fillMaxWidth(),
             ) {
-                Text("Back")
+                Text(chrome.back)
+            }
+        }
+    }
+}
+
+@Composable
+private fun PackRow(
+    language: Language,
+    selected: Boolean,
+    current: Boolean,
+    busy: Boolean,
+    chrome: UiStrings,
+    onToggle: () -> Unit,
+    onCurrent: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(enabled = !busy, onClick = onToggle)
+            .padding(vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Checkbox(checked = selected, onCheckedChange = { onToggle() }, enabled = !busy)
+        Column(modifier = Modifier.weight(1f)) {
+            Text(text = language.endonym, style = MaterialTheme.typography.titleMedium)
+            Text(
+                text = language.englishName + if (language == Language.DEFAULT) "  ·  ${chrome.defaultHint}" else "",
+                style = MaterialTheme.typography.bodySmall,
+            )
+        }
+        if (selected) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.clickable(enabled = !busy, onClick = onCurrent),
+            ) {
+                RadioButton(selected = current, onClick = onCurrent, enabled = !busy)
+                Text(chrome.active, style = MaterialTheme.typography.labelSmall)
             }
         }
     }

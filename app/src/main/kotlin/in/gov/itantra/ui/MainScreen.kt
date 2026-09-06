@@ -13,14 +13,10 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Text
@@ -32,6 +28,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import `in`.gov.itantra.core.lang.UiStrings
 import `in`.gov.itantra.core.transport.ConnectionState
 
 @Composable
@@ -40,6 +37,7 @@ fun MainScreen(
     viewModel: MainViewModel = hiltViewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    val chrome = UiStrings.forLanguage(uiState.uiLanguage)
 
     Column(
         modifier = Modifier
@@ -54,16 +52,19 @@ fun MainScreen(
         ) {
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = "iTantra Walkie-Talkie",
+                    text = chrome.appTitle,
                     style = MaterialTheme.typography.headlineSmall
                 )
                 Text(
-                    text = "Language: ${uiState.currentLanguage.endonym} (${uiState.currentLanguage.englishName})",
+                    text = chrome.languageLine(
+                        uiState.currentLanguage.endonym,
+                        uiState.currentLanguage.englishName,
+                    ),
                     style = MaterialTheme.typography.bodyMedium
                 )
             }
             TextButton(onClick = onOpenSettings) {
-                Text("Settings")
+                Text(chrome.settings)
             }
         }
         Spacer(modifier = Modifier.height(16.dp))
@@ -76,7 +77,7 @@ fun MainScreen(
                 modifier = Modifier.padding(16.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                Text(text = "Status: ${uiState.connectionState.name}")
+                Text(text = "${chrome.statusPrefix} ${uiState.connectionState.name}")
                 Spacer(modifier = Modifier.height(8.dp))
 
                 if (uiState.connectionState == ConnectionState.DISCONNECTED || uiState.connectionState == ConnectionState.FAILED) {
@@ -85,17 +86,17 @@ fun MainScreen(
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 RadioButton(selected = uiState.connectionMode == ConnectionMode.WIFI_DIRECT_HOST, onClick = { viewModel.setConnectionMode(ConnectionMode.WIFI_DIRECT_HOST) })
-                                Text("Host Wi-Fi", style = MaterialTheme.typography.bodySmall)
+                                Text(chrome.hostWifi, style = MaterialTheme.typography.bodySmall)
                             }
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 RadioButton(selected = uiState.connectionMode == ConnectionMode.BLUETOOTH_HOST, onClick = { viewModel.setConnectionMode(ConnectionMode.BLUETOOTH_HOST) })
-                                Text("Host BT", style = MaterialTheme.typography.bodySmall)
+                                Text(chrome.hostBt, style = MaterialTheme.typography.bodySmall)
                             }
                         }
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 RadioButton(selected = uiState.connectionMode == ConnectionMode.WIFI_DIRECT_CLIENT, onClick = { viewModel.setConnectionMode(ConnectionMode.WIFI_DIRECT_CLIENT) })
-                                Text("Join Wi-Fi", style = MaterialTheme.typography.bodySmall)
+                                Text(chrome.joinWifi, style = MaterialTheme.typography.bodySmall)
                             }
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 RadioButton(
@@ -105,13 +106,13 @@ fun MainScreen(
                                         viewModel.refreshPairedDevices()
                                     },
                                 )
-                                Text("Join BT", style = MaterialTheme.typography.bodySmall)
+                                Text(chrome.joinBt, style = MaterialTheme.typography.bodySmall)
                             }
                         }
                     }
 
                     if (uiState.connectionMode == ConnectionMode.BLUETOOTH_CLIENT) {
-                        Text("Select Paired Device:", style = MaterialTheme.typography.labelMedium)
+                        Text(chrome.selectPairedDevice, style = MaterialTheme.typography.labelMedium)
                         LazyColumn(modifier = Modifier.heightIn(max = 100.dp).fillMaxWidth().padding(8.dp)) {
                             items(uiState.pairedDevices, key = { it.address }) { device ->
                                 val isSelected = uiState.selectedDeviceAddress == device.address
@@ -133,28 +134,25 @@ fun MainScreen(
                         onClick = { viewModel.connect(uiState.selectedDeviceAddress) },
                         enabled = uiState.connectionMode != ConnectionMode.BLUETOOTH_CLIENT || uiState.selectedDeviceAddress != null
                     ) {
-                        Text("Connect")
+                        Text(chrome.connect)
                     }
                 } else {
                     Button(onClick = { viewModel.disconnect() }, colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary)) {
-                        Text("Disconnect")
+                        Text(chrome.disconnect)
                     }
                 }
             }
         }
 
-        if (uiState.error != null) {
-            Text(
-                text = uiState.error!!,
-                color = MaterialTheme.colorScheme.error,
-                modifier = Modifier.padding(top = 8.dp)
-            )
-        }
+        UserNoticeBanner(
+            notice = uiState.notice,
+            strings = chrome,
+            modifier = Modifier.padding(top = 8.dp),
+        )
 
         if (uiState.outboundPending > 0) {
             Text(
-                text = "${uiState.outboundPending} waiting to send" +
-                    if (uiState.outboundFailed > 0) " (${uiState.outboundFailed} failed, will retry)" else "",
+                text = chrome.waitingToSend(uiState.outboundPending, uiState.outboundFailed),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.primary,
                 modifier = Modifier.padding(top = 8.dp)
@@ -169,7 +167,7 @@ fun MainScreen(
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)
             ) {
                 Column(modifier = Modifier.padding(12.dp)) {
-                    Text("Queued inbox — tap Play. Nothing auto-plays.", style = MaterialTheme.typography.labelMedium)
+                    Text(chrome.inboxTitle, style = MaterialTheme.typography.labelMedium)
                     Spacer(Modifier.height(4.dp))
                     LazyColumn(modifier = Modifier.heightIn(max = 140.dp).fillMaxWidth()) {
                         items(uiState.inbox, key = { it.id }) { item ->
@@ -179,7 +177,7 @@ fun MainScreen(
                             ) {
                                 Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
                                     Text(
-                                        text = if (item.unread) "New · ${item.language.endonym}" else item.language.endonym,
+                                        text = chrome.inboxLabel(item.unread, item.language.endonym),
                                         style = MaterialTheme.typography.labelSmall,
                                     )
                                     Text(
@@ -192,10 +190,12 @@ fun MainScreen(
                                     onClick = { viewModel.playInbox(item.id) },
                                     enabled = uiState.playingInboxId == null,
                                 ) {
-                                    Text(if (uiState.playingInboxId == item.id) "Playing" else "Play")
+                                    Text(
+                                        if (uiState.playingInboxId == item.id) chrome.playing else chrome.play
+                                    )
                                 }
                                 TextButton(onClick = { viewModel.dismissInbox(item.id) }) {
-                                    Text("Dismiss")
+                                    Text(chrome.dismiss)
                                 }
                             }
                         }
@@ -208,12 +208,12 @@ fun MainScreen(
 
         val status = when {
             uiState.isSpeaking && uiState.recognizedText.isNotEmpty() -> uiState.recognizedText
-            uiState.isSpeaking -> "Speaking…"
-            uiState.isRequestingFloor -> "Waiting for channel…"
-            uiState.channelBusy -> "Channel busy"
+            uiState.isSpeaking -> chrome.speaking
+            uiState.isRequestingFloor -> chrome.waitingChannel
+            uiState.channelBusy -> chrome.channelBusy
             uiState.recognizedText.isNotEmpty() -> uiState.recognizedText
-            uiState.connectionState == ConnectionState.CONNECTED -> "Ready to speak..."
-            else -> "Not connected — PTT will save and send later"
+            uiState.connectionState == ConnectionState.CONNECTED -> chrome.readyToSpeak
+            else -> chrome.notConnectedQueue
         }
         Text(
             text = status,
@@ -244,10 +244,10 @@ fun MainScreen(
         ) {
             Text(
                 text = when {
-                    uiState.isSpeaking -> "STOP"
-                    uiState.isRequestingFloor -> "WAIT"
-                    uiState.channelBusy -> "BUSY"
-                    else -> "PTT"
+                    uiState.isSpeaking -> chrome.stop
+                    uiState.isRequestingFloor -> chrome.wait
+                    uiState.channelBusy -> chrome.busy
+                    else -> chrome.ptt
                 }
             )
         }
