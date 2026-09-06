@@ -196,13 +196,15 @@ Kotlin 2.1, Gradle 8.13, AGP 8.13, minSdk 24, compileSdk 35, JDK 17, Compose Mat
 
 `FileProfileStore` — SharedPreferences `itantra_profile`: `profile_done`, `profile_name`. Photo: `filesDir/profile/avatar.jpg`. Peer thumbnail cache: `cacheDir/peer-avatar.jpg`.
 
+`PrefsThemeStore` — SharedPreferences `itantra_theme`: `theme_mode` = `SYSTEM` (default) | `LIGHT` | `DARK`. Applied at `ITantraTheme` in `MainActivity`. Missing or invalid value → System.
+
 ## UI map
 
 | Screen | File | When |
 |--------|------|------|
 | Profile | `ProfileScreen` | First launch (before languages) and Settings |
-| Language picker | `LanguageSelectionScreen` | First launch after profile, and Settings |
-| Settings hub | `SettingsHubScreen` | Profile + Languages |
+| Language picker | `LanguageSelectionScreen` | First launch after profile, and Settings → Languages |
+| Settings hub | `SettingsHubScreen` | Profile + Theme (System / Light / Dark) + Languages |
 | Router | `ITantraApp` + `AppViewModel` | profile / languages / MAIN / settings |
 | Main shell | `ITantraApp.MainContent` | Bottom nav Talk \| Alert \| Analysis \| Radar; pairing dialog here |
 | Talk | `MainScreen` | Connect, PTT, inbox, Settings, talking-to peer |
@@ -238,6 +240,7 @@ Single Activity (`MainActivity`). Permissions: mic, BT, nearby Wi-Fi / location.
 - `app/.../ui/` — Activity, ITantraApp, Main, Alert, Diagnostics, Radar, LanguageSelection, ViewModels
 - `app/.../lang/PrefsLanguageSettingsStore.kt`
 - `app/.../profile/FileProfileStore.kt`
+- `app/.../theme/PrefsThemeStore.kt`, `core/.../theme/ThemeMode.kt`
 - `app/.../di/AppModule.kt`
 
 ## Constraints (ISRO / design)

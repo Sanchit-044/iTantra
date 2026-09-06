@@ -6,8 +6,12 @@ import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import dagger.hilt.android.AndroidEntryPoint
+import `in`.gov.itantra.core.theme.ThemeStore
+import javax.inject.Inject
 
 import android.Manifest
 import android.os.Build
@@ -16,6 +20,9 @@ import androidx.activity.enableEdgeToEdge
 
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
+
+    @Inject
+    lateinit var themeStore: ThemeStore
 
     private val requestPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
@@ -44,7 +51,8 @@ class MainActivity : ComponentActivity() {
         requestPermissionLauncher.launch(permissionsToRequest.toTypedArray())
 
         setContent {
-            MaterialTheme {
+            val mode by themeStore.mode.collectAsState()
+            ITantraTheme(mode) {
                 Surface(
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background
