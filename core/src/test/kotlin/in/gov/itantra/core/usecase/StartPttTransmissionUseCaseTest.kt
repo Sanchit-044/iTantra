@@ -22,9 +22,12 @@ class StartPttTransmissionUseCaseTest {
     private val sentPackets = mutableListOf<Packet>()
     
     private val fakeTransport = object : Transport {
-        override val state: ConnectionState = ConnectionState.CONNECTED
+        override val kind = TransportKind.LOOPBACK
+        override val pairingInfo = null
+        override val lastRoundTripMs = null
+        override var state: ConnectionState = ConnectionState.CONNECTED
         override fun setListener(listener: TransportListener?) {}
-        override fun connect() {}
+        override fun connect(timeoutMs: Long) {}
         override fun disconnect() {}
         override fun send(packet: Packet) { sentPackets.add(packet) }
         override fun requestFloor() {}
@@ -32,20 +35,7 @@ class StartPttTransmissionUseCaseTest {
         override fun confirmPairing() {}
     }
 
-    private val fakeQueue = object : OutboundMessageQueue {
-        val messages = mutableListOf<OutboundMessage>()
-        override fun enqueue(language: Language, text: String): OutboundMessage? {
-            val msg = OutboundMessage("1", language, text, System.currentTimeMillis(), false)
-            messages.add(msg)
-            return msg
-        }
-        override fun snapshot(): List<OutboundMessage> = messages
-        override fun markFailed(id: String) {}
-        override fun remove(id: String) {}
-        override fun pendingCount(): Int = messages.size
-        override fun failedCount(): Int = 0
-        override fun purgeExpired() {}
-    }
+    private val fakeQueue = OutboundMessageQueue()
 
     @Test
     fun `ignores empty text`() {
@@ -57,7 +47,7 @@ class StartPttTransmissionUseCaseTest {
             onPartialResult = {}, onFinalResult = {}, onQueued = {}, onError = {}
         )
         
-        stt.listener?.onFinal(SttResult("   ", Language.HINDI, EndpointTrigger.SILENCE, 100, 100))
+        stt.listener?.onFinal(SttResult("   ", Language.HINDI, null, EndpointTrigger.SILENCE, 100, 0))
         
         assertTrue(sentPackets.isEmpty())
         assertTrue(fakeQueue.messages.isEmpty())
@@ -89,7 +79,7 @@ class StartPttTransmissionUseCaseTest {
             onPartialResult = {}, onFinalResult = {}, onQueued = {}, onError = {}
         )
         
-        stt.listener?.onFinal(SttResult("Hello", Language.HINDI, EndpointTrigger.SILENCE, 100, 100))
+        stt.listener?.onFinal(SttResult("Test", Language.HINDI, null, EndpointTrigger.SILENCE, 100, 0))
         
         assertEquals(1, sentPackets.size)
         assertEquals("Hello", sentPackets[0].text)

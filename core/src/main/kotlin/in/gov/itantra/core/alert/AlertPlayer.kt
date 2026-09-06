@@ -133,7 +133,7 @@ class AlertPlayer(
     }
 
     private fun speakCustom(text: String, language: Language) {
-        val sink = sinkProvider(AudioFormat.TTS_22K)
+        val sink = sinkProvider(AudioFormat.TTS_16K)
         try {
             speaker.speak(text, language, sink).await()
         } finally {

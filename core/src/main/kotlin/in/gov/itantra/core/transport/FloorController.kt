@@ -151,7 +151,7 @@ class FloorController(
     }
 
     companion object {
-        const val DEFAULT_GRANT_TIMEOUT_MS = 1_500L
+        const val DEFAULT_GRANT_TIMEOUT_MS = 5_000L
         const val BUSY = "channel busy"
         const val TIMEOUT = "no floor grant"
     }

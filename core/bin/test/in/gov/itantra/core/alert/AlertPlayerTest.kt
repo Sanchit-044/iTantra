@@ -84,7 +84,7 @@ class AlertPlayerTest {
             var focusHeldDuringWrite: Boolean? = null
             val f = FakeForcedAudioFocus()
             val observing = object : AudioSink {
-                override val format = AudioFormat.TTS_22K
+                override val format = AudioFormat.TTS_16K
                 override fun write(samples: ShortArray, offset: Int, count: Int): Int {
                     if (focusHeldDuringWrite == null) focusHeldDuringWrite = f.isHeld
                     return count
@@ -144,7 +144,7 @@ class AlertPlayerTest {
             speaker = ChunkedSpeaker(FakeTtsEngine()),
             sinkProvider = {
                 object : AudioSink {
-                    override val format = AudioFormat.TTS_22K
+                    override val format = AudioFormat.TTS_16K
                     override fun write(samples: ShortArray, offset: Int, count: Int): Int =
                         throw IllegalStateException("sink failed")
                     override fun drain() {}

@@ -132,7 +132,7 @@ class RoundTripTest {
 
     /** Speaks [text] and records how long the first audio took to arrive. */
     private fun speak(speaker: ChunkedSpeaker, text: String) {
-        AudioTrackSink(format = `in`.gov.itantra.core.audio.AudioFormat.TTS_22K).use { sink ->
+        AudioTrackSink(format = `in`.gov.itantra.core.audio.AudioFormat.TTS_16K).use { sink ->
             var firstAudioMs = -1L
             var underruns = 0
 

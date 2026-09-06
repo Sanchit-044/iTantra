@@ -178,6 +178,7 @@ private class FakeTransport(
     private var n = 0
     override val kind = TransportKind.LOOPBACK
     override var state = ConnectionState.CONNECTED
+    override fun requestFloor() {}
     override val pairingInfo: PairingInfo? = null
     override fun setListener(listener: TransportListener?) = Unit
     override fun connect(timeoutMs: Long) = Unit
