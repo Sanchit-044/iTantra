@@ -33,7 +33,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import `in`.gov.itantra.core.Language
 import `in`.gov.itantra.core.diag.DiagnosticsSnapshot
+import `in`.gov.itantra.core.lang.UiStrings
 import `in`.gov.itantra.core.transport.TransportKind
 import kotlin.math.roundToInt
 
@@ -41,9 +43,11 @@ import kotlin.math.roundToInt
 @Composable
 fun DiagnosticsScreen(
     onOpenSettings: () -> Unit,
+    uiLanguage: Language = Language.ENGLISH,
     viewModel: DiagnosticsViewModel = hiltViewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    val chrome = UiStrings.forLanguage(uiLanguage)
     val context = LocalContext.current
 
     DisposableEffect(Unit) {
@@ -55,16 +59,16 @@ fun DiagnosticsScreen(
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         topBar = {
             TopAppBar(
-                title = { Text("Analysis") },
+                title = { Text(chrome.analysis) },
                 actions = {
                     IconButton(
                         onClick = { viewModel.share(context) },
                         enabled = uiState.snapshot != null,
                     ) {
-                        Icon(Icons.Filled.Share, contentDescription = "Share JSON")
+                        Icon(Icons.Filled.Share, contentDescription = chrome.shareJson)
                     }
                     IconButton(onClick = onOpenSettings) {
-                        Icon(Icons.Filled.Settings, contentDescription = "Settings")
+                        Icon(Icons.Filled.Settings, contentDescription = chrome.settings)
                     }
                 },
             )
@@ -79,7 +83,7 @@ fun DiagnosticsScreen(
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             Text(
-                text = "Live metrics. Empty values are not measured yet — they are not zero.",
+                text = chrome.analysisHelp,
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -94,9 +98,9 @@ fun DiagnosticsScreen(
 
             val snap = uiState.snapshot
             if (snap == null) {
-                Text("Waiting for first sample…")
+                Text(chrome.waitingSample)
             } else {
-                SttCard(snap, uiState, onTestMode = viewModel::setTestMode)
+                SttCard(snap, uiState, chrome, onTestMode = viewModel::setTestMode)
                 TtsCard(snap)
                 TransportCard(snap)
                 SystemCard(snap)
@@ -109,6 +113,7 @@ fun DiagnosticsScreen(
 private fun SttCard(
     snap: DiagnosticsSnapshot,
     uiState: DiagnosticsUiState,
+    chrome: UiStrings,
     onTestMode: (Boolean) -> Unit,
 ) {
     val stt = snap.stt
@@ -117,7 +122,7 @@ private fun SttCard(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text("WER test mode", modifier = Modifier.weight(1f))
+            Text(chrome.werTestMode, modifier = Modifier.weight(1f))
             Switch(checked = uiState.testMode, onCheckedChange = onTestMode)
         }
         MetricRow("Current WER", formatWer(stt.measuredWer, stt.werSampleCount))

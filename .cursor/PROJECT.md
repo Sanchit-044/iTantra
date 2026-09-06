@@ -46,22 +46,27 @@ Each phone stores:
 
 - `installed` — languages the user ticked (packs on disk)
 - `current` — the one language used for **both STT and TTS**
+- `uiLanguage` — menus and buttons. Allowed set is **English ∪ installed**. English does not need an English speech pack. Unticking the UI language snaps `uiLanguage` to English. Speech `current` is independent (speak Hindi, menus English).
 - `setupDone` — first-launch picker already completed
 
-Hindi is default. Empty selection → Hindi, never crash or empty set.
+Hindi is default for speech. Empty selection → Hindi, never crash or empty set.
 
 User may install several languages. Detection and STT only use that set. Whatever LID (or the user in Settings) picks becomes `current` for **speaking and listening**.
+
+App chrome is a Kotlin table (`UiStrings`), not `res/values-hi`. Missing or blank strings fall back to English, never an empty button. First-launch setup chrome stays English until setup finishes. Alert **spoken** phrases follow `current`, not `uiLanguage`.
 
 ## App flow
 
 ```
 Launch
-  ├─ setupDone = false → Language picker (Hindi pre-ticked)
+  ├─ setupDone = false → Language picker (Hindi pre-ticked), chrome in English
+  │                      1) Tick speech packs  2) Show the app in: English ∪ ticked
   │                      Continue → install only selected packs
   │                      + shared translation pack marker
   │                      current = Hindi (unless Hindi unticked)
-  └─ setupDone = true  → Main shell (Talk | Alert | Analysis)
-                         Settings (gear / Settings) → same picker
+  │                      uiLanguage = chosen chrome language
+  └─ setupDone = true  → Main shell (Talk | Alert | Analysis) in uiLanguage
+                         Settings → same picker + app-language switcher
 
 Talk
   Connect: Wi-Fi host/join, BT host/join
@@ -175,7 +180,7 @@ Kotlin 2.1, Gradle 8.13, AGP 8.13, minSdk 24, compileSdk 35, JDK 17, Compose Mat
 
 ### Persistence
 
-`PrefsLanguageSettingsStore` — SharedPreferences `itantra_language`: `setup_done`, `installed` (comma codes), `current`.
+`PrefsLanguageSettingsStore` — SharedPreferences `itantra_language`: `setup_done`, `installed` (comma codes), `current`, `ui_language`. Missing `ui_language` → English.
 
 ## UI map
 
@@ -193,7 +198,7 @@ Single Activity (`MainActivity`). Permissions: mic, BT, nearby Wi-Fi / location.
 ## Key paths (under `iTantra/`)
 
 - `core/.../Language.kt` — enum + wire codes
-- `core/.../lang/` — `LanguageSelection`, `LanguageSettings`, `LanguageSettingsStore`
+- `core/.../lang/` — `LanguageSelection`, `LanguageSettings`, `LanguageSettingsStore`, `UiLanguage`, `UiStrings`
 - `core/.../stt/` — `SttEngine`, `SilenceEndpointer`, `ModelRegistry`, `LanguageIdEngine`, `ScriptLanguageId`
 - `core/.../tts/` — engines, normalizer, lexicons, chunker
 - `core/.../translate/` — `TranslationEngine`, `DictionaryTranslationEngine`

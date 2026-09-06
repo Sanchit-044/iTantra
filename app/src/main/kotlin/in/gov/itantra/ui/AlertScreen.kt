@@ -24,11 +24,13 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import `in`.gov.itantra.core.alert.AlertTemplate
+import `in`.gov.itantra.core.lang.UiStrings
 import `in`.gov.itantra.core.transport.ConnectionState
 
 @Composable
 fun AlertScreen(viewModel: MainViewModel) {
     val uiState by viewModel.uiState.collectAsState()
+    val chrome = UiStrings.forLanguage(uiState.uiLanguage)
     var customText by rememberSaveable { mutableStateOf("") }
     val ready = uiState.connectionState == ConnectionState.CONNECTED && uiState.pairingConfirmed
     val language = uiState.currentLanguage
@@ -40,13 +42,9 @@ fun AlertScreen(viewModel: MainViewModel) {
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        Text("Alert", style = MaterialTheme.typography.headlineMedium)
+        Text(chrome.alertTitle, style = MaterialTheme.typography.headlineMedium)
         Text(
-            text = if (ready) {
-                "Sends at maximum volume on the other phone. Not a live conversation."
-            } else {
-                "Connect and confirm pairing on Talk first. Alerts are not queued."
-            },
+            text = if (ready) chrome.alertReadyHelp else chrome.alertNeedPair,
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -63,7 +61,7 @@ fun AlertScreen(viewModel: MainViewModel) {
         }
 
         Spacer(Modifier.height(4.dp))
-        Text("Or type a short alert", style = MaterialTheme.typography.labelMedium)
+        Text(chrome.orTypeAlert, style = MaterialTheme.typography.labelMedium)
         OutlinedTextField(
             value = customText,
             onValueChange = { if (it.length <= 200) customText = it },
@@ -71,24 +69,21 @@ fun AlertScreen(viewModel: MainViewModel) {
             enabled = ready,
             singleLine = false,
             minLines = 2,
-            placeholder = { Text("Free text") },
+            placeholder = { Text(chrome.freeText) },
         )
         OutlinedButton(
             onClick = {
-                viewModel.sendCustomAlert(customText)
+                val trimmed = customText.trim()
+                if (trimmed.isEmpty()) return@OutlinedButton
+                viewModel.sendCustomAlert(trimmed)
                 customText = ""
             },
             enabled = ready && customText.trim().isNotEmpty() && !uiState.alertSending,
             modifier = Modifier.fillMaxWidth(),
         ) {
-            Text(if (uiState.alertSending) "Sending…" else "Send typed alert")
+            Text(if (uiState.alertSending) chrome.sending else chrome.sendTyped)
         }
 
-        if (uiState.alertStatus != null) {
-            Text(uiState.alertStatus!!, style = MaterialTheme.typography.bodySmall)
-        }
-        if (uiState.error != null) {
-            Text(uiState.error!!, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
-        }
+        UserNoticeBanner(notice = uiState.notice, strings = chrome)
     }
 }

@@ -24,6 +24,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.hilt.navigation.compose.hiltViewModel
+import `in`.gov.itantra.core.lang.UiStrings
 
 private enum class MainTab { TALK, ALERT, ANALYSIS }
 
@@ -54,25 +55,25 @@ fun MainContent(
     onOpenSettings: () -> Unit
 ) {
     val uiState by mainViewModel.uiState.collectAsState()
+    val chrome = UiStrings.forLanguage(uiState.uiLanguage)
     var tab by rememberSaveable { mutableStateOf(MainTab.TALK) }
 
     BackHandler(enabled = tab != MainTab.TALK) { tab = MainTab.TALK }
 
-    if (uiState.pairingInfo != null) {
+    val pairing = uiState.pairingInfo
+    if (pairing != null) {
         AlertDialog(
             onDismissRequest = { mainViewModel.dismissPairing() },
-            title = { Text("Confirm Pairing") },
-            text = {
-                Text("Do you see the same code on the other device?\n\nCode: ${uiState.pairingInfo?.code}")
-            },
+            title = { Text(chrome.pairingTitle) },
+            text = { Text(chrome.pairingBody(pairing.code)) },
             confirmButton = {
                 Button(onClick = { mainViewModel.confirmPairing() }) {
-                    Text("Yes, Connect")
+                    Text(chrome.pairingYes)
                 }
             },
             dismissButton = {
                 TextButton(onClick = { mainViewModel.dismissPairing() }) {
-                    Text("Cancel")
+                    Text(chrome.pairingCancel)
                 }
             },
         )
@@ -86,19 +87,19 @@ fun MainContent(
                     selected = tab == MainTab.TALK,
                     onClick = { tab = MainTab.TALK },
                     icon = { Icon(Icons.Filled.Phone, contentDescription = null) },
-                    label = { Text("Talk") },
+                    label = { Text(chrome.talk) },
                 )
                 NavigationBarItem(
                     selected = tab == MainTab.ALERT,
                     onClick = { tab = MainTab.ALERT },
                     icon = { Icon(Icons.Filled.Warning, contentDescription = null) },
-                    label = { Text("Alert") },
+                    label = { Text(chrome.alert) },
                 )
                 NavigationBarItem(
                     selected = tab == MainTab.ANALYSIS,
                     onClick = { tab = MainTab.ANALYSIS },
                     icon = { Icon(Icons.Filled.Info, contentDescription = null) },
-                    label = { Text("Analysis") },
+                    label = { Text(chrome.analysis) },
                 )
             }
         },
@@ -111,7 +112,10 @@ fun MainContent(
             when (tab) {
                 MainTab.TALK -> MainScreen(viewModel = mainViewModel, onOpenSettings = onOpenSettings)
                 MainTab.ALERT -> AlertScreen(viewModel = mainViewModel)
-                MainTab.ANALYSIS -> DiagnosticsScreen(onOpenSettings = onOpenSettings)
+                MainTab.ANALYSIS -> DiagnosticsScreen(
+                    onOpenSettings = onOpenSettings,
+                    uiLanguage = uiState.uiLanguage,
+                )
             }
         }
     }

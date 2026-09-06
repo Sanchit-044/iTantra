@@ -9,6 +9,8 @@ import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import `in`.gov.itantra.android.diag.AndroidDiagnosticsService
 import `in`.gov.itantra.core.diag.DiagnosticsSnapshot
+import `in`.gov.itantra.core.lang.LanguageSettingsStore
+import `in`.gov.itantra.core.lang.UiStrings
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -30,6 +32,7 @@ data class DiagnosticsUiState(
 @HiltViewModel
 class DiagnosticsViewModel @Inject constructor(
     private val diagnostics: AndroidDiagnosticsService,
+    private val languageSettings: LanguageSettingsStore,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(DiagnosticsUiState())
@@ -67,16 +70,18 @@ class DiagnosticsViewModel @Inject constructor(
             putExtra(Intent.EXTRA_TEXT, json)
         }
         try {
-            val chooser = Intent.createChooser(send, "Share diagnostics JSON")
+            val chooser = Intent.createChooser(send, chrome().shareJson)
             if (context !is Activity) {
                 chooser.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }
             context.startActivity(chooser)
             _uiState.update { it.copy(shareError = null) }
         } catch (_: ActivityNotFoundException) {
-            _uiState.update { it.copy(shareError = "No app available to share the JSON.") }
+            _uiState.update { it.copy(shareError = chrome().noShareApp) }
         } catch (e: Exception) {
-            _uiState.update { it.copy(shareError = e.message ?: "Share failed") }
+            _uiState.update {
+                it.copy(shareError = e.message?.takeIf { msg -> msg.isNotBlank() } ?: chrome().shareFailed)
+            }
         }
     }
 
@@ -100,6 +105,9 @@ class DiagnosticsViewModel @Inject constructor(
         stopPolling()
         super.onCleared()
     }
+
+    private fun chrome(): UiStrings =
+        UiStrings.forLanguage(languageSettings.snapshot.uiLanguage)
 
     private companion object {
         const val POLL_MS = 2_000L

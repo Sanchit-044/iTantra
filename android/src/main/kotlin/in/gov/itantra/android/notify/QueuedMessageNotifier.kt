@@ -8,6 +8,8 @@ import android.content.Intent
 import android.os.Build
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
+import `in`.gov.itantra.core.Language
+import `in`.gov.itantra.core.lang.UiStrings
 
 /**
  * System tray notice for a queued inbound message. Never starts TTS.
@@ -15,12 +17,17 @@ import androidx.core.app.NotificationManagerCompat
  */
 class QueuedMessageNotifier(private val context: Context) {
 
-    fun notifyUnread(unreadCount: Int, preview: String) {
+    fun notifyUnread(
+        unreadCount: Int,
+        preview: String,
+        uiLanguage: Language = Language.ENGLISH,
+    ) {
         if (unreadCount <= 0) {
             cancel()
             return
         }
-        ensureChannel()
+        val strings = UiStrings.forLanguage(uiLanguage)
+        ensureChannel(strings)
         val launch = context.packageManager.getLaunchIntentForPackage(context.packageName)
             ?: return
         launch.flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
@@ -30,15 +37,10 @@ class QueuedMessageNotifier(private val context: Context) {
             launch,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
-        val clipped = preview.trim().replace('\n', ' ').take(80)
-        val text = if (unreadCount == 1) {
-            clipped.ifBlank { "Queued message — tap to open, then Play" }
-        } else {
-            "$unreadCount queued messages — tap to open, then Play"
-        }
+        val text = strings.queuedBody(unreadCount, preview)
         val notification = NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.ic_dialog_info)
-            .setContentTitle("iTantra queued message")
+            .setContentTitle(strings.queuedTitle)
             .setContentText(text)
             .setStyle(NotificationCompat.BigTextStyle().bigText(text))
             .setContentIntent(pending)
@@ -57,17 +59,16 @@ class QueuedMessageNotifier(private val context: Context) {
         NotificationManagerCompat.from(context).cancel(NOTIFICATION_ID)
     }
 
-    private fun ensureChannel() {
+    private fun ensureChannel(strings: UiStrings) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
         val manager = context.getSystemService(NotificationManager::class.java) ?: return
-        if (manager.getNotificationChannel(CHANNEL_ID) != null) return
         manager.createNotificationChannel(
             NotificationChannel(
                 CHANNEL_ID,
-                "Queued messages",
+                strings.queuedChannelName,
                 NotificationManager.IMPORTANCE_DEFAULT,
             ).apply {
-                description = "Store-and-forward speech waiting to be played. Does not auto-play."
+                description = strings.queuedChannelDesc
             },
         )
     }
