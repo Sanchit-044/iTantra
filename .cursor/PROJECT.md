@@ -177,12 +177,15 @@ Kotlin 2.1, Gradle 8.13, AGP 8.13, minSdk 24, compileSdk 35, JDK 17, Compose Mat
 
 `PrefsLanguageSettingsStore` — SharedPreferences `itantra_language`: `setup_done`, `installed` (comma codes), `current`.
 
+`PrefsThemeStore` — SharedPreferences `itantra_theme`: `theme_mode` = `SYSTEM` (default) | `LIGHT` | `DARK`. Applied at `ITantraTheme` in `MainActivity`. Missing or invalid value → System.
+
 ## UI map
 
 | Screen | File | When |
 |--------|------|------|
-| Language picker | `LanguageSelectionScreen` | First launch and Settings |
-| Router | `ITantraApp` + `AppViewModel` | SETUP / MAIN / SETTINGS |
+| Language picker | `LanguageSelectionScreen` | First launch and Settings → Languages |
+| Settings hub | `SettingsHubScreen` | Theme (System / Light / Dark) + Languages |
+| Router | `ITantraApp` + `AppViewModel` | SETUP / MAIN / SETTINGS / SETTINGS_LANGUAGES |
 | Main shell | `ITantraApp.MainContent` | Bottom nav Talk \| Alert \| Analysis; pairing dialog here |
 | Talk | `MainScreen` | Connect, PTT, inbox, Settings |
 | Alert | `AlertScreen` | 5 templates + free text; disabled until paired |
@@ -212,6 +215,7 @@ Single Activity (`MainActivity`). Permissions: mic, BT, nearby Wi-Fi / location.
 - `android/.../transport/` — WifiDirect, Bluetooth, Lan, StreamTransport
 - `app/.../ui/` — Activity, ITantraApp, Main, Alert, Diagnostics, LanguageSelection, ViewModels
 - `app/.../lang/PrefsLanguageSettingsStore.kt`
+- `app/.../theme/PrefsThemeStore.kt`, `core/.../theme/ThemeMode.kt`
 - `app/.../di/AppModule.kt`
 
 ## Constraints (ISRO / design)

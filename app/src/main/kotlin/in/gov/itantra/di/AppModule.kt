@@ -24,6 +24,8 @@ import `in`.gov.itantra.core.alert.TemplateAudioSource
 import `in`.gov.itantra.core.audio.AudioSinkFactory
 import `in`.gov.itantra.core.crypto.KeyAgreementProvider
 import `in`.gov.itantra.core.lang.LanguageSettingsStore
+import `in`.gov.itantra.core.theme.ThemeStore
+import `in`.gov.itantra.theme.PrefsThemeStore
 import `in`.gov.itantra.core.pack.LanguagePackManager
 import `in`.gov.itantra.core.stt.LanguageIdEngine
 import `in`.gov.itantra.core.stt.ScriptLanguageId
@@ -71,6 +73,12 @@ object AppModule {
     @Singleton
     fun provideLanguageSettingsStore(@ApplicationContext context: Context): LanguageSettingsStore {
         return PrefsLanguageSettingsStore(context)
+    }
+
+    @Provides
+    @Singleton
+    fun provideThemeStore(@ApplicationContext context: Context): ThemeStore {
+        return PrefsThemeStore(context)
     }
 
     @Provides

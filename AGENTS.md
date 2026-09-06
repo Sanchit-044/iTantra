@@ -48,7 +48,7 @@ App flow: first launch → language picker → download selected packs → **Tal
 - Translation: `TranslationEngine`, `DictionaryTranslationEngine` (demo phrases only)
 - Packs: `LanguagePackManager`, `android/.../pack/LocalLanguagePackManager`
 - UI: `ITantraApp` (Talk \| Alert \| Analysis), `LanguageSelectionScreen`, `MainScreen`, `AlertScreen`, `DiagnosticsScreen`, `MainViewModel`
-- Persistence: `PrefsLanguageSettingsStore` (`setupDone`, `installed`, `current`)
+- Persistence: `PrefsLanguageSettingsStore` (`setupDone`, `installed`, `current`); `PrefsThemeStore` (`SYSTEM` / `LIGHT` / `DARK`, default System)
 
 ## Docs vs code
 

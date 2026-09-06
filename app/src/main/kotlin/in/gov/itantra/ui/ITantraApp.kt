@@ -36,10 +36,14 @@ fun ITantraApp(appViewModel: AppViewModel = hiltViewModel(), mainViewModel: Main
             isSetup = true,
             onFinished = { appViewModel.closeSettings() },
         )
-        AppDestination.SETTINGS -> LanguageSelectionScreen(
-            isSetup = false,
-            onFinished = { appViewModel.closeSettings() },
+        AppDestination.SETTINGS -> SettingsHubScreen(
+            onOpenLanguages = { appViewModel.openSettingsLanguages() },
             onBack = { appViewModel.closeSettings() },
+        )
+        AppDestination.SETTINGS_LANGUAGES -> LanguageSelectionScreen(
+            isSetup = false,
+            onFinished = { appViewModel.closeSettingsLanguages() },
+            onBack = { appViewModel.closeSettingsLanguages() },
         )
         AppDestination.MAIN -> MainContent(
             mainViewModel = mainViewModel,

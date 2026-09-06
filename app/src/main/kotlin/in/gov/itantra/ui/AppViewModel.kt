@@ -16,6 +16,7 @@ enum class AppDestination {
     SETUP,
     MAIN,
     SETTINGS,
+    SETTINGS_LANGUAGES,
 }
 
 @HiltViewModel
@@ -24,15 +25,18 @@ class AppViewModel @Inject constructor(
 ) : ViewModel() {
 
     private val _showSettings = MutableStateFlow(false)
+    private val _languagesOpen = MutableStateFlow(false)
 
     val destination: StateFlow<AppDestination> = combine(
         store.settings.map { it.setupDone },
         _showSettings,
-    ) { setupDone, showSettings ->
+        _languagesOpen,
+    ) { setupDone, showSettings, languagesOpen ->
         when {
             !setupDone -> AppDestination.SETUP
-            showSettings -> AppDestination.SETTINGS
-            else -> AppDestination.MAIN
+            !showSettings -> AppDestination.MAIN
+            languagesOpen -> AppDestination.SETTINGS_LANGUAGES
+            else -> AppDestination.SETTINGS
         }
     }.stateIn(
         viewModelScope,
@@ -41,10 +45,21 @@ class AppViewModel @Inject constructor(
     )
 
     fun openSettings() {
+        _languagesOpen.value = false
         _showSettings.value = true
     }
 
+    fun openSettingsLanguages() {
+        _showSettings.value = true
+        _languagesOpen.value = true
+    }
+
+    fun closeSettingsLanguages() {
+        _languagesOpen.value = false
+    }
+
     fun closeSettings() {
+        _languagesOpen.value = false
         _showSettings.value = false
     }
 }
