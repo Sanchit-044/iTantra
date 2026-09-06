@@ -86,7 +86,7 @@ class ProfileViewModel @Inject constructor(
     fun confirm() {
         val name = ProfileRules.normalizeName(_uiState.value.name)
         if (!ProfileRules.isComplete(name, store.snapshot.photoPresent)) {
-            _uiState.update { it.copy(error = "Name and photo are required") }
+            _uiState.update { it.copy(error = "Name is required") }
             return
         }
         viewModelScope.launch {

@@ -53,7 +53,7 @@ object ProfileRules {
         raw.trim().replace(WHITESPACE, " ").take(MAX_NAME_CHARS)
 
     fun isComplete(name: String, photoPresent: Boolean): Boolean =
-        normalizeName(name).isNotEmpty() && photoPresent
+        normalizeName(name).isNotEmpty()
 
     private val WHITESPACE = Regex("\\s+")
 }

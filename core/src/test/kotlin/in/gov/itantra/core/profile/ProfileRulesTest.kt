@@ -14,8 +14,8 @@ class ProfileRulesTest {
     }
 
     @Test
-    fun `name without photo is incomplete`() {
-        assertFalse(ProfileRules.isComplete("Ravi", photoPresent = false))
+    fun `name without photo is complete`() {
+        assertTrue(ProfileRules.isComplete("Ravi", photoPresent = false))
     }
 
     @Test
@@ -44,7 +44,7 @@ class ProfileRulesTest {
         assertTrue(
             OperatorProfile(name = "Ravi", photoPresent = true, recorded = true).isComplete,
         )
-        assertFalse(
+        assertTrue(
             OperatorProfile(name = "Ravi", photoPresent = false, recorded = true).isComplete,
         )
     }

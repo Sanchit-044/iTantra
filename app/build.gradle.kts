@@ -55,6 +55,7 @@ kotlin {
 dependencies {
     implementation(project(":core"))
     implementation(project(":android"))
+    implementation(libs.androidx.benchmark.common)
     // assetPacks is defined inside the android { ... } block below
 
     implementation(libs.kotlin.coroutines.core)

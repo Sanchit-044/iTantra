@@ -8,33 +8,34 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material3.TextButton
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Bluetooth
+import androidx.compose.material.icons.filled.Wifi
 import androidx.compose.runtime.remember
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import `in`.gov.itantra.core.discover.NearbyPeer
@@ -62,14 +63,14 @@ fun RadarScreen(
             .fillMaxSize()
             .padding(16.dp),
     ) {
-        Text("Radar", style = MaterialTheme.typography.headlineMedium)
+
         Text(
-            text = "Signal rings around you — not a map, not true north. " +
-                "Other phone must Host on Talk. This tab only joins.",
-            style = MaterialTheme.typography.bodySmall,
+            text = "Discover nearby walkie-talkies. The other device must be in Host mode. Tap to connect.",
+            style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(top = 4.dp, bottom = 16.dp)
         )
-        Spacer(Modifier.height(8.dp))
+        
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -83,71 +84,110 @@ fun RadarScreen(
                 selected = radar.filter == RadarFilter.WIFI,
                 onClick = { radarViewModel.setFilter(RadarFilter.WIFI) },
                 label = { Text("Wi-Fi") },
+                leadingIcon = { Icon(Icons.Filled.Wifi, contentDescription = null, modifier = Modifier.size(16.dp)) }
             )
             FilterChip(
                 selected = radar.filter == RadarFilter.BLUETOOTH,
                 onClick = { radarViewModel.setFilter(RadarFilter.BLUETOOTH) },
                 label = { Text("Bluetooth") },
+                leadingIcon = { Icon(Icons.Filled.Bluetooth, contentDescription = null, modifier = Modifier.size(16.dp)) }
             )
         }
-        Spacer(Modifier.height(8.dp))
-        Text(
-            text = when {
-                !canJoin -> "Disconnect on Talk before joining another phone."
-                radar.scanning && radar.peers.isEmpty() -> "Scanning… near / mid / far from signal, not feet."
-                radar.peers.isEmpty() -> "No visible iTantra peers."
-                else -> "${radar.peers.size} nearby — tap a dot to connect"
-            },
-            style = MaterialTheme.typography.bodySmall,
-        )
-        if (radar.scanError != null) {
-            Text(
-                radar.scanError!!,
-                color = MaterialTheme.colorScheme.error,
-                style = MaterialTheme.typography.bodySmall,
-            )
-        }
-
-
-        Spacer(Modifier.height(8.dp))
-        val ringColor = MaterialTheme.colorScheme.outline
-        val youColor = MaterialTheme.colorScheme.primary
-        val peerColor = MaterialTheme.colorScheme.error
-        val sweepColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.25f)
-        val labelColor = MaterialTheme.colorScheme.onSurface
-        Box(
+        
+        Spacer(Modifier.height(16.dp))
+        
+        Card(
             modifier = Modifier
                 .fillMaxWidth()
-                .weight(1f),
+                .weight(1f)
+                .padding(bottom = 16.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+            shape = RoundedCornerShape(24.dp)
         ) {
-            RadarPlot(
-                peers = radar.peers,
-                ringColor = ringColor,
-                youColor = youColor,
-                peerColor = peerColor,
-                sweepColor = sweepColor,
-                labelColor = labelColor,
-                enabled = canJoin,
-                onPeerTap = { peer ->
-                    if (!canJoin) return@RadarPlot
-                    radarViewModel.stop()
-                    mainViewModel.connectToNearbyPeer(peer)
-                },
-                modifier = Modifier.fillMaxSize(),
-            )
-        }
-        if (radar.peers.isNotEmpty()) {
-            LazyColumn(modifier = Modifier.height(120.dp).fillMaxWidth()) {
-                items(radar.peers, key = { it.id }) { peer ->
-                    TextButton(
-                        onClick = {
-                            if (!canJoin) return@TextButton
-                            radarViewModel.stop()
-                            mainViewModel.connectToNearbyPeer(peer)
-                        },
-                        enabled = canJoin,
+            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                val ringColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)
+                val youColor = MaterialTheme.colorScheme.primary
+                val peerColor = MaterialTheme.colorScheme.secondary
+                val sweepColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.4f)
+                val labelColor = MaterialTheme.colorScheme.onSurface
+                
+                RadarPlot(
+                    peers = radar.peers,
+                    ringColor = ringColor,
+                    youColor = youColor,
+                    peerColor = peerColor,
+                    sweepColor = sweepColor,
+                    labelColor = labelColor,
+                    enabled = canJoin,
+                    onPeerTap = { peer ->
+                        if (!canJoin) return@RadarPlot
+                        radarViewModel.stop()
+                        mainViewModel.connectToNearbyPeer(peer)
+                    },
+                    modifier = Modifier.fillMaxSize().padding(16.dp),
+                )
+
+                if (!canJoin) {
+                    Box(
+                        modifier = Modifier
+                            .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.8f), RoundedCornerShape(8.dp))
+                            .padding(12.dp)
                     ) {
-                        Text("${peer.name} · ${peer.band.label} · ${peer.radiosLabel}")
+                        Text(
+                            "Disconnect on Talk screen before joining.",
+                            color = MaterialTheme.colorScheme.error,
+                            style = MaterialTheme.typography.labelMedium
+                        )
+                    }
+                } else if (radar.scanning && radar.peers.isEmpty()) {
+                    Text(
+                        "Scanning for peers...",
+                        color = MaterialTheme.colorScheme.primary,
+                        style = MaterialTheme.typography.labelMedium,
+                        modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 24.dp)
+                    )
+                }
+            }
+        }
+        
+        if (radar.peers.isNotEmpty()) {
+            Text("Discovered (${radar.peers.size})", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+            Spacer(Modifier.height(8.dp))
+            LazyColumn(modifier = Modifier.height(140.dp).fillMaxWidth()) {
+                items(radar.peers, key = { it.id }) { peer ->
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 4.dp)
+                            .clip(RoundedCornerShape(12.dp))
+                            .clickable(enabled = canJoin) {
+                                radarViewModel.stop()
+                                mainViewModel.connectToNearbyPeer(peer)
+                            },
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(16.dp).fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(40.dp)
+                                    .background(MaterialTheme.colorScheme.secondary, CircleShape),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = peer.name.take(1).uppercase(),
+                                    color = MaterialTheme.colorScheme.onSecondary,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                            Spacer(Modifier.width(16.dp))
+                            Column {
+                                Text(peer.name, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSecondaryContainer)
+                                Text("${peer.band.label} · ${peer.radiosLabel}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.7f))
+                            }
+                        }
                     }
                 }
             }
@@ -171,7 +211,7 @@ private fun RadarPlot(
         initialValue = 0f,
         targetValue = 360f,
         animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 4000, easing = LinearEasing),
+            animation = tween(durationMillis = 3000, easing = LinearEasing),
             repeatMode = RepeatMode.Restart,
         ),
         label = "sweep",
@@ -182,7 +222,7 @@ private fun RadarPlot(
     val labelPaint = remember(labelColor) {
         android.graphics.Paint().apply {
             color = labelColor.toArgb()
-            textSize = 28f
+            textSize = 32f
             textAlign = android.graphics.Paint.Align.CENTER
             isAntiAlias = true
         }
@@ -193,48 +233,76 @@ private fun RadarPlot(
             detectTapGestures { tap ->
                 if (!enabled) return@detectTapGestures
                 val center = Offset(size.width / 2f, size.height / 2f)
-                val maxR = min(size.width, size.height) / 2f * 0.88f
+                val maxR = min(size.width, size.height) / 2f * 0.9f
                 val hit = layout.minByOrNull { placed ->
                     val pos = polar(center, maxR, placed)
                     hypot((tap.x - pos.x).toDouble(), (tap.y - pos.y).toDouble())
                 } ?: return@detectTapGestures
                 val pos = polar(center, maxR, hit)
                 val dist = hypot((tap.x - pos.x).toDouble(), (tap.y - pos.y).toDouble())
-                if (dist <= 64.0) onPeerTap(hit.peer)
+                if (dist <= 80.0) onPeerTap(hit.peer)
             }
         },
     ) {
         val center = Offset(size.width / 2f, size.height / 2f)
-        val maxR = min(size.width, size.height) / 2f * 0.88f
+        val maxR = min(size.width, size.height) / 2f * 0.9f
+        
+        // Concentric Rings
         listOf(0.33f, 0.66f, 1f).forEach { frac ->
             drawCircle(
                 color = ringColor,
                 radius = maxR * frac,
                 center = center,
-                style = Stroke(width = 2f),
+                style = Stroke(width = 3f),
             )
         }
+        
+        // Radar Sweep Cone
+        drawArc(
+            brush = Brush.sweepGradient(
+                colors = listOf(Color.Transparent, sweepColor, Color.Transparent),
+                center = center
+            ),
+            startAngle = sweepAngle - 90f - 45f,
+            sweepAngle = 45f,
+            useCenter = true,
+            topLeft = Offset(center.x - maxR, center.y - maxR),
+            size = Size(maxR * 2, maxR * 2)
+        )
+        
+        // Sweep Line
         val sweepRad = ((sweepAngle - 90f) * PI / 180.0).toFloat()
         drawLine(
-            color = sweepColor,
+            color = youColor.copy(alpha = 0.8f),
             start = center,
             end = Offset(center.x + maxR * cos(sweepRad), center.y + maxR * sin(sweepRad)),
-            strokeWidth = 6f,
+            strokeWidth = 4f,
         )
-        drawCircle(color = youColor, radius = 14f, center = center)
+        
+        // Center "You" dot
+        drawCircle(color = youColor, radius = 20f, center = center)
+        drawCircle(color = youColor.copy(alpha = 0.3f), radius = 32f, center = center) // Inner glow
 
         layout.forEach { placed ->
             val pos = polar(center, maxR, placed)
             val alpha = if (placed.fading) 0.35f else 1f
+            
+            // Peer Dot
             drawCircle(
                 color = peerColor.copy(alpha = alpha),
-                radius = 16f,
+                radius = 24f,
                 center = pos,
             )
+            drawCircle(
+                color = peerColor.copy(alpha = alpha * 0.3f),
+                radius = 36f,
+                center = pos,
+            ) // Peer glow
+            
             drawContext.canvas.nativeCanvas.drawText(
-                "${placed.peer.name} · ${placed.peer.band.label}",
+                "${placed.peer.name}",
                 pos.x,
-                pos.y + 32f,
+                pos.y + 50f,
                 labelPaint,
             )
         }

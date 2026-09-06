@@ -57,22 +57,6 @@ fun DiagnosticsScreen(
 
     Scaffold(
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
-        topBar = {
-            TopAppBar(
-                title = { Text(chrome.analysis) },
-                actions = {
-                    IconButton(
-                        onClick = { viewModel.share(context) },
-                        enabled = uiState.snapshot != null,
-                    ) {
-                        Icon(Icons.Filled.Share, contentDescription = chrome.shareJson)
-                    }
-                    IconButton(onClick = onOpenSettings) {
-                        Icon(Icons.Filled.Settings, contentDescription = chrome.settings)
-                    }
-                },
-            )
-        }
     ) { padding ->
         Column(
             modifier = Modifier
@@ -82,12 +66,20 @@ fun DiagnosticsScreen(
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Text(
-                text = chrome.analysisHelp,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = chrome.analysisHelp,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.weight(1f)
+                )
+                androidx.compose.material3.IconButton(
+                    onClick = { viewModel.share(context) },
+                    enabled = uiState.snapshot != null,
+                ) {
+                    Icon(Icons.Filled.Share, contentDescription = chrome.shareJson, tint = MaterialTheme.colorScheme.primary)
+                }
+            }
             if (uiState.shareError != null) {
                 Text(
                     text = uiState.shareError!!,
