@@ -30,6 +30,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import `in`.gov.itantra.ui.components.ProfileAvatar
 import `in`.gov.itantra.core.lang.UiStrings
 import `in`.gov.itantra.core.transport.ConnectionState
 import perfetto.protos.UiState
@@ -185,7 +186,7 @@ fun MainScreen(
             }
             
             Box(
-                modifier = Modifier.padding(bottom = 80.dp).fillMaxWidth(),
+                modifier = Modifier.padding(bottom = 140.dp).fillMaxWidth(),
                 contentAlignment = Alignment.Center
             ) {
                 Text(

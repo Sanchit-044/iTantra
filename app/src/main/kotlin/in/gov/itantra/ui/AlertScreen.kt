@@ -40,18 +40,6 @@ fun AlertScreen(viewModel: MainViewModel) {
             .padding(16.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        // Header
-        Icon(
-            imageVector = Icons.Filled.Warning,
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.error,
-            modifier = Modifier.size(64.dp).padding(top = 16.dp, bottom = 8.dp)
-        )
-        Text(
-            text = chrome.alertTitle, 
-            style = MaterialTheme.typography.headlineMedium, 
-            color = MaterialTheme.colorScheme.error
-        )
         Text(
             text = if (ready) chrome.alertReadyHelp else chrome.alertNeedPair,
             style = MaterialTheme.typography.bodyMedium,

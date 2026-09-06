@@ -29,6 +29,7 @@ import androidx.compose.material3.rememberDrawerState
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.rememberCoroutineScope
 import kotlinx.coroutines.launch
@@ -39,8 +40,19 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.size
+import androidx.compose.ui.Alignment
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.compose.animation.AnimatedContentTransitionScope
+import androidx.compose.animation.core.tween
+import androidx.navigation.compose.NavHost
+import androidx.navigation.compose.composable
+import androidx.navigation.compose.rememberNavController
 import `in`.gov.itantra.core.lang.UiStrings
+import `in`.gov.itantra.ui.components.ProfileAvatar
 
 private enum class MainTab { TALK, ALERT, ANALYSIS, RADAR }
 
@@ -49,38 +61,67 @@ fun ITantraApp(
     appViewModel: AppViewModel = hiltViewModel(),
     mainViewModel: MainViewModel = hiltViewModel(),
 ) {
-    val destination by appViewModel.destination.collectAsState()
+    val navController = rememberNavController()
 
-    when (destination) {
-        AppDestination.SETUP_PROFILE -> ProfileScreen(
-            isSetup = true,
-            onFinished = { },
-        )
-        AppDestination.SETUP_LANGUAGES -> LanguageSelectionScreen(
-            isSetup = true,
-            onFinished = { appViewModel.closeSettings() },
-        )
-        AppDestination.SETTINGS_HUB -> SettingsHubScreen(
-            onOpenProfile = { appViewModel.openSettingsProfile() },
-            onOpenLanguages = { appViewModel.openSettingsLanguages() },
-            onBack = { appViewModel.closeSettings() },
-            mainViewModel = mainViewModel,
-        )
-        AppDestination.SETTINGS_PROFILE -> ProfileScreen(
-            isSetup = false,
-            onFinished = { appViewModel.closeSettingsPage() },
-            onBack = { appViewModel.closeSettingsPage() },
-        )
-        AppDestination.SETTINGS_LANGUAGES -> LanguageSelectionScreen(
-            isSetup = false,
-            onFinished = { appViewModel.closeSettingsPage() },
-            onBack = { appViewModel.closeSettingsPage() },
-        )
-        AppDestination.MAIN -> MainContent(
-            mainViewModel = mainViewModel,
-            onOpenSettings = { appViewModel.openSettings() },
-            onOpenProfile = { appViewModel.openSettingsProfile() },
-        )
+    NavHost(
+        navController = navController,
+        startDestination = appViewModel.initialRoute,
+        enterTransition = {
+            slideIntoContainer(
+                AnimatedContentTransitionScope.SlideDirection.Left,
+                animationSpec = tween(400)
+            )
+        },
+        exitTransition = {
+            slideOutOfContainer(
+                AnimatedContentTransitionScope.SlideDirection.Left,
+                animationSpec = tween(400)
+            )
+        },
+        popEnterTransition = {
+            slideIntoContainer(
+                AnimatedContentTransitionScope.SlideDirection.Right,
+                animationSpec = tween(400)
+            )
+        },
+        popExitTransition = {
+            slideOutOfContainer(
+                AnimatedContentTransitionScope.SlideDirection.Right,
+                animationSpec = tween(400)
+            )
+        }
+    ) {
+        composable(AppRoutes.SETUP_PROFILE) {
+            ProfileScreen(
+                isSetup = true,
+                onFinished = { navController.navigate(AppRoutes.SETUP_LANGUAGES) { popUpTo(AppRoutes.SETUP_PROFILE) { inclusive = true } } },
+            )
+        }
+        composable(AppRoutes.SETUP_LANGUAGES) {
+            LanguageSelectionScreen(
+                isSetup = true,
+                onFinished = { navController.navigate(AppRoutes.MAIN) { popUpTo(0) } },
+            )
+        }
+        composable(AppRoutes.MAIN) {
+            MainContent(
+                mainViewModel = mainViewModel,
+                onOpenSettings = { navController.navigate(AppRoutes.SETTINGS) },
+                onOpenProfile = { navController.navigate(AppRoutes.SETTINGS_PROFILE) },
+            )
+        }
+        composable(AppRoutes.SETTINGS) {
+            SettingsScreen(
+                onBack = { navController.popBackStack() },
+            )
+        }
+        composable(AppRoutes.SETTINGS_PROFILE) {
+            ProfileScreen(
+                isSetup = false,
+                onFinished = { navController.popBackStack() },
+                onBack = { navController.popBackStack() },
+            )
+        }
     }
 }
 
@@ -130,12 +171,39 @@ fun MainContent(
         drawerContent = {
             ModalDrawerSheet {
                 androidx.compose.foundation.layout.Spacer(Modifier.padding(12.dp))
-                Text(
-                    text = chrome.appTitle,
-                    modifier = Modifier.padding(horizontal = 28.dp, vertical = 16.dp),
-                    style = androidx.compose.material3.MaterialTheme.typography.titleLarge,
-                    color = androidx.compose.material3.MaterialTheme.colorScheme.primary
-                )
+                
+                // Drawer Header with Profile
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    val local = uiState.localProfile
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        ProfileAvatar(
+                            path = local.photoPath,
+                            bytes = local.thumbnailJpeg,
+                            modifier = Modifier.size(48.dp)
+                        )
+                        androidx.compose.foundation.layout.Spacer(Modifier.padding(8.dp))
+                        Text(
+                            text = if (local.name.isBlank()) "No name" else local.displayName,
+                            style = androidx.compose.material3.MaterialTheme.typography.titleMedium,
+                            color = androidx.compose.material3.MaterialTheme.colorScheme.onSurface
+                        )
+                    }
+                    IconButton(onClick = {
+                        coroutineScope.launch { drawerState.close() }
+                        onOpenProfile()
+                    }) {
+                        Icon(Icons.Filled.Edit, contentDescription = "Edit Profile", tint = androidx.compose.material3.MaterialTheme.colorScheme.primary)
+                    }
+                }
+                
+                androidx.compose.material3.HorizontalDivider(modifier = Modifier.padding(bottom = 8.dp))
+
                 androidx.compose.material3.NavigationDrawerItem(
                     label = { Text("Profile") },
                     selected = false,

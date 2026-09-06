@@ -177,7 +177,7 @@ fun LanguageSelectionScreen(
 }
 
 @Composable
-private fun PackRow(
+fun PackRow(
     language: Language,
     selected: Boolean,
     current: Boolean,
