@@ -107,13 +107,7 @@ fun RadarScreen(
                 style = MaterialTheme.typography.bodySmall,
             )
         }
-        if (main.error != null) {
-            Text(
-                main.error!!,
-                color = MaterialTheme.colorScheme.error,
-                style = MaterialTheme.typography.bodySmall,
-            )
-        }
+
 
         Spacer(Modifier.height(8.dp))
         val ringColor = MaterialTheme.colorScheme.outline

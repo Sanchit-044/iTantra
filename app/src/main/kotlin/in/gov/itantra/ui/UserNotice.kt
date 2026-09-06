@@ -25,4 +25,3 @@ sealed class UserNotice {
 
     val isSuccess: Boolean get() = this is AlertSent
 }
-}

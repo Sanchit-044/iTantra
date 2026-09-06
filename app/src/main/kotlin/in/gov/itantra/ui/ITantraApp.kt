@@ -46,12 +46,8 @@ fun ITantraApp(
             isSetup = true,
             onFinished = { appViewModel.closeSettings() },
         )
-<<<<<<< HEAD
         AppDestination.SETTINGS_HUB -> SettingsHubScreen(
             onOpenProfile = { appViewModel.openSettingsProfile() },
-=======
-        AppDestination.SETTINGS -> SettingsHubScreen(
->>>>>>> origin/fix/dark-light-theme
             onOpenLanguages = { appViewModel.openSettingsLanguages() },
             onBack = { appViewModel.closeSettings() },
             mainViewModel = mainViewModel,
@@ -65,11 +61,6 @@ fun ITantraApp(
             isSetup = false,
             onFinished = { appViewModel.closeSettingsPage() },
             onBack = { appViewModel.closeSettingsPage() },
-        )
-        AppDestination.SETTINGS_LANGUAGES -> LanguageSelectionScreen(
-            isSetup = false,
-            onFinished = { appViewModel.closeSettingsLanguages() },
-            onBack = { appViewModel.closeSettingsLanguages() },
         )
         AppDestination.MAIN -> MainContent(
             mainViewModel = mainViewModel,

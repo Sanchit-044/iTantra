@@ -16,12 +16,8 @@ enum class AppDestination {
     SETUP_PROFILE,
     SETUP_LANGUAGES,
     MAIN,
-<<<<<<< HEAD
     SETTINGS_HUB,
     SETTINGS_PROFILE,
-=======
-    SETTINGS,
->>>>>>> origin/fix/dark-light-theme
     SETTINGS_LANGUAGES,
 }
 
@@ -32,17 +28,12 @@ class AppViewModel @Inject constructor(
 ) : ViewModel() {
 
     private val _showSettings = MutableStateFlow(false)
-<<<<<<< HEAD
     private val _settingsPage = MutableStateFlow(SettingsPage.HUB)
-=======
-    private val _languagesOpen = MutableStateFlow(false)
->>>>>>> origin/fix/dark-light-theme
 
     val destination: StateFlow<AppDestination> = combine(
         profileStore.profile,
         languageStore.settings,
         _showSettings,
-<<<<<<< HEAD
         _settingsPage,
     ) { profile, languages, showSettings, settingsPage ->
         when {
@@ -52,15 +43,6 @@ class AppViewModel @Inject constructor(
             settingsPage == SettingsPage.PROFILE -> AppDestination.SETTINGS_PROFILE
             settingsPage == SettingsPage.LANGUAGES -> AppDestination.SETTINGS_LANGUAGES
             else -> AppDestination.SETTINGS_HUB
-=======
-        _languagesOpen,
-    ) { setupDone, showSettings, languagesOpen ->
-        when {
-            !setupDone -> AppDestination.SETUP
-            !showSettings -> AppDestination.MAIN
-            languagesOpen -> AppDestination.SETTINGS_LANGUAGES
-            else -> AppDestination.SETTINGS
->>>>>>> origin/fix/dark-light-theme
         }
     }.stateIn(
         viewModelScope,
@@ -69,7 +51,6 @@ class AppViewModel @Inject constructor(
     )
 
     fun openSettings() {
-<<<<<<< HEAD
         _settingsPage.value = SettingsPage.HUB
         _showSettings.value = true
     }
@@ -90,23 +71,6 @@ class AppViewModel @Inject constructor(
 
     fun closeSettings() {
         _settingsPage.value = SettingsPage.HUB
-=======
-        _languagesOpen.value = false
-        _showSettings.value = true
-    }
-
-    fun openSettingsLanguages() {
-        _showSettings.value = true
-        _languagesOpen.value = true
-    }
-
-    fun closeSettingsLanguages() {
-        _languagesOpen.value = false
-    }
-
-    fun closeSettings() {
-        _languagesOpen.value = false
->>>>>>> origin/fix/dark-light-theme
         _showSettings.value = false
     }
 
