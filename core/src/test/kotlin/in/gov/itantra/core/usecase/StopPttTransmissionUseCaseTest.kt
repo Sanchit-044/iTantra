@@ -28,14 +28,19 @@ class StopPttTransmissionUseCaseTest {
         
         var floorReleased = false
         val fakeTransport = object : Transport {
+            override val kind = `in`.gov.itantra.core.transport.TransportKind.LOOPBACK
             override val state: ConnectionState = ConnectionState.CONNECTED
+            override val pairingInfo: `in`.gov.itantra.core.transport.PairingInfo? = null
             override fun setListener(listener: TransportListener?) {}
-            override fun connect() {}
+            override fun connect(timeoutMs: Long) {}
             override fun disconnect() {}
             override fun send(packet: Packet) {}
             override fun requestFloor() {}
             override fun releaseFloor() { floorReleased = true }
             override fun confirmPairing() {}
+            override val lastRoundTripMs: Long? = null
+            override val stats = `in`.gov.itantra.core.transport.TransportStats()
+            override fun close() {}
         }
         
         useCase.execute(fakeTransport)

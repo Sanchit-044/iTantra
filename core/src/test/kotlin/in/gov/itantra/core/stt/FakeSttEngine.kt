@@ -25,14 +25,14 @@ class FakeSttEngine : SttEngine {
         this.listener = null
     }
 
-    override fun loadModel(language: Language) {
-        activeLanguage = language
-    }
-
     override fun cancel() {
         isListening = false
         state = SttState.MODEL_LOADED
         this.listener = null
+    }
+
+    override fun loadModel(language: Language) {
+        activeLanguage = language
     }
 
     override val silenceTimeoutMs: Long = 800L

@@ -18,11 +18,29 @@ class DictionaryTranslationEngineTest {
     }
 
     @Test
-    fun `known hindi phrase becomes tamil`() {
+    fun `known hindi phrase with punctuation becomes tamil`() {
         assertEquals(
             "எனக்கு உதவி வேண்டும்",
-            engine.translate("मुझे मदद चाहिए", Language.HINDI, Language.TAMIL),
+            engine.translate("मुझे मदद चाहिए।", Language.HINDI, Language.TAMIL),
         )
+        assertEquals(
+            "I need help",
+            engine.translate("  मुझे मदद चाहिए!  ", Language.HINDI, Language.ENGLISH),
+        )
+    }
+
+    @Test
+    fun `all 10 languages translate emergency phrases across all pairs`() {
+        for (src in Language.entries) {
+            for (tgt in Language.entries) {
+                if (src == tgt) continue
+                val translated = engine.translateOrSame("I need help", Language.ENGLISH, tgt)
+                kotlin.test.assertTrue(
+                    translated.isNotBlank(),
+                    "Translation from ENGLISH to ${tgt.englishName} should not be blank"
+                )
+            }
+        }
     }
 
     @Test

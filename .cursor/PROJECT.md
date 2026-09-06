@@ -7,11 +7,13 @@ ISRO Smart India Hackathon **PS 26173**: *Indian Multilingual TTS & STT Aided Ne
 An **offline Android walkie-talkie**. Raw audio is too heavy for weak radio. The app:
 
 1. Turns speech into text on the sender (STT)
-2. Sends **encrypted text** over Wi-Fi Direct, Bluetooth RFCOMM, or LAN
+2. Sends **encrypted text** over Wi-Fi Direct, Bluetooth RFCOMM, or LAN (LAN exists in `:android`; Talk UI today is Wi-Fi Direct + Bluetooth)
 3. Turns that text back into speech on the receiver (TTS)
 4. If the two phones use different current languages, **translates on the receiver** into the listener’s language
 
 No server, no login, no database, no cloud STT/TTS. Primary use: distress / alert comms in the field, including for people who cannot read. Secondary: field units who speak different Indian languages.
+
+**One connected peer.** No 3-person mesh.
 
 ## Official languages (10)
 
@@ -58,16 +60,28 @@ Launch
   │                      Continue → install only selected packs
   │                      + shared translation pack marker
   │                      current = Hindi (unless Hindi unticked)
-  └─ setupDone = true  → Walkie-talkie (MainScreen)
-                         Settings → same picker (add/remove/set active)
+  └─ setupDone = true  → Main shell (Talk | Alert | Analysis)
+                         Settings (gear / Settings) → same picker
 
-Walkie-talkie
-  Connect: Wi-Fi host/join, BT host/join, LAN host/join
-  Pairing: 6-digit code, both operators confirm
-  PTT: detect (if 2+ installed) → STT → send {text, source language}
-  Receive: if source == current → TTS
-           else translate → current TTS
-           if translate fails → error, do not misuse TTS voice
+Talk
+  Connect: Wi-Fi host/join, BT host/join
+  Pairing: 6-digit code, both operators confirm (dialog is on the shell)
+  Live PTT: request floor → STT → send {text, source language}
+  Offline PTT: if not connected, store text in outbound queue (not live send)
+  Inbox: queued inbound text; Play / Dismiss; no autoplay
+
+Alert (priority shout, packet 0x02)
+  Five F-07 templates + free text. Send only when CONNECTED and pairing confirmed.
+  Not queued. Peer auto-plays loud (AlertPlayer). No inbox Play button.
+
+Analysis
+  Diagnostics snapshot (poll). Share JSON. Not a second radio.
+
+Receive (live NORMAL)
+  if source == current → TTS
+  else translate → current TTS
+  if translate fails → error, do not misuse TTS voice
+  if an alert is playing → tryPlayNormal defers, then play after
 ```
 
 ## Speech pipeline
@@ -76,16 +90,16 @@ Walkie-talkie
 `OnnxCtcSttEngine` — IndicWav2Vec CTC on ONNX, 800 ms `SilenceEndpointer`. One model in RAM. Partials every ~600 ms (skip if previous still running). Final decode is a fresh full-utterance pass.
 
 **LID (sender only)**  
-`ScriptLanguageId` + `resolveSpokenLanguage`. Among **installed** only. One language → skip. Unsure → keep current, else Hindi if installed. After STT text, script (Tamil / Devanagari / Latin / …) can refine `current`. No LID on the receiver. No detect among all 10.
+`ScriptLanguageId` + `resolveSpokenLanguage`. Among **installed** only. One language → skip. Unsure → keep current, else Hindi if installed. After STT text, script can refine `current`. No LID on the receiver. No detect among all 10.
 
 **Send**  
 Original text + source language. **No translation on send.**
 
 **Translation (receiver only)**  
-`TranslationEngine` / `DictionaryTranslationEngine`. Same language → no-op. Demo phrase table (e.g. Hindi “मुझे मदद चाहिए” ↔ Tamil). Unknown sentence without a real model → `TranslationUnavailableException` → UI message. Never feed Hindi text to a Tamil TTS voice.
+`TranslationEngine` / `DictionaryTranslationEngine`. Same language → no-op. Demo phrase table. Unknown sentence without a real model → `TranslationUnavailableException` → UI message. Never feed Hindi text to a Tamil TTS voice.
 
 **TTS (receiver)**  
-`VitsOnnxTtsEngine` intended: Indic-TTS VITS ONNX. **Current runtime:** Android `TextToSpeech` hackathon fallback if ONNX missing. `loadVoice` must not die when packs are absent; set locale from `Language.bcp47`. Text pipeline in `:core`: `TextNormalizer`, `NumberLexicon`, `AbbreviationLexicon`, `ClauseChunker`, `ChunkedSpeaker`. Receive path today synthesizes the whole utterance (chunked speaker exists but is not wired on receive).
+`VitsOnnxTtsEngine` intended: Indic-TTS VITS ONNX. **Current runtime:** Android `TextToSpeech` is used when the ONNX graph is missing (hackathon fallback). `loadVoice` must not die when packs are absent. Text pipeline in `:core`: `TextNormalizer`, `NumberLexicon`, `AbbreviationLexicon`, `ClauseChunker`, `ChunkedSpeaker`. Receive path today synthesizes the whole utterance (chunked speaker exists but is not wired on receive).
 
 ## Packs / download
 
@@ -103,25 +117,51 @@ ONNX weights are **not in git**. Vocab JSON for Hindi may exist. `:models-pack` 
 
 ## Transport and security
 
-Transports (same packet codec): Wi-Fi Direct, Bluetooth RFCOMM, LAN/hotspot TCP.
+Transports (same packet codec): Wi-Fi Direct, Bluetooth RFCOMM, `LanTransport` (not on the Talk picker yet).
 
-Handshake: ECDH P-256 (Android Keystore) → HKDF-SHA256 → AES-256-GCM. Header (including language + alert flag) is GCM AAD. **No extra HMAC** (docs that say HMAC are stale). 6-digit pairing SAS; user must confirm both phones match.
+Handshake: ECDH P-256 (Android Keystore) → HKDF-SHA256 → AES-256-GCM. Header (including language + type) is GCM AAD. **No extra HMAC** (docs that say HMAC are stale). 6-digit pairing SAS; user must confirm both phones match. `StreamTransport.send` refuses content until `confirmPairing`.
 
-Half-duplex: `ChannelArbiter` — second talker sees busy, 1 s retry. Alerts jump the send queue (engine; not in UI).
+**Floor control** (`FloorController`, packets `0x05`–`0x08`): live PTT requests the floor before STT. Host wins simultaneous requests. Denied → “Channel busy.” `ChannelArbiter` still prefers alerts on the send path.
+
+**Message types (do not renumber):**
+
+| Type | wire |
+|------|------|
+| NORMAL | 0x01 |
+| ALERT | 0x02 |
+| HEARTBEAT | 0x03 |
+| ACK | 0x04 |
+| FLOOR_REQUEST | 0x05 |
+| FLOOR_GRANT | 0x06 |
+| FLOOR_DENY | 0x07 |
+| FLOOR_RELEASE | 0x08 |
+| QUEUED | 0x09 |
 
 No REST, no gRPC, no user auth.
 
-## Alerts and diagnostics (engine only)
+## Alerts (wired)
 
-`:core` / `:android` have `AlertPlayer` (forced alarm focus, templates or TTS) and diagnostics collectors. **Not wired to the app.** No alert screen, no diagnostics screen, no continuous call mode, no foreground service.
+F-07 templates: Emergency — need assistance, All clear, Evacuate immediately, Stay in position, Medical help needed. Wire payload `tpl:<assetKey>` or trimmed custom text (`SendAlertUseCase`, max 200 chars).
 
-Do not claim these are demo-ready.
+`AlertPlayer`: STREAM_ALARM, max volume, then restore. Template WAV at `alerts/<lang>/<assetKey>.wav` if present; **missing file → TTS of the phrase**. A second alert **queues** and plays after (does not cut). Incoming NORMAL waits via `tryPlayNormal` (ViewModel defers up to 8).
+
+No triple-press power, no lock-screen SOS, no widget.
+
+## Queue / inbox (wired)
+
+When disconnected, Talk PTT stores **text** outbound (`OutboundMessageQueue`). After pairing confirm, `FlushQueuedMessagesUseCase` sends `QUEUED` (0x09). Receiver puts it in `InboundMessageInbox` — **no auto TTS**. Talk shows Play / Dismiss. Optional notification. TTL **30 days** (`QueueTtl`). Cap and persist: `FileQueueStore` (`filesDir/queue-outbound.tsv`, `queue-inbox.tsv`). Sent outbound items are deleted; inbox stays until dismiss.
+
+Alerts are **not** queued.
+
+## Analysis (wired)
+
+`DiagnosticsScreen` + `AndroidDiagnosticsService`. Snapshot of STT/TTS/transport/system. Do not invent WER/RTF/RAM numbers in UI copy or docs.
 
 ## Architecture
 
 ```
-:app        Compose + Hilt. Setup / Settings / Main / PTT.
-:android    ONNX, AudioRecord/Track, WifiP2p, Bluetooth, LAN, Keystore, pack IO.
+:app        Compose + Hilt. Setup / Settings / Talk / Alert / Analysis.
+:android    ONNX, AudioRecord/Track, WifiP2p, Bluetooth, LAN, Keystore, pack IO, WAV templates, queue files.
 :core       Pure Kotlin/JVM. Interfaces + business logic + unit tests.
 :harness    Instrumented B2 STT eval, B4 round-trip. Skips without models/corpus.
 :models-pack  Not in settings.gradle. Do not assume it is in the APK.
@@ -142,10 +182,13 @@ Kotlin 2.1, Gradle 8.13, AGP 8.13, minSdk 24, compileSdk 35, JDK 17, Compose Mat
 | Screen | File | When |
 |--------|------|------|
 | Language picker | `LanguageSelectionScreen` | First launch and Settings |
-| Walkie-talkie | `MainScreen` | After setup |
 | Router | `ITantraApp` + `AppViewModel` | SETUP / MAIN / SETTINGS |
+| Main shell | `ITantraApp.MainContent` | Bottom nav Talk \| Alert \| Analysis; pairing dialog here |
+| Talk | `MainScreen` | Connect, PTT, inbox, Settings |
+| Alert | `AlertScreen` | 5 templates + free text; disabled until paired |
+| Analysis | `DiagnosticsScreen` | Diagnostics snapshot |
 
-Single Activity (`MainActivity`). Permissions: mic, BT, nearby Wi-Fi / location. PTT enabled only when `CONNECTED`. Header shows current language + Settings.
+Single Activity (`MainActivity`). Permissions: mic, BT, nearby Wi-Fi / location. Live PTT needs CONNECTED + floor. Alert send needs CONNECTED + pairing confirmed. Offline PTT queues text.
 
 ## Key paths (under `iTantra/`)
 
@@ -155,15 +198,19 @@ Single Activity (`MainActivity`). Permissions: mic, BT, nearby Wi-Fi / location.
 - `core/.../tts/` — engines, normalizer, lexicons, chunker
 - `core/.../translate/` — `TranslationEngine`, `DictionaryTranslationEngine`
 - `core/.../pack/LanguagePackManager.kt`
-- `core/.../usecase/` — start/stop/receive PTT
-- `core/.../transport/` — `Packet`, `PacketCodec`, `ChannelArbiter`
+- `core/.../usecase/` — start/stop/receive PTT, `SendAlertUseCase`, `FlushQueuedMessagesUseCase`
+- `core/.../transport/` — `Packet`, `PacketCodec`, `ChannelArbiter`, `FloorController`
 - `core/.../crypto/` — ECDH, AES-GCM
-- `core/.../alert/`, `diag/`, `eval/` — engine / harness, not app UI
+- `core/.../alert/` — templates + `AlertPlayer`
+- `core/.../queue/` — outbound, inbox, TTL
+- `core/.../diag/`, `eval/` — diagnostics model / harness
 - `android/.../stt/OnnxCtcSttEngine.kt`, `OnnxCtcDecoder.kt`
 - `android/.../tts/VitsOnnxTtsEngine.kt`
+- `android/.../alert/` — `WavTemplateSource`, `AndroidForcedAudioFocus`
+- `android/.../queue/FileQueueStore.kt`
 - `android/.../pack/` — `LanguagePackPaths`, `LocalLanguagePackManager`
 - `android/.../transport/` — WifiDirect, Bluetooth, Lan, StreamTransport
-- `app/.../ui/` — Activity, ITantraApp, Main, LanguageSelection, ViewModels
+- `app/.../ui/` — Activity, ITantraApp, Main, Alert, Diagnostics, LanguageSelection, ViewModels
 - `app/.../lang/PrefsLanguageSettingsStore.kt`
 - `app/.../di/AppModule.kt`
 
@@ -179,7 +226,7 @@ Single Activity (`MainActivity`). Permissions: mic, BT, nearby Wi-Fi / location.
 
 | Doc | Trust |
 |-----|--------|
-| `.cursor/PROJECT.md` + `rules/` | Current product |
+| `.cursor/PROJECT.md` + `rules/` | Current product — **keep in sync with `:app` UI** |
 | `AGENTS.md` | Short reminder |
 | `docs/STT-BACKEND.md` | Valid: Vosk dropped, IndicWav2Vec ONNX |
 | `docs/MEASUREMENTS.md` | Valid: no measurements |
@@ -190,11 +237,11 @@ Prefer **code + this folder** when they disagree.
 
 ## What works vs incomplete
 
-**In code / tested in `:core`:** packets, GCM, pairing math, endpointer, lexicons (HI/TA/BN + extras), LID set rules, dictionary translate, receive skip-when-same, channel arbiter, alert player (unit), WER harness.
+**In code / tested in `:core`:** packets (incl. floor + queued), GCM, pairing math, endpointer, lexicons, LID set rules, dictionary translate, receive skip-when-same, channel arbiter, floor controller, alert player, send-alert refuses before pairing, queue TTL, WER harness.
 
-**Wired in the app:** language picker, persist, pack install markers, PTT, three transports, pairing dialog, receive + translate hook, current-language header.
+**Wired in the app:** language picker, persist, pack install markers, Talk connect + pairing, live PTT + floor, offline queue + inbox, Alert tab, Analysis tab, receive + translate hook, current-language header.
 
-**Not ready for a measured demo:** ONNX weights not in repo; TTS is system engine; LID is script/heuristic not a neural model; translation is a phrase table; Tamil/Bengali lexicons need native review; extras languages use placeholder number tokens; alerts/diagnostics/call mode not in UI; `:models-pack` unwired; Room unused.
+**Not ready for a measured demo:** ONNX weights not in repo; TTS often system engine; LID is script/heuristic not a neural model; translation is a phrase table; Tamil/Bengali lexicons need native review; extra languages use placeholder number tokens; spoken alert WAVs may be missing (TTS fallback); `:models-pack` unwired; Room unused; LAN not on Talk picker.
 
 ## Tests and commands
 
@@ -206,7 +253,7 @@ cd iTantra
 ./gradlew :harness:connectedAndroidTest
 ```
 
-When changing language / PTT / receive / packets: update `:core` tests. Loops should use `Language.entries`, not “exactly 3.”
+When changing language / PTT / receive / packets / alerts / queue: update `:core` tests. Loops should use `Language.entries`, not “exactly 3.”
 
 ## Adding a language
 
@@ -214,9 +261,10 @@ When changing language / PTT / receive / packets: update `:core` tests. Loops sh
 2. Number + abbreviation lexicons
 3. ModelRegistry / VITS paths (enum-driven — usually automatic)
 4. Picker is enum-driven
-5. Dictionary pairs only if you have demo phrases
-6. Tests that iterate `Language.entries`
+5. Alert `phrase()` arms for that language
+6. Dictionary pairs only if you have demo phrases
+7. Tests that iterate `Language.entries`
 
 ## Out of scope unless explicitly asked
 
-Alert UI, diagnostics screen, continuous call / FGS, mesh (3+ phones), OTA model store, real IndicTrans2 ONNX in git, cross-language meaning beyond the translation engine, inventing eval numbers.
+Mesh (3+ phones), lock-screen / power-button SOS, radar / map of nearby devices, continuous call / FGS, OTA model store, real IndicTrans2 ONNX in git, cross-language meaning beyond the translation engine, inventing eval numbers.

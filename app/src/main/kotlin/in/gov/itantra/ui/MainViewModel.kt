@@ -23,7 +23,9 @@ import `in`.gov.itantra.core.crypto.KeyAgreementProvider
 import `in`.gov.itantra.core.lang.LanguageSettingsStore
 import `in`.gov.itantra.core.stt.LanguageIdEngine
 import `in`.gov.itantra.core.stt.resolveSpokenLanguage
+import `in`.gov.itantra.core.translate.TranslationEngine
 import `in`.gov.itantra.core.translate.TranslationUnavailableException
+import `in`.gov.itantra.core.translate.translateOrSame
 import `in`.gov.itantra.core.queue.InboxMessage
 import `in`.gov.itantra.core.queue.InboundMessageInbox
 import `in`.gov.itantra.core.queue.OutboundMessageQueue
@@ -87,6 +89,7 @@ class MainViewModel @Inject constructor(
     private val startPttUseCase: StartPttTransmissionUseCase,
     private val stopPttUseCase: StopPttTransmissionUseCase,
     private val receivePttUseCase: ReceivePttTransmissionUseCase,
+    private val translationEngine: TranslationEngine,
     private val languageSettings: LanguageSettingsStore,
     private val languageIdEngine: LanguageIdEngine,
     private val sendAlertUseCase: SendAlertUseCase,
@@ -228,6 +231,7 @@ class MainViewModel @Inject constructor(
                             viewModelScope.launch { languageSettings.setCurrentLanguage(refined) }
                         }
                     },
+                    onQueued = { publishQueues() },
                 )
             } catch (e: Exception) {
                 stopPttUseCase.execute(currentTransport)
@@ -267,14 +271,30 @@ class MainViewModel @Inject constructor(
                 when (packet.type) {
                     MessageType.QUEUED -> handleQueuedInbound(packet)
                     MessageType.ALERT -> {
-                        alertPlayer.play(
-                            IncomingAlert(
-                                content = AlertTemplate.fromWirePayload(packet.text),
-                                language = packet.language,
+                        val currentLang = _uiState.value.currentLanguage
+                        val content = AlertTemplate.fromWirePayload(packet.text)
+                        val alertToPlay = when (content) {
+                            is AlertContent.Template -> IncomingAlert(
+                                content = content,
+                                language = currentLang,
                                 sequence = packet.sequence,
                                 receivedAtMs = System.currentTimeMillis(),
                             )
-                        )
+                            is AlertContent.Custom -> {
+                                val translatedText = translationEngine.translateOrSame(
+                                    content.text,
+                                    packet.language,
+                                    currentLang,
+                                )
+                                IncomingAlert(
+                                    content = AlertContent.Custom(translatedText),
+                                    language = currentLang,
+                                    sequence = packet.sequence,
+                                    receivedAtMs = System.currentTimeMillis(),
+                                )
+                            }
+                        }
+                        alertPlayer.play(alertToPlay)
                         drainDeferredNormals()
                     }
                     MessageType.NORMAL -> playNormalOrDefer(packet)
