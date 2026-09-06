@@ -48,7 +48,7 @@ class VitsOnnxTtsEngine(
         val language: Language,
         val modelAsset: String,
         val vocabAsset: String,
-        val sampleRate: Int = 22_050,
+        val sampleRate: Int = 16_000,
     ) {
         companion object {
             val DEFAULTS: Map<Language, VitsVoiceDescriptor> =
@@ -70,7 +70,7 @@ class VitsOnnxTtsEngine(
     override var activeLanguage: Language? = null
         private set
 
-    override var outputFormat: AudioFormat = AudioFormat.TTS_22K
+    override var outputFormat: AudioFormat = AudioFormat(16_000)
         private set
 
     private var environment: OrtEnvironment? = null
@@ -95,27 +95,6 @@ class VitsOnnxTtsEngine(
     val underruns: Long get() = underrunCount.get()
 
     private val lock = Any()
-    
-    // Android TTS Fallback for Hackathon Demo
-    private var nativeTts: TextToSpeech? = null
-    @Volatile private var ttsReady = false
-    private val ttsInitLatch = CountDownLatch(1)
-
-    init {
-        nativeTts = TextToSpeech(context) { status ->
-            if (status == TextToSpeech.SUCCESS) {
-                ttsReady = true
-                val loc = Locale("hi", "IN")
-                val result = nativeTts?.setLanguage(loc)
-                if (result == TextToSpeech.LANG_MISSING_DATA || result == TextToSpeech.LANG_NOT_SUPPORTED) {
-                    android.util.Log.e("iTantra-TTS", "Hindi TTS data is missing or not supported on this device!")
-                }
-            } else {
-                android.util.Log.e("iTantra-TTS", "Native TTS initialization failed with status: $status")
-            }
-            ttsInitLatch.countDown()
-        }
-    }
 
     override fun loadVoice(language: Language) {
         synchronized(lock) {
@@ -124,8 +103,7 @@ class VitsOnnxTtsEngine(
     }
 
     private fun loadVoiceLocked(language: Language) {
-        if (activeLanguage == language && (session != null || ttsReady)) {
-            applyNativeLocale(language)
+        if (activeLanguage == language && session != null) {
             return
         }
         val descriptor = voices[language]
@@ -133,7 +111,6 @@ class VitsOnnxTtsEngine(
 
         // Free before allocating: two resident voices would breach the memory budget.
         unloadVoiceLocked()
-        applyNativeLocale(language)
 
         try {
             val env = OrtEnvironment.getEnvironment()
@@ -179,9 +156,7 @@ class VitsOnnxTtsEngine(
         }
     }
 
-    private fun applyNativeLocale(language: Language) {
-        nativeTts?.language = java.util.Locale.forLanguageTag(language.bcp47)
-    }
+
 
     override fun unloadVoice() {
         synchronized(lock) { unloadVoiceLocked() }
@@ -208,71 +183,81 @@ class VitsOnnxTtsEngine(
             val startedAt = System.currentTimeMillis()
             state = TtsState.SYNTHESISING
 
-            // --- HACKATHON FALLBACK: Use Android Native TTS ---
-            // Wait up to 3 seconds for TTS engine to initialize if it hasn't already
-            if (!ttsReady) {
-                ttsInitLatch.await(3, java.util.concurrent.TimeUnit.SECONDS)
-            }
-            
-            if (ttsReady) {
-                try {
-                    android.util.Log.d("iTantra-TTS", "Speaking text natively: $text")
-                    
-                    val latch = CountDownLatch(1)
-                    var success = false
-                    nativeTts?.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
-                        override fun onStart(utteranceId: String?) {}
-                        override fun onDone(utteranceId: String?) { 
-                            success = true
-                            latch.countDown() 
-                        }
-                        override fun onError(utteranceId: String?) { 
-                            android.util.Log.e("iTantra-TTS", "TTS Utterance Error")
-                            latch.countDown() 
-                        }
-                    })
-                    
-                    val params = android.os.Bundle()
-                    params.putString(TextToSpeech.Engine.KEY_PARAM_UTTERANCE_ID, "demo_utt")
-                    
-                    // Force playback on Media stream (Loudspeaker)
-                    applyNativeLocale(language)
-                    val attrs = android.media.AudioAttributes.Builder()
-                        .setUsage(android.media.AudioAttributes.USAGE_MEDIA)
-                        .setContentType(android.media.AudioAttributes.CONTENT_TYPE_SPEECH)
-                        .build()
-                    nativeTts?.setAudioAttributes(attrs)
-                    
-                    val result = nativeTts?.speak(text, TextToSpeech.QUEUE_FLUSH, params, "demo_utt")
-                    
-                    if (result == TextToSpeech.ERROR) {
-                        android.util.Log.e("iTantra-TTS", "speak() returned ERROR immediately")
-                    } else {
-                        fallbackCount.incrementAndGet()
-                        // Block while speaking to simulate synthesis time and prevent the app
-                        // from closing the receive session too early.
-                        latch.await(15, java.util.concurrent.TimeUnit.SECONDS)
-                    }
-                    
-                    val elapsed = System.currentTimeMillis() - startedAt
-                    if (elapsed >= 0) synthesisLatency.recordMs(elapsed)
-                    synthesisedCount.incrementAndGet()
-                    
+            try {
+                val env = environment ?: throw TtsException("no environment")
+                val s = session ?: throw TtsException("no session loaded")
+                val tok = tokenizer ?: throw TtsException("no tokenizer loaded")
+
+                val lowerText = text.lowercase()
+                val tokens = tok.encode(lowerText)
+                android.util.Log.d("ReceivePttUseCase", "Encoded text '$lowerText' into ${tokens.size} tokens: ${tokens.joinToString()}")
+                if (tokens.isEmpty()) {
                     state = TtsState.VOICE_LOADED
-                    // Return empty AudioClip since Android OS already played the sound
-                    return AudioClip(ShortArray(0), AudioFormat(24000))
-                    
-                } catch (e: Exception) {
-                    android.util.Log.e("iTantra-TTS", "TTS Exception: ${e.message}")
-                    e.printStackTrace()
+                    return AudioClip(ShortArray(0), outputFormat)
                 }
-            } else {
-                android.util.Log.e("iTantra-TTS", "TTS Engine is not ready!")
+
+                val inputTensor = OnnxTensor.createTensor(env, java.nio.LongBuffer.wrap(tokens), longArrayOf(1, tokens.size.toLong()))
+                val inputLengthsTensor = OnnxTensor.createTensor(env, java.nio.LongBuffer.wrap(longArrayOf(tokens.size.toLong())), longArrayOf(1))
+                val scalesTensor = OnnxTensor.createTensor(env, java.nio.FloatBuffer.wrap(floatArrayOf(noiseScale, lengthScale, noiseScaleW)), longArrayOf(3))
+
+                val inputs = mutableMapOf<String, OnnxTensor>()
+                val names = s.inputNames
+                android.util.Log.d("ReceivePttUseCase", "ONNX model expects inputs: $names")
+
+                if (names.contains("input")) inputs["input"] = inputTensor
+                else if (names.contains("text")) inputs["text"] = inputTensor
+                else inputs[names.firstOrNull() ?: "input"] = inputTensor
+
+                // Only pass input_lengths if the model expects it
+                if (names.contains("input_lengths")) inputs["input_lengths"] = inputLengthsTensor
+                else if (names.contains("text_lengths")) inputs["text_lengths"] = inputLengthsTensor
+
+                // Only pass scales if the model expects it
+                if (names.contains("scales")) inputs["scales"] = scalesTensor
+                else if (names.contains("noise_scale")) {
+                    inputs["noise_scale"] = OnnxTensor.createTensor(env, floatArrayOf(noiseScale))
+                    inputs["length_scale"] = OnnxTensor.createTensor(env, floatArrayOf(lengthScale))
+                    inputs["noise_scale_w"] = OnnxTensor.createTensor(env, floatArrayOf(noiseScaleW))
+                }
+
+                android.util.Log.d("ReceivePttUseCase", "Running ONNX with ${inputs.size} inputs: ${inputs.keys}")
+                val result = s.run(inputs)
+                
+                // The VITS model outputs float samples in a tensor
+                val audioFloatArray = result[0].value
+                val pcm = toPcm16(audioFloatArray)
+
+                
+                // Cleanup dynamically created tensors not in the map but instantiated initially
+                inputTensor.close()
+                inputLengthsTensor.close()
+                scalesTensor.close()
+                inputs.values.filter { it != inputTensor && it != inputLengthsTensor && it != scalesTensor }.forEach { it.close() }
+                
+                result.close()
+
+                val elapsed = System.currentTimeMillis() - startedAt
+                if (elapsed >= 0) synthesisLatency.recordMs(elapsed)
+                synthesisedCount.incrementAndGet()
+                
+                var maxAmp = 0
+                for (s in pcm) {
+                    val abs = kotlin.math.abs(s.toInt())
+                    if (abs > maxAmp) maxAmp = abs
+                }
+                android.util.Log.d("iTantra-TTS", "Synthesized ${pcm.size} samples. Max amplitude: $maxAmp")
+
+                val durationMs = outputFormat.msForSamples(pcm.size)
+                realTimeFactor.record(elapsed, durationMs)
+                
+                state = TtsState.VOICE_LOADED
+                return AudioClip(pcm, outputFormat)
+            } catch (e: Exception) {
+                state = TtsState.ERROR
+                val names = session?.inputNames ?: "unknown"
+                android.util.Log.e("iTantra-TTS", "VITS ONNX inference failed. Expected inputs: $names", e)
+                throw TtsException("VITS ONNX inference failed", e)
             }
-            
-            // If fallback fails, return silence
-            state = TtsState.VOICE_LOADED
-            return AudioClip(ShortArray(0), AudioFormat(22050))
         }
     }
 
@@ -330,7 +315,11 @@ class VitsTokenizer(
         val ids = ArrayList<Long>(text.length * 2 + 1)
         if (interleavePad) ids += padId
         for (ch in text) {
-            val id = symbolToId[ch.toString()] ?: continue
+            val id = symbolToId[ch.toString()]
+            if (id == null) {
+                android.util.Log.d("ReceivePttUseCase", "Unknown symbol: $ch (code ${ch.code})")
+                continue
+            }
             ids += id
             if (interleavePad) ids += padId
         }
@@ -357,12 +346,26 @@ class VitsTokenizer(
                     val k = keys.next()
                     map[k] = symbols.getLong(k)
                 }
+            } else {
+                val metadataKeys = setOf("pad_id", "interleave_pad")
+                val keys = json.keys()
+                while (keys.hasNext()) {
+                    val k = keys.next()
+                    if (k in metadataKeys) continue
+                    val value = json.opt(k)
+                    if (value is Number) {
+                        map[k] = value.toLong()
+                    } else if (value is String) {
+                        value.toLongOrNull()?.let { map[k] = it }
+                    }
+                }
             }
             
+            android.util.Log.d("ReceivePttUseCase", "Loaded vocab from $assetPath with ${map.size} symbols, padId=${json.optLong("pad_id", 0L)}, interleavePad=${json.optBoolean("interleave_pad", false)}")
             return VitsTokenizer(
                 symbolToId = map,
                 padId = json.optLong("pad_id", 0L),
-                interleavePad = json.optBoolean("interleave_pad", true),
+                interleavePad = json.optBoolean("interleave_pad", false),
             )
         }
     }

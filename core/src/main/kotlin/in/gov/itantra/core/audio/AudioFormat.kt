@@ -26,8 +26,8 @@ data class AudioFormat(
         /** IndicWav2Vec expects 16 kHz mono. */
         val STT_16K = AudioFormat(16_000)
 
-        /** AI4Bharat / Coqui VITS checkpoints are trained at 22.05 kHz. */
-        val TTS_22K = AudioFormat(22_050)
+        /** Meta MMS-TTS checkpoints are trained at 16 kHz. */
+        val TTS_16K = AudioFormat(16_000)
     }
 }
 

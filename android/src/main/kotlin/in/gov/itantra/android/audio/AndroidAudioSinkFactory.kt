@@ -6,6 +6,9 @@ import `in`.gov.itantra.core.audio.AudioSinkFactory
 
 class AndroidAudioSinkFactory : AudioSinkFactory {
     override fun createSink(format: AudioFormat): AudioSink {
-        return AudioTrackSink(format)
+        return AudioTrackSink(
+            format,
+            usage = android.media.AudioAttributes.USAGE_MEDIA
+        )
     }
 }

@@ -93,6 +93,9 @@ class AudioTrackSink(
     private val sessionId: Int = AudioManager.AUDIO_SESSION_ID_GENERATE,
 ) : AudioSink, AutoCloseable {
 
+    private var totalWritten = 0
+
+
     private val minBuffer = AudioTrack.getMinBufferSize(
         format.sampleRate,
         AndroidAudioFormat.CHANNEL_OUT_MONO,
@@ -130,16 +133,25 @@ class AudioTrackSink(
      */
     override fun write(samples: ShortArray, offset: Int, count: Int): Int {
         val n = track.write(samples, offset, count, AudioTrack.WRITE_BLOCKING)
+        if (n > 0) totalWritten += n
         return if (n < 0) 0 else n
     }
 
     override fun drain() {
-        // Let the hardware finish what is already queued rather than cutting it off.
-        track.stop()
-        while (track.playState == AudioTrack.PLAYSTATE_PLAYING) {
-            Thread.sleep(TAIL_POLL_MS)
+        val expectedFrames = totalWritten
+        var stuckCount = 0
+        var lastHead = track.playbackHeadPosition
+        while (track.playbackHeadPosition < expectedFrames && stuckCount < 20) {
+            Thread.sleep(50)
+            val currentHead = track.playbackHeadPosition
+            if (currentHead == lastHead) {
+                stuckCount++
+            } else {
+                stuckCount = 0
+                lastHead = currentHead
+            }
         }
-        track.play()
+        track.stop()
     }
 
     override fun flush() {
