@@ -220,6 +220,7 @@ class MainViewModel @Inject constructor(
                             viewModelScope.launch { languageSettings.setCurrentLanguage(refined) }
                         }
                     },
+                    onQueued = { publishQueues() },
                 )
             } catch (e: Exception) {
                 stopPttUseCase.execute(currentTransport)
