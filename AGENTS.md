@@ -24,15 +24,15 @@ The Android app and Cursor brief live in this directory. Full agent context: `.c
 - If translation is unavailable, **show an error / download prompt**. Do not run source-language text through the target TTS voice.
 - Hindi / Tamil / Bengali **wire codes stay 0x01 / 0x02 / 0x03**. New languages use 0x04+.
 
-App flow: first launch → language picker → download selected packs → walkie-talkie. Later launches skip the picker. Settings reopens the same picker.
+App flow: first launch → language picker → download selected packs → **Talk | Alert | Analysis**. Later launches skip the picker. Settings reopens the same picker.
 
 ## Modules
 
 | Module | Role |
 |--------|------|
-| `:core` | Language, STT/TTS/LID/translation interfaces, packets, crypto, PTT use cases, lexicons. JVM tests. |
-| `:android` | ONNX, mic/speaker, transports, Keystore, pack file paths. |
-| `:app` | Compose UI: setup, settings, connect, PTT. Hilt. |
+| `:core` | Language, STT/TTS/LID/translation, packets, crypto, PTT/alert/queue use cases, lexicons. JVM tests. |
+| `:android` | ONNX, mic/speaker, transports, Keystore, pack paths, alert WAV/focus, queue files. |
+| `:app` | Compose UI: setup, settings, Talk, Alert, Analysis. Hilt. |
 | `:harness` | Device eval (B2/B4). Skips without models/corpus. |
 | `:models-pack` | Planned asset pack. Not wired; do not assume it is in the APK. |
 
@@ -41,11 +41,13 @@ App flow: first launch → language picker → download selected packs → walki
 ## Key files
 
 - Languages: `core/.../Language.kt`, `core/.../lang/LanguageSelection.kt`
-- PTT: `StartPttTransmissionUseCase`, `ReceivePttTransmissionUseCase`
+- PTT: `StartPttTransmissionUseCase`, `ReceivePttTransmissionUseCase`, `FloorController`
+- Alert: `SendAlertUseCase`, `AlertPlayer`, `AlertScreen`
+- Queue: `OutboundMessageQueue`, `InboundMessageInbox`, `QueueTtl` (30 days)
 - LID: `ScriptLanguageId`, `LanguageIdEngine.resolveSpokenLanguage`
 - Translation: `TranslationEngine`, `DictionaryTranslationEngine` (demo phrases only)
 - Packs: `LanguagePackManager`, `android/.../pack/LocalLanguagePackManager`
-- UI: `ITantraApp`, `LanguageSelectionScreen`, `MainScreen`, `MainViewModel`
+- UI: `ITantraApp` (Talk \| Alert \| Analysis), `LanguageSelectionScreen`, `MainScreen`, `AlertScreen`, `DiagnosticsScreen`, `MainViewModel`
 - Persistence: `PrefsLanguageSettingsStore` (`setupDone`, `installed`, `current`)
 
 ## Docs vs code
@@ -62,4 +64,4 @@ App flow: first launch → language picker → download selected packs → walki
 
 ## Out of scope unless asked
 
-Alert UI, diagnostics screen, continuous call mode, mesh, meaning-preserving translation beyond the offline engine, bundling real ONNX weights in git.
+Mesh (3+ phones), lock-screen / power SOS, radar/map of nearby devices, continuous call mode, meaning-preserving translation beyond the offline engine, bundling real ONNX weights in git.

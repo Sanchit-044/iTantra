@@ -7,9 +7,11 @@ alwaysApply: true
 
 Offline ISRO SIH walkie-talkie. Full brief: `iTantra/.cursor/PROJECT.md` (this repo only).
 
-**Loop:** sender STT → encrypted text (Wi-Fi Direct / BT / LAN) → receiver TTS. No server, no cloud speech.
+**Loop:** sender STT → encrypted text (Wi-Fi Direct / BT / LAN) → receiver TTS. No server, no cloud speech. **One peer.** No mesh.
 
 **One current language per phone** for speak and listen. Hindi default. Ten languages including English. Detect only among installed, only on the speaker. Translate only on receive when source ≠ current. Never play source text with the wrong TTS voice.
+
+**App shell:** first launch → language picker → **Talk | Alert | Analysis**. Settings reopens the picker. Pairing dialog lives on the shell so it shows on any tab.
 
 **Modules:** `:core` (JVM logic + tests), `:android` (device), `:app` (Compose UI), `:harness` (device eval), `:models-pack` (not wired).
 
