@@ -60,7 +60,7 @@ Launch
   │                      Continue → install only selected packs
   │                      + shared translation pack marker
   │                      current = Hindi (unless Hindi unticked)
-  └─ setupDone = true  → Main shell (Talk | Alert | Analysis)
+  └─ setupDone = true  → Main shell (Talk | Alert | Analysis | Radar)
                          Settings (gear / Settings) → same picker
 
 Talk
@@ -76,6 +76,11 @@ Alert (priority shout, packet 0x02)
 
 Analysis
   Diagnostics snapshot (poll). Share JSON. Not a second radio.
+
+Radar
+  Proximity plot (you in the center, near/mid/far rings from RSSI). Not GPS.
+  Filter Wi-Fi / Bluetooth / Both. Tap a dot to join via existing connect + pairing.
+  Other phone still Hosts on Talk. Scan/advertise only while the Radar tab is open.
 
 Receive (live NORMAL)
   if source == current → TTS
@@ -183,10 +188,11 @@ Kotlin 2.1, Gradle 8.13, AGP 8.13, minSdk 24, compileSdk 35, JDK 17, Compose Mat
 |--------|------|------|
 | Language picker | `LanguageSelectionScreen` | First launch and Settings |
 | Router | `ITantraApp` + `AppViewModel` | SETUP / MAIN / SETTINGS |
-| Main shell | `ITantraApp.MainContent` | Bottom nav Talk \| Alert \| Analysis; pairing dialog here |
+| Main shell | `ITantraApp.MainContent` | Bottom nav Talk \| Alert \| Analysis \| Radar; pairing dialog here |
 | Talk | `MainScreen` | Connect, PTT, inbox, Settings |
 | Alert | `AlertScreen` | 5 templates + free text; disabled until paired |
 | Analysis | `DiagnosticsScreen` | Diagnostics snapshot |
+| Radar | `RadarScreen` | Wi-Fi Direct + iTantra BLE proximity plot; tap to join |
 
 Single Activity (`MainActivity`). Permissions: mic, BT, nearby Wi-Fi / location. Live PTT needs CONNECTED + floor. Alert send needs CONNECTED + pairing confirmed. Offline PTT queues text.
 
@@ -201,16 +207,18 @@ Single Activity (`MainActivity`). Permissions: mic, BT, nearby Wi-Fi / location.
 - `core/.../usecase/` — start/stop/receive PTT, `SendAlertUseCase`, `FlushQueuedMessagesUseCase`
 - `core/.../transport/` — `Packet`, `PacketCodec`, `ChannelArbiter`, `FloorController`
 - `core/.../crypto/` — ECDH, AES-GCM
+- `core/.../discover/` — `NearbyPeer`, `RssiBand` (radar rings)
 - `core/.../alert/` — templates + `AlertPlayer`
 - `core/.../queue/` — outbound, inbox, TTL
 - `core/.../diag/`, `eval/` — diagnostics model / harness
 - `android/.../stt/OnnxCtcSttEngine.kt`, `OnnxCtcDecoder.kt`
 - `android/.../tts/VitsOnnxTtsEngine.kt`
+- `android/.../discover/NearbyDiscovery.kt` — Wi-Fi P2P + BLE scan/advertise
 - `android/.../alert/` — `WavTemplateSource`, `AndroidForcedAudioFocus`
 - `android/.../queue/FileQueueStore.kt`
 - `android/.../pack/` — `LanguagePackPaths`, `LocalLanguagePackManager`
 - `android/.../transport/` — WifiDirect, Bluetooth, Lan, StreamTransport
-- `app/.../ui/` — Activity, ITantraApp, Main, Alert, Diagnostics, LanguageSelection, ViewModels
+- `app/.../ui/` — Activity, ITantraApp, Main, Alert, Diagnostics, Radar, LanguageSelection, ViewModels
 - `app/.../lang/PrefsLanguageSettingsStore.kt`
 - `app/.../di/AppModule.kt`
 
@@ -239,7 +247,7 @@ Prefer **code + this folder** when they disagree.
 
 **In code / tested in `:core`:** packets (incl. floor + queued), GCM, pairing math, endpointer, lexicons, LID set rules, dictionary translate, receive skip-when-same, channel arbiter, floor controller, alert player, send-alert refuses before pairing, queue TTL, WER harness.
 
-**Wired in the app:** language picker, persist, pack install markers, Talk connect + pairing, live PTT + floor, offline queue + inbox, Alert tab, Analysis tab, receive + translate hook, current-language header.
+**Wired in the app:** language picker, persist, pack install markers, Talk connect + pairing, live PTT + floor, offline queue + inbox, Alert tab, Analysis tab, Radar tab (proximity join), receive + translate hook, current-language header.
 
 **Not ready for a measured demo:** ONNX weights not in repo; TTS often system engine; LID is script/heuristic not a neural model; translation is a phrase table; Tamil/Bengali lexicons need native review; extra languages use placeholder number tokens; spoken alert WAVs may be missing (TTS fallback); `:models-pack` unwired; Room unused; LAN not on Talk picker.
 
@@ -267,4 +275,4 @@ When changing language / PTT / receive / packets / alerts / queue: update `:core
 
 ## Out of scope unless explicitly asked
 
-Mesh (3+ phones), lock-screen / power-button SOS, radar / map of nearby devices, continuous call / FGS, OTA model store, real IndicTrans2 ONNX in git, cross-language meaning beyond the translation engine, inventing eval numbers.
+Mesh (3+ phones), lock-screen / power-button SOS, true GPS map of peers, continuous call / FGS, OTA model store, real IndicTrans2 ONNX in git, cross-language meaning beyond the translation engine, inventing eval numbers.

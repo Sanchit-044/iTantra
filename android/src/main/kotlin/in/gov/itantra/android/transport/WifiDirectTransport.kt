@@ -37,6 +37,8 @@ class WifiDirectTransport(
     keyAgreement: KeyAgreementProvider,
     private val role: Role,
     private val port: Int = DEFAULT_PORT,
+    /** When joining from Radar, invite this P2P address if it is still in the peer list. */
+    private val preferredPeerAddress: String? = null,
 ) : StreamTransport(keyAgreement, winsFloorTies = role == Role.HOST) {
 
     enum class Role { HOST, CLIENT }
@@ -247,9 +249,13 @@ class WifiDirectTransport(
                     WifiP2pManager.WIFI_P2P_PEERS_CHANGED_ACTION ->
                         m.requestPeers(ch) { peers ->
                             // Look for a peer that is ALREADY a Group Owner (our Host device)
-                            val candidate = peers.deviceList.firstOrNull { it.isGroupOwner }
-                                ?: peers.deviceList.firstOrNull { it.deviceName.contains("iTantra", ignoreCase = true) } 
-                                ?: peers.deviceList.firstOrNull() // fallback to first if none match
+                            val preferred = preferredPeerAddress?.lowercase()
+                            val candidate = peers.deviceList.firstOrNull {
+                                preferred != null && it.deviceAddress.equals(preferred, ignoreCase = true)
+                            }
+                                ?: peers.deviceList.firstOrNull { it.isGroupOwner }
+                                ?: peers.deviceList.firstOrNull { it.deviceName.orEmpty().contains("iTantra", ignoreCase = true) }
+                                ?: peers.deviceList.firstOrNull()
                             
                             if (candidate != null) {
                                 discoveredPeer = candidate

@@ -12,6 +12,7 @@ import `in`.gov.itantra.android.alert.WavTemplateSource
 import `in`.gov.itantra.android.audio.AndroidAudioSinkFactory
 import `in`.gov.itantra.android.audio.AudioTrackSink
 import `in`.gov.itantra.android.crypto.KeystoreKeyAgreement
+import `in`.gov.itantra.android.discover.NearbyDiscovery
 import `in`.gov.itantra.android.pack.LocalLanguagePackManager
 import `in`.gov.itantra.android.diag.AndroidDiagnosticsService
 import `in`.gov.itantra.android.notify.QueuedMessageNotifier
@@ -218,5 +219,11 @@ object AppModule {
     @Provides
     fun provideSendAlertUseCase(): SendAlertUseCase {
         return SendAlertUseCase()
+    }
+
+    @Provides
+    @Singleton
+    fun provideNearbyDiscovery(@ApplicationContext context: Context): NearbyDiscovery {
+        return NearbyDiscovery(context)
     }
 }

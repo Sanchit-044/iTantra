@@ -24,7 +24,7 @@ The Android app and Cursor brief live in this directory. Full agent context: `.c
 - If translation is unavailable, **show an error / download prompt**. Do not run source-language text through the target TTS voice.
 - Hindi / Tamil / Bengali **wire codes stay 0x01 / 0x02 / 0x03**. New languages use 0x04+.
 
-App flow: first launch → language picker → download selected packs → **Talk | Alert | Analysis**. Later launches skip the picker. Settings reopens the same picker.
+App flow: first launch → language picker → download selected packs → **Talk | Alert | Analysis | Radar**. Later launches skip the picker. Settings reopens the same picker.
 
 ## Modules
 
@@ -47,7 +47,7 @@ App flow: first launch → language picker → download selected packs → **Tal
 - LID: `ScriptLanguageId`, `LanguageIdEngine.resolveSpokenLanguage`
 - Translation: `TranslationEngine`, `DictionaryTranslationEngine` (demo phrases only)
 - Packs: `LanguagePackManager`, `android/.../pack/LocalLanguagePackManager`
-- UI: `ITantraApp` (Talk \| Alert \| Analysis), `LanguageSelectionScreen`, `MainScreen`, `AlertScreen`, `DiagnosticsScreen`, `MainViewModel`
+- UI: `ITantraApp` (Talk \| Alert \| Analysis \| Radar), `LanguageSelectionScreen`, `MainScreen`, `AlertScreen`, `DiagnosticsScreen`, `RadarScreen`, `MainViewModel`
 - Persistence: `PrefsLanguageSettingsStore` (`setupDone`, `installed`, `current`)
 
 ## Docs vs code
@@ -64,4 +64,4 @@ App flow: first launch → language picker → download selected packs → **Tal
 
 ## Out of scope unless asked
 
-Mesh (3+ phones), lock-screen / power SOS, radar/map of nearby devices, continuous call mode, meaning-preserving translation beyond the offline engine, bundling real ONNX weights in git.
+Mesh (3+ phones), lock-screen / power SOS, true GPS map of peers, continuous call mode, meaning-preserving translation beyond the offline engine, bundling real ONNX weights in git.

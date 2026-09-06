@@ -7,7 +7,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Phone
+import androidx.compose.material.icons.filled.Radar
 import androidx.compose.material.icons.filled.Warning
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
@@ -25,7 +27,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.hilt.navigation.compose.hiltViewModel
 
-private enum class MainTab { TALK, ALERT, ANALYSIS }
+private enum class MainTab { TALK, ALERT, ANALYSIS, RADAR }
 
 @Composable
 fun ITantraApp(appViewModel: AppViewModel = hiltViewModel(), mainViewModel: MainViewModel = hiltViewModel()) {
@@ -54,7 +56,13 @@ fun MainContent(
     onOpenSettings: () -> Unit
 ) {
     val uiState by mainViewModel.uiState.collectAsState()
+    val radarViewModel: RadarViewModel = hiltViewModel()
     var tab by rememberSaveable { mutableStateOf(MainTab.TALK) }
+
+    DisposableEffect(tab) {
+        if (tab == MainTab.RADAR) radarViewModel.start() else radarViewModel.stop()
+        onDispose { radarViewModel.stop() }
+    }
 
     BackHandler(enabled = tab != MainTab.TALK) { tab = MainTab.TALK }
 
@@ -100,6 +108,12 @@ fun MainContent(
                     icon = { Icon(Icons.Filled.Info, contentDescription = null) },
                     label = { Text("Analysis") },
                 )
+                NavigationBarItem(
+                    selected = tab == MainTab.RADAR,
+                    onClick = { tab = MainTab.RADAR },
+                    icon = { Icon(Icons.Filled.Radar, contentDescription = null) },
+                    label = { Text("Radar") },
+                )
             }
         },
     ) { padding ->
@@ -112,6 +126,7 @@ fun MainContent(
                 MainTab.TALK -> MainScreen(viewModel = mainViewModel, onOpenSettings = onOpenSettings)
                 MainTab.ALERT -> AlertScreen(viewModel = mainViewModel)
                 MainTab.ANALYSIS -> DiagnosticsScreen(onOpenSettings = onOpenSettings)
+                MainTab.RADAR -> RadarScreen(mainViewModel = mainViewModel, radarViewModel = radarViewModel)
             }
         }
     }
