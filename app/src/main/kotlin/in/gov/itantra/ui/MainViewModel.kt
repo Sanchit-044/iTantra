@@ -87,6 +87,7 @@ class MainViewModel @Inject constructor(
     private val startPttUseCase: StartPttTransmissionUseCase,
     private val stopPttUseCase: StopPttTransmissionUseCase,
     private val receivePttUseCase: ReceivePttTransmissionUseCase,
+    private val translationEngine: TranslationEngine,
     private val languageSettings: LanguageSettingsStore,
     private val languageIdEngine: LanguageIdEngine,
     private val sendAlertUseCase: SendAlertUseCase,
@@ -258,14 +259,30 @@ class MainViewModel @Inject constructor(
                 when (packet.type) {
                     MessageType.QUEUED -> handleQueuedInbound(packet)
                     MessageType.ALERT -> {
-                        alertPlayer.play(
-                            IncomingAlert(
-                                content = AlertTemplate.fromWirePayload(packet.text),
-                                language = packet.language,
+                        val currentLang = _uiState.value.currentLanguage
+                        val content = AlertTemplate.fromWirePayload(packet.text)
+                        val alertToPlay = when (content) {
+                            is AlertContent.Template -> IncomingAlert(
+                                content = content,
+                                language = currentLang,
                                 sequence = packet.sequence,
                                 receivedAtMs = System.currentTimeMillis(),
                             )
-                        )
+                            is AlertContent.Custom -> {
+                                val translatedText = translationEngine.translateOrSame(
+                                    content.text,
+                                    packet.language,
+                                    currentLang,
+                                )
+                                IncomingAlert(
+                                    content = AlertContent.Custom(translatedText),
+                                    language = currentLang,
+                                    sequence = packet.sequence,
+                                    receivedAtMs = System.currentTimeMillis(),
+                                )
+                            }
+                        }
+                        alertPlayer.play(alertToPlay)
                         drainDeferredNormals()
                     }
                     MessageType.NORMAL -> playNormalOrDefer(packet)
