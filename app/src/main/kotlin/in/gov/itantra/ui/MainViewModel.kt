@@ -202,7 +202,11 @@ class MainViewModel @Inject constructor(
                 radioPeerName = if (stillLinked) it.radioPeerName else null,
             )
         }
-        if (state == ConnectionState.DISCONNECTED || state == ConnectionState.FAILED) {
+        
+        if (state == ConnectionState.CONNECTED || state == ConnectionState.HANDSHAKING) {
+            `in`.gov.itantra.service.ConnectionService.start(context)
+        } else if (state == ConnectionState.DISCONNECTED || state == ConnectionState.FAILED) {
+            `in`.gov.itantra.service.ConnectionService.stop(context)
             stopPtt()
             _uiState.update {
                 it.copy(channelBusy = false, isRequestingFloor = false, isSpeaking = false)

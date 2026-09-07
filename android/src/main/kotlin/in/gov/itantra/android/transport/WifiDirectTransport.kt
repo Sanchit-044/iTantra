@@ -81,7 +81,7 @@ class WifiDirectTransport(
                 }
                 fastPathCheck.countDown()
             }
-            fastPathCheck.await(2000, TimeUnit.MILLISECONDS)
+            fastPathCheck.await(500, TimeUnit.MILLISECONDS)
             
             if (connected?.await(100, TimeUnit.MILLISECONDS) == true) {
                 val info = connectionInfo
@@ -112,14 +112,14 @@ class WifiDirectTransport(
                             groupCreated.countDown() 
                         }
                     })
-                    groupCreated.await(5000, TimeUnit.MILLISECONDS)
+                    groupCreated.await(3000, TimeUnit.MILLISECONDS)
                     
                     if (createFailedReason != null) {
                         if (createFailedReason == WifiP2pManager.BUSY) {
                             android.util.Log.d("iTantra-WiFi", "Host: Device BUSY, removing stale group before retry")
                             m.removeGroup(ch, null)
                         }
-                        Thread.sleep(1000)
+                        Thread.sleep(500)
                         continue
                     }
 
@@ -131,7 +131,7 @@ class WifiDirectTransport(
                     } else {
                         android.util.Log.d("iTantra-WiFi", "Host: Timeout waiting for interface to come up. Cleaning up and retrying...")
                         m.removeGroup(ch, null)
-                        Thread.sleep(1000)
+                        Thread.sleep(500)
                     }
                 }
                 throw TransportException("Failed to host Wi-Fi Direct group")
@@ -144,7 +144,7 @@ class WifiDirectTransport(
                     
                     discoverPeers(m, ch)
                     
-                    if (peersFound?.await(5000, TimeUnit.MILLISECONDS) != true) {
+                    if (peersFound?.await(3000, TimeUnit.MILLISECONDS) != true) {
                         android.util.Log.d("iTantra-WiFi", "Client: Peer discovery timed out. Retrying...")
                         // Retry discovery
                         continue
@@ -152,8 +152,8 @@ class WifiDirectTransport(
                     
                     val peer = discoveredPeer
                     if (peer == null) {
-                        android.util.Log.d("iTantra-WiFi", "Client: No target peer found yet. Waiting 2s before retry...")
-                        Thread.sleep(2000)
+                        android.util.Log.d("iTantra-WiFi", "Client: No target peer found yet. Waiting 0.5s before retry...")
+                        Thread.sleep(500)
                         continue
                     }
                     android.util.Log.d("iTantra-WiFi", "Client: Found target peer: ${peer.deviceName} (${peer.deviceAddress})")
@@ -166,16 +166,23 @@ class WifiDirectTransport(
                             m.cancelConnect(ch, null)
                             m.removeGroup(ch, null)
                         }
-                        Thread.sleep(1000)
+                        Thread.sleep(500)
                         continue
                     }
                     
                     if (connected?.await(20000, TimeUnit.MILLISECONDS) == true) {
                         val info = connectionInfo
-                        if (info != null && info.groupFormed && !info.isGroupOwner) {
-                            val peerName = peer.deviceName ?: "unknown"
-                            val peerAddr = peer.deviceAddress ?: "unknown"
-                            return connectToOwner(info, peerName, peerAddr, remaining(deadline))
+                        if (info != null && info.groupFormed) {
+                            val peerName = peer?.deviceName ?: "unknown"
+                            val peerAddr = peer?.deviceAddress ?: "unknown"
+                            if (!info.isGroupOwner) {
+                                return connectToOwner(info, peerName, peerAddr, remaining(deadline))
+                            } else {
+                                android.util.Log.d("iTantra-WiFi", "Client: We unexpectedly became the Group Owner! Accepting connections instead...")
+                                return acceptAsOwner(peerName, peerAddr, remaining(deadline))
+                            }
+                        } else {
+                            android.util.Log.e("iTantra-WiFi", "Client: Group did not form or info is null. info=$info")
                         }
                     } else {
                         android.util.Log.d("iTantra-WiFi", "Client: Timeout waiting for group to form. Cleaning up...")
@@ -243,6 +250,7 @@ class WifiDirectTransport(
         serverSocket = server
         return try {
             val socket = server.accept()
+            socket.tcpNoDelay = true
             android.util.Log.d("iTantra-WiFi", "Host: Client connected!")
             server.close()
             serverSocket = null
@@ -260,20 +268,32 @@ class WifiDirectTransport(
             ?: throw TransportException("group owner address was not provided")
         
         android.util.Log.d("iTantra-WiFi", "Client: Opening Socket to GO at $ownerAddress:$port, timeout ${timeoutMs}ms")
-        val socket = Socket()
-        return try {
-            socket.bind(null)
-            socket.connect(
-                InetSocketAddress(ownerAddress, port),
-                timeoutMs.coerceAtMost(Int.MAX_VALUE.toLong()).toInt(),
-            )
-            android.util.Log.d("iTantra-WiFi", "Client: Successfully connected to GO socket!")
-            socket.toLink(peerName, peerAddress)
-        } catch (e: Exception) {
-            android.util.Log.e("iTantra-WiFi", "Client: Failed to connect to GO socket", e)
-            runCatching { socket.close() }
-            throw TransportException("could not reach the group owner at $ownerAddress:$port", e)
+        val deadline = System.currentTimeMillis() + timeoutMs
+        var lastException: Exception? = null
+
+        while (System.currentTimeMillis() < deadline) {
+            val socket = Socket()
+            try {
+                socket.bind(null)
+                socket.connect(
+                    InetSocketAddress(ownerAddress, port),
+                    5000 // 5-second timeout per attempt
+                )
+                socket.tcpNoDelay = true
+                android.util.Log.d("iTantra-WiFi", "Client: Successfully connected to GO socket!")
+                return socket.toLink(peerName, peerAddress)
+            } catch (e: java.net.ConnectException) {
+                // Host may not have bound ServerSocket yet.
+                lastException = e
+                runCatching { socket.close() }
+                Thread.sleep(500)
+            } catch (e: Exception) {
+                android.util.Log.e("iTantra-WiFi", "Client: Failed to connect to GO socket", e)
+                runCatching { socket.close() }
+                throw TransportException("could not reach the group owner at $ownerAddress:$port", e)
+            }
         }
+        throw TransportException("could not reach the group owner at $ownerAddress:$port (timeout)", lastException)
     }
 
     private fun Socket.toLink(peerName: String, peerAddress: String): Link = Link(

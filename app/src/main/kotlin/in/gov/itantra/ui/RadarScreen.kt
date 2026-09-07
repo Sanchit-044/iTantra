@@ -127,25 +127,43 @@ fun RadarScreen(
                     modifier = Modifier.fillMaxSize().padding(16.dp),
                 )
 
-                if (!canJoin) {
-                    Box(
-                        modifier = Modifier
-                            .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.8f), RoundedCornerShape(8.dp))
-                            .padding(12.dp)
-                    ) {
-                        Text(
-                            "Disconnect on Talk screen before joining.",
-                            color = MaterialTheme.colorScheme.error,
-                            style = MaterialTheme.typography.labelMedium
-                        )
+                when (main.connectionState) {
+                    ConnectionState.CONNECTED -> {
+                        Box(
+                            modifier = Modifier
+                                .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.8f), RoundedCornerShape(8.dp))
+                                .padding(12.dp)
+                        ) {
+                            Text(
+                                "Disconnect on Talk screen before joining.",
+                                color = MaterialTheme.colorScheme.error,
+                                style = MaterialTheme.typography.labelMedium
+                            )
+                        }
                     }
-                } else if (radar.scanning && radar.peers.isEmpty()) {
-                    Text(
-                        "Scanning for peers...",
-                        color = MaterialTheme.colorScheme.primary,
-                        style = MaterialTheme.typography.labelMedium,
-                        modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 24.dp)
-                    )
+                    ConnectionState.DISCOVERING, ConnectionState.HANDSHAKING -> {
+                        Box(
+                            modifier = Modifier
+                                .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.8f), RoundedCornerShape(8.dp))
+                                .padding(12.dp)
+                        ) {
+                            Text(
+                                "Connecting...",
+                                color = MaterialTheme.colorScheme.primary,
+                                style = MaterialTheme.typography.labelMedium
+                            )
+                        }
+                    }
+                    else -> {
+                        if (radar.scanning && radar.peers.isEmpty()) {
+                            Text(
+                                "Scanning for peers...",
+                                color = MaterialTheme.colorScheme.primary,
+                                style = MaterialTheme.typography.labelMedium,
+                                modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 24.dp)
+                            )
+                        }
+                    }
                 }
             }
         }
