@@ -34,7 +34,7 @@ object AlertCodec {
      * Decodes a 3-byte BLE payload back into an alert.
      */
     fun decodeBlePayload(payload: ByteArray): DecodedAlert? {
-        if (payload.size != 3) return null
+        if (payload.size < 3) return null
 
         try {
             val buffer = java.nio.ByteBuffer.wrap(payload)
