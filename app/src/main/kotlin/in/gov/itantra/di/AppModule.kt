@@ -46,6 +46,7 @@ import `in`.gov.itantra.core.usecase.ReceivePttTransmissionUseCase
 import `in`.gov.itantra.core.usecase.SendAlertUseCase
 import `in`.gov.itantra.core.usecase.StartPttTransmissionUseCase
 import `in`.gov.itantra.core.usecase.StopPttTransmissionUseCase
+import `in`.gov.itantra.data.history.HistoryDao
 import `in`.gov.itantra.lang.PrefsLanguageSettingsStore
 import `in`.gov.itantra.core.queue.InboundMessageInbox
 import `in`.gov.itantra.core.queue.OutboundMessageQueue
@@ -261,9 +262,10 @@ object AppModule {
     @Singleton
     fun provideBleAlertScanner(
         @ApplicationContext context: Context,
-        alertPlayer: AlertPlayer
+        alertPlayer: AlertPlayer,
+        historyDao: HistoryDao
     ): BleAlertScanner {
-        return BleAlertScanner(context, alertPlayer)
+        return BleAlertScanner(context, alertPlayer, historyDao)
     }
 
     @Provides
@@ -276,8 +278,9 @@ object AppModule {
     @Singleton
     fun provideWifiAlertScanner(
         @ApplicationContext context: Context,
-        alertPlayer: AlertPlayer
+        alertPlayer: AlertPlayer,
+        historyDao: HistoryDao
     ): WifiAlertScanner {
-        return WifiAlertScanner(context, alertPlayer)
+        return WifiAlertScanner(context, alertPlayer, historyDao)
     }
 }

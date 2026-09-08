@@ -113,6 +113,7 @@ data class IncomingAlert(
     val language: Language,
     val sequence: Int,
     val receivedAtMs: Long,
+    val senderName: String? = null,
 )
 
 interface ForcedAudioFocus {

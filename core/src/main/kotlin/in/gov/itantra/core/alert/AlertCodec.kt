@@ -49,12 +49,16 @@ object AlertCodec {
     /**
      * Encodes any alert into a TXT record map for Wi-Fi Direct DNS-SD.
      */
-    fun encodeWifiPayload(language: Language, content: AlertContent, sequence: Long): Map<String, String> {
-        return mapOf(
+    fun encodeWifiPayload(language: Language, content: AlertContent, sequence: Long, senderName: String? = null): Map<String, String> {
+        val map = mutableMapOf(
             "lang" to language.code,
             "seq" to sequence.toString(),
             "payload" to content.toWirePayload()
         )
+        if (senderName != null) {
+            map["name"] = senderName
+        }
+        return map
     }
 
     /**
@@ -67,12 +71,13 @@ object AlertCodec {
             val langCode = record["lang"] ?: return null
             val sequenceStr = record["seq"] ?: return null
             val payloadStr = record["payload"] ?: return null
+            val senderName = record["name"]
             
             val language = Language.fromCode(langCode) ?: return null
             val sequence = sequenceStr.toIntOrNull() ?: return null
             
             val content = AlertTemplate.fromWirePayload(payloadStr)
-            return DecodedAlert(language, content, sequence)
+            return DecodedAlert(language, content, sequence, senderName)
         } catch (e: Exception) {
             return null
         }
@@ -81,6 +86,7 @@ object AlertCodec {
     data class DecodedAlert(
         val language: Language,
         val content: AlertContent,
-        val sequence: Int
+        val sequence: Int,
+        val senderName: String? = null
     )
 }

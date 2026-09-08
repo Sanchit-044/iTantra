@@ -28,7 +28,7 @@ class WifiAlertBroadcaster(private val context: Context) {
     }
 
     @SuppressLint("MissingPermission")
-    fun broadcastAlert(language: Language, content: AlertContent, sequence: Long) {
+    fun broadcastAlert(language: Language, content: AlertContent, sequence: Long, senderName: String? = null) {
         AppLog.d("WifiAlertBroadcaster", "broadcastAlert called for sequence $sequence")
         val manager = p2pManager ?: run {
             AppLog.e("WifiAlertBroadcaster", "Wi-Fi P2P Manager is null, cannot broadcast")
@@ -42,7 +42,7 @@ class WifiAlertBroadcaster(private val context: Context) {
         stopBroadcasting()
 
         AppLog.d("WifiAlertBroadcaster", "Attempting to broadcast alert sequence $sequence over Wi-Fi Direct")
-        val record = AlertCodec.encodeWifiPayload(language, content, sequence)
+        val record = AlertCodec.encodeWifiPayload(language, content, sequence, senderName)
 
         val serviceInfo = WifiP2pDnsSdServiceInfo.newInstance(
             instanceName,

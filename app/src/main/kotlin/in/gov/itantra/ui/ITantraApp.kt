@@ -26,6 +26,8 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberDrawerState
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Settings
@@ -38,6 +40,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -143,6 +147,13 @@ fun MainContent(
     val chrome = UiStrings.forLanguage(uiState.uiLanguage)
     val radarViewModel: RadarViewModel = hiltViewModel()
     var tab by rememberSaveable { mutableStateOf(MainTab.TALK) }
+    val snackbarHostState = remember { SnackbarHostState() }
+
+    LaunchedEffect(mainViewModel) {
+        mainViewModel.snackbarMessage.collect { msg ->
+            snackbarHostState.showSnackbar(msg)
+        }
+    }
 
     DisposableEffect(tab) {
         if (tab == MainTab.RADAR) radarViewModel.start() else radarViewModel.stop()
@@ -175,7 +186,14 @@ fun MainContent(
         AlertDialog(
             onDismissRequest = { /* Must be explicitly dismissed via button */ },
             icon = { Icon(Icons.Filled.Warning, contentDescription = null, tint = androidx.compose.material3.MaterialTheme.colorScheme.error) },
-            title = { Text("Incoming Alert") },
+            title = {
+                val title = if (activeAlert.senderName.isNullOrEmpty()) {
+                    "Incoming Alert"
+                } else {
+                    "Incoming Alert from ${activeAlert.senderName}"
+                }
+                Text(title)
+            },
             text = { 
                 Text(
                     text = when (val c = activeAlert.content) {
@@ -275,6 +293,7 @@ fun MainContent(
     ) {
         Scaffold(
             modifier = Modifier.fillMaxSize(),
+            snackbarHost = { SnackbarHost(snackbarHostState) },
             topBar = {
                 TopAppBar(
                     title = {

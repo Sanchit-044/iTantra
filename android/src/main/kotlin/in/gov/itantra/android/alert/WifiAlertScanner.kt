@@ -14,9 +14,16 @@ import `in`.gov.itantra.core.alert.IncomingAlert
 import `in`.gov.itantra.core.diag.AppLog
 import kotlinx.coroutines.launch
 
+import `in`.gov.itantra.data.history.HistoryDao
+import `in`.gov.itantra.data.history.HistoryMessage
+import `in`.gov.itantra.data.history.MessageDirection
+import `in`.gov.itantra.data.history.MessageStatus
+import java.util.UUID
+
 class WifiAlertScanner(
     private val context: Context,
-    private val alertPlayer: AlertPlayer
+    private val alertPlayer: AlertPlayer,
+    private val historyDao: HistoryDao
 ) {
     private val handler = Handler(Looper.getMainLooper())
     private var isScanning = false
@@ -99,12 +106,25 @@ class WifiAlertScanner(
                             content = content,
                             language = language,
                             sequence = sequence,
-                            receivedAtMs = System.currentTimeMillis()
+                            receivedAtMs = System.currentTimeMillis(),
+                            senderName = decoded.senderName
                         )
                         
                     AppLog.d("WifiAlertScanner", "Received connectionless Wi-Fi alert (seq $sequence): $content")
                     kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
                         alertPlayer.play(alert)
+                        historyDao.insertMessage(
+                            HistoryMessage(
+                                id = UUID.randomUUID().toString(),
+                                text = content.toWirePayload(),
+                                language = language,
+                                timestampMs = alert.receivedAtMs,
+                                direction = MessageDirection.INBOUND,
+                                status = MessageStatus.RECEIVED,
+                                peerName = decoded.senderName,
+                                isAlert = true
+                            )
+                        )
                     }
                 }
             }
