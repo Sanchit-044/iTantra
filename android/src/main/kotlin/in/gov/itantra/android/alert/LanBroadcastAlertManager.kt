@@ -73,14 +73,14 @@ class LanBroadcastAlertManager(
                         val body = datagram.data.copyOfRange(PacketCodec.LENGTH_PREFIX_LEN, len)
                         val packet = PacketCodec.decodeBody(body, broadcastCrypto)
 
-                        if (packet.type == MessageType.ALERT) {
-                            val alertKey = "${packet.sequence}:${packet.timestampMs}:${packet.text.hashCode()}"
+                        if (packet.type == MessageType.ALERT || packet.type == MessageType.ACK) {
+                            val alertKey = "${packet.type.name}:${packet.sequence}:${packet.timestampMs}:${packet.text.hashCode()}"
                             val now = System.currentTimeMillis()
 
                             // Deduplicate redundant burst packets (keep window of 15 seconds)
                             purgeStaleCache(now)
                             if (recentAlerts.putIfAbsent(alertKey, now) == null) {
-                                AppLog.d(TAG, "Received LAN broadcast alert: ${packet.text}")
+                                AppLog.d(TAG, "Received LAN broadcast packet (${packet.type}): ${packet.text}")
                                 onPacketReceived(packet)
                             }
                         }
@@ -111,14 +111,18 @@ class LanBroadcastAlertManager(
      * Broadcast an emergency alert to all devices on the local Wi-Fi network.
      * Transmits 3 rapid UDP burst packets spaced 50ms apart for maximum reliability.
      */
-    fun sendBroadcastAlert(language: Language, content: AlertContent, sequence: Int) {
-        val textPayload = content.toWirePayload()
+    fun sendBroadcastAlert(language: Language, content: AlertContent, sequence: Int, senderName: String) {
+        val textPayload = "$senderName\u001F${content.toWirePayload()}"
         val packet = Packet.text(
             type = MessageType.ALERT,
             language = language,
             sequence = sequence,
             text = textPayload,
         )
+
+        // Add to deduplication cache before sending to prevent receiving our own UDP broadcast
+        val alertKey = "${packet.type.name}:${packet.sequence}:${packet.timestampMs}:${packet.text.hashCode()}"
+        recentAlerts[alertKey] = System.currentTimeMillis()
 
         val frameBytes = PacketCodec.encode(packet, broadcastCrypto)
 
@@ -139,6 +143,42 @@ class LanBroadcastAlertManager(
                 AppLog.d(TAG, "Sent LAN broadcast alert burst ($BURST_COUNT packets)")
             } catch (e: Exception) {
                 AppLog.w(TAG, "Failed to send LAN broadcast alert: ${e.message}")
+            }
+        }
+    }
+
+    /**
+     * Broadcast a delivery receipt (ACK) back to the network so the original sender
+     * can update its UI.
+     */
+    fun sendBroadcastAck(sequence: Int, payloadHash: Int, receiverName: String) {
+        val packet = Packet.text(
+            type = MessageType.ACK,
+            language = Language.ENGLISH, // Doesn't matter for ACK
+            sequence = sequence,
+            text = "$payloadHash:$receiverName",
+        )
+        val frameBytes = PacketCodec.encode(packet, broadcastCrypto)
+
+        thread(name = "iTantra-LanAckSender") {
+            try {
+                // Large random jitter prevents UDP collisions when multiple devices ACK simultaneously
+                Thread.sleep((100..1500).random().toLong())
+                
+                val udpSocket = DatagramSocket().apply { broadcast = true }
+                val destination = InetAddress.getByName("255.255.255.255")
+                val datagram = DatagramPacket(frameBytes, frameBytes.size, destination, port)
+                
+                // Send 5x burst for maximum reliability on unacknowledged UDP ACKs
+                for (i in 1..5) {
+                    udpSocket.send(datagram)
+                    if (i < 5) Thread.sleep(BURST_INTERVAL_MS)
+                }
+                
+                udpSocket.close()
+                AppLog.d(TAG, "Sent LAN broadcast ACK burst (5 packets) for sequence $sequence")
+            } catch (e: Exception) {
+                AppLog.w(TAG, "Failed to send LAN broadcast ACK: ${e.message}")
             }
         }
     }

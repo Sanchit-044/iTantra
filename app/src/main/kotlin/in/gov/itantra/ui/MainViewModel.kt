@@ -143,28 +143,64 @@ class MainViewModel @Inject constructor(
     private var transport: Transport? = null
     private val deferredNormals = ArrayDeque<Packet>()
     private val pttWanted = AtomicBoolean(false)
+    private var lastInsertedAlertKey = ""
+    private var lastInsertedAlertHistoryId = ""
+    private val recentAlertIds = object : java.util.LinkedHashMap<Int, MutableList<String>>(50, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<Int, MutableList<String>>): Boolean {
+            return size > 50
+        }
+    }
 
     init {
+        for (item in outboundQueue.snapshot()) {
+            if (item.isAlert) {
+                val list = recentAlertIds.getOrPut(item.text.hashCode()) { mutableListOf() }
+                if (!list.contains(item.id)) list.add(item.id)
+            }
+        }
         loadPairedDevices()
         viewModelScope.launch {
             alertPlayer.activeAlertState.collect { alert ->
                 if (alert != null) {
                     _uiState.update { it.copy(activeIncomingAlert = alert) }
-                    try {
-                        historyDao.insertMessage(
-                            HistoryMessage(
-                                id = java.util.UUID.randomUUID().toString(),
-                                text = alert.content.toWirePayload(),
-                                language = alert.language,
-                                timestampMs = alert.receivedAtMs,
-                                direction = MessageDirection.INBOUND,
-                                status = MessageStatus.RECEIVED,
-                                peerName = alert.senderName ?: _uiState.value.talkingToName,
-                                isAlert = true
+                    
+                    val alertKey = "${alert.sequence}:${alert.content.toWirePayload().hashCode()}"
+                    if (alertKey != lastInsertedAlertKey) {
+                        lastInsertedAlertKey = alertKey
+                        lastInsertedAlertHistoryId = java.util.UUID.randomUUID().toString()
+                        try {
+                            historyDao.insertMessage(
+                                HistoryMessage(
+                                    id = lastInsertedAlertHistoryId,
+                                    text = alert.content.toWirePayload(),
+                                    language = alert.language,
+                                    timestampMs = alert.receivedAtMs,
+                                    direction = MessageDirection.INBOUND,
+                                    status = MessageStatus.RECEIVED,
+                                    peerName = alert.senderName ?: _uiState.value.talkingToName,
+                                    isAlert = true
+                                )
                             )
-                        )
-                    } catch (e: Exception) {
-                        AppLog.w("MainViewModel", "Failed to save alert history: ${e.message}")
+                            if (lanAlertManager.isWifiConnected()) {
+                                lanAlertManager.sendBroadcastAck(
+                                    sequence = alert.sequence,
+                                    payloadHash = alert.content.toWirePayload().hashCode(),
+                                    receiverName = _uiState.value.localProfile.displayName
+                                )
+                            }
+                        } catch (e: Exception) {
+                            AppLog.w("MainViewModel", "Failed to save alert history: ${e.message}")
+                        }
+                    } else if (alert.senderName != null) {
+                        try {
+                            historyDao.updateMessageStatusAndPeer(
+                                id = lastInsertedAlertHistoryId,
+                                status = MessageStatus.RECEIVED,
+                                peerName = alert.senderName
+                            )
+                        } catch (e: Exception) {
+                            AppLog.w("MainViewModel", "Failed to update alert peer name: ${e.message}")
+                        }
                     }
                 } else {
                     _uiState.update { it.copy(activeIncomingAlert = null) }
@@ -406,13 +442,19 @@ class MainViewModel @Inject constructor(
                     }
                     MessageType.ALERT -> {
                         val currentLang = _uiState.value.currentLanguage
-                        val content = AlertTemplate.fromWirePayload(packet.text)
+                        
+                        val split = packet.text.split("\u001F", limit = 2)
+                        val senderName = if (split.size == 2) split[0].takeIf { it.isNotBlank() } else null
+                        val wirePayload = if (split.size == 2) split[1] else packet.text
+                        
+                        val content = AlertTemplate.fromWirePayload(wirePayload)
                         val alertToPlay = when (content) {
                             is AlertContent.Template -> IncomingAlert(
                                 content = content,
                                 language = currentLang,
                                 sequence = packet.sequence,
                                 receivedAtMs = System.currentTimeMillis(),
+                                senderName = senderName,
                             )
                             is AlertContent.Custom -> {
                                 val translatedText = translationEngine.translateOrSame(
@@ -425,6 +467,7 @@ class MainViewModel @Inject constructor(
                                     language = currentLang,
                                     sequence = packet.sequence,
                                     receivedAtMs = System.currentTimeMillis(),
+                                    senderName = senderName,
                                 )
                             }
                         }
@@ -447,6 +490,25 @@ class MainViewModel @Inject constructor(
                         )
                     }
                     MessageType.PROFILE -> handlePeerProfile(packet)
+                    MessageType.ACK -> {
+                        val parts = packet.text.split(":")
+                        val payloadHash = parts.getOrNull(0)?.toIntOrNull() ?: return@launch
+                        val receiverName = parts.getOrNull(1)?.takeIf { it.isNotBlank() } ?: "Peer (LAN)"
+                        
+                        val ids = recentAlertIds[payloadHash]
+                        if (!ids.isNullOrEmpty()) {
+                            for (id in ids) {
+                                historyDao.addPeerToMessage(id, MessageStatus.DELIVERED, receiverName)
+                                outboundQueue.discard(id)
+                            }
+                            _snackbarMessage.emit("Alert received by $receiverName")
+                            val currentNotice = _uiState.value.notice
+                            if (currentNotice is UserNotice.Raw && currentNotice.detail?.contains("broadcasting nearby") == true) {
+                                _uiState.update { it.copy(notice = null) }
+                            }
+                            publishQueues()
+                        }
+                    }
                     else -> Unit
                 }
             } catch (e: TranslationUnavailableException) {
@@ -707,6 +769,7 @@ class MainViewModel @Inject constructor(
                     language = lang,
                     content = content,
                     sequence = sequence,
+                    senderName = senderName
                 )
             } catch (e: Exception) {
                 AppLog.w("MainViewModel", "LAN broadcast alert send failed: ${e.message}")
@@ -721,6 +784,8 @@ class MainViewModel @Inject constructor(
                 it.copy(notice = UserNotice.Raw("Alert broadcasting nearby. Queued for P2P delivery.")) 
             }
             if (queuedMsg != null) {
+                val list = recentAlertIds.getOrPut(payload.hashCode()) { mutableListOf() }
+                if (!list.contains(queuedMsg.id)) list.add(queuedMsg.id)
                 viewModelScope.launch(Dispatchers.IO) {
                     historyDao.insertMessage(
                         HistoryMessage(
@@ -749,9 +814,12 @@ class MainViewModel @Inject constructor(
                     pairingConfirmed = true,
                 )
                 _uiState.update { it.copy(alertSending = false, notice = UserNotice.AlertSent) }
+                val historyId = UUID.randomUUID().toString()
+                val list = recentAlertIds.getOrPut(payload.hashCode()) { mutableListOf() }
+                if (!list.contains(historyId)) list.add(historyId)
                 historyDao.insertMessage(
                     HistoryMessage(
-                        id = UUID.randomUUID().toString(),
+                        id = historyId,
                         text = payload,
                         language = lang,
                         timestampMs = System.currentTimeMillis(),
@@ -866,7 +934,6 @@ class MainViewModel @Inject constructor(
         publishQueues()
     }
     private val profileSequence = AtomicInteger(0)
-    private val alertSequence = AtomicInteger(0)
 
     private fun sendLocalProfile() {
         val tx = transport ?: return

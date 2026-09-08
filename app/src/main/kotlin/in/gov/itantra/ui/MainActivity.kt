@@ -27,7 +27,7 @@ class MainActivity : ComponentActivity() {
     private val requestPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { permissions ->
-        // Could handle denied permissions here, but we'll assume granted for hackathon prototype
+        `in`.gov.itantra.service.ConnectionService.start(this)
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -48,7 +48,16 @@ class MainActivity : ComponentActivity() {
         } else {
             permissionsToRequest.add(Manifest.permission.ACCESS_FINE_LOCATION)
         }
-        requestPermissionLauncher.launch(permissionsToRequest.toTypedArray())
+        
+        val missingPermissions = permissionsToRequest.filter {
+            androidx.core.content.ContextCompat.checkSelfPermission(this, it) != android.content.pm.PackageManager.PERMISSION_GRANTED
+        }
+
+        if (missingPermissions.isEmpty()) {
+            `in`.gov.itantra.service.ConnectionService.start(this)
+        } else {
+            requestPermissionLauncher.launch(missingPermissions.toTypedArray())
+        }
 
         setContent {
             val mode by themeStore.mode.collectAsState()
@@ -61,8 +70,5 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
-        
-        // Start background service to listen for connectionless alerts at all times
-        `in`.gov.itantra.service.ConnectionService.start(this)
     }
 }

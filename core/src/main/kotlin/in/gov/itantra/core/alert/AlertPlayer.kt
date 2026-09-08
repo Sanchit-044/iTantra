@@ -77,6 +77,18 @@ class AlertPlayer(
     fun play(alert: IncomingAlert) {
         synchronized(lock) {
             if (alertActive.get()) {
+                val currentAlert = _activeAlertState.value
+                val isDuplicate = currentAlert != null &&
+                    currentAlert.sequence == alert.sequence &&
+                    currentAlert.content.toWirePayload().hashCode() == alert.content.toWirePayload().hashCode()
+                
+                if (isDuplicate) {
+                    if (currentAlert.senderName == null && alert.senderName != null) {
+                        _activeAlertState.value = currentAlert.copy(senderName = alert.senderName)
+                    }
+                    return
+                }
+
                 pending.clear()
                 pending.addLast(alert)
                 dismissed.set(true)
