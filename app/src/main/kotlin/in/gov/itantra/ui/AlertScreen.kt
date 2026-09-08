@@ -30,8 +30,18 @@ fun AlertScreen(viewModel: MainViewModel) {
     val uiState by viewModel.uiState.collectAsState()
     val chrome = UiStrings.forLanguage(uiState.uiLanguage)
     var customText by rememberSaveable { mutableStateOf("") }
-    val ready = uiState.connectionState == ConnectionState.CONNECTED && uiState.pairingConfirmed
+    LaunchedEffect(Unit) {
+        viewModel.refreshWifiState()
+    }
+
+    val ready = uiState.canSendAlert
     val language = uiState.currentLanguage
+
+    val statusText = when {
+        uiState.isWifiConnected -> "Wi-Fi LAN Broadcast Active — Alerts will reach all devices on this network."
+        ready -> chrome.alertReadyHelp
+        else -> chrome.alertNeedPair
+    }
 
     Column(
         modifier = Modifier
@@ -41,7 +51,7 @@ fun AlertScreen(viewModel: MainViewModel) {
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Text(
-            text = if (ready) chrome.alertReadyHelp else chrome.alertNeedPair,
+            text = statusText,
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(bottom = 24.dp)

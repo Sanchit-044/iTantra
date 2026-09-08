@@ -246,4 +246,10 @@ object AppModule {
     fun provideNearbyDiscovery(@ApplicationContext context: Context): NearbyDiscovery {
         return NearbyDiscovery(context)
     }
+
+    @Provides
+    @Singleton
+    fun provideLanBroadcastAlertManager(@ApplicationContext context: Context): `in`.gov.itantra.android.alert.LanBroadcastAlertManager {
+        return `in`.gov.itantra.android.alert.LanBroadcastAlertManager(context)
+    }
 }
