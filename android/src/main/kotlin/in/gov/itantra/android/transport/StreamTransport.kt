@@ -158,9 +158,11 @@ abstract class StreamTransport(
             readerThread = Thread({ readLoop(l) }, "itantra-transport-rx").apply { start() }
             updateState(ConnectionState.CONNECTED)
         } catch (e: Exception) {
+            `in`.gov.itantra.core.diag.AppLog.e("StreamTransport", "connect failed", e)
             updateState(ConnectionState.FAILED)
             disconnect()
-            throw TransportException("connection failed on ${kind.name}", e)
+            val rootCause = e.message ?: e.cause?.message ?: "Unknown error"
+            throw TransportException("connection failed on ${kind.name}: $rootCause", e)
         }
     }
 

@@ -266,6 +266,12 @@ class MainViewModel @Inject constructor(
                         outboundQueue.discard(id)
                     }
                     _snackbarMessage.emit("Alert received by $receiverName (via BLE)")
+                    
+                    val currentNotice = _uiState.value.notice
+                    if (currentNotice is UserNotice.Raw && currentNotice.detail?.contains("broadcasting nearby") == true) {
+                        _uiState.update { it.copy(notice = null) }
+                    }
+                    
                     publishQueues()
                 }
             }
