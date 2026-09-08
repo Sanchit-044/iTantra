@@ -24,7 +24,7 @@ class StartPttTransmissionUseCaseTest {
     private val fakeTransport = object : Transport {
         override val kind = `in`.gov.itantra.core.transport.TransportKind.LOOPBACK
         override val pairingInfo = null
-        override val lastRoundTripMs = null
+        override val lastRoundTripMs: Long? = null
         override var state: ConnectionState = ConnectionState.CONNECTED
         override fun setListener(listener: TransportListener?) {}
         override fun connect(timeoutMs: Long) {}
@@ -33,7 +33,6 @@ class StartPttTransmissionUseCaseTest {
         override fun requestFloor() {}
         override fun releaseFloor() {}
         override fun confirmPairing() {}
-        override val lastRoundTripMs: Long? = null
         override val stats = `in`.gov.itantra.core.transport.TransportStats()
         override fun close() {}
     }

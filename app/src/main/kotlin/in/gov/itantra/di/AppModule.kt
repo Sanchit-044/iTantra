@@ -281,4 +281,10 @@ object AppModule {
     ): WifiAlertScanner {
         return WifiAlertScanner(context, alertPlayer)
     }
+
+    @Provides
+    @Singleton
+    fun provideLanBroadcastAlertManager(@ApplicationContext context: Context): `in`.gov.itantra.android.alert.LanBroadcastAlertManager {
+        return `in`.gov.itantra.android.alert.LanBroadcastAlertManager(context)
+    }
 }

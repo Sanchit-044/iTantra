@@ -70,7 +70,6 @@ private class FakeAlertTransport : Transport {
     val sent = mutableListOf<Packet>()
     override val kind = TransportKind.LOOPBACK
     override var state = ConnectionState.CONNECTED
-    override fun requestFloor() {}
     override val pairingInfo: PairingInfo? = null
     override fun setListener(listener: TransportListener?) = Unit
     override fun connect(timeoutMs: Long) = Unit

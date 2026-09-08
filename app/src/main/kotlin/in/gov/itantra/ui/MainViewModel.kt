@@ -7,6 +7,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
+import `in`.gov.itantra.android.alert.LanBroadcastAlertManager
 import `in`.gov.itantra.android.diag.AndroidDiagnosticsService
 import `in`.gov.itantra.android.notify.QueuedMessageNotifier
 import `in`.gov.itantra.core.diag.AppLog
@@ -97,7 +98,11 @@ data class UiState(
     val peerProfile: OperatorProfile? = null,
     val radioPeerName: String? = null,
     val activeIncomingAlert: IncomingAlert? = null,
+    val isWifiConnected: Boolean = false,
 ) {
+    val canSendAlert: Boolean
+        get() = (connectionState == ConnectionState.CONNECTED && pairingConfirmed) || isWifiConnected
+
     val talkingToName: String
         get() = peerProfile?.displayName
             ?: radioPeerName?.takeIf { it.isNotBlank() }
@@ -126,6 +131,7 @@ class MainViewModel @Inject constructor(
     private val historyDao: HistoryDao,
     private val bleAlertBroadcaster: `in`.gov.itantra.android.alert.BleAlertBroadcaster,
     private val wifiAlertBroadcaster: `in`.gov.itantra.android.alert.WifiAlertBroadcaster,
+    private val lanAlertManager: LanBroadcastAlertManager,
 ) : ViewModel(), TransportListener {
 
     private val _snackbarMessage = kotlinx.coroutines.flow.MutableSharedFlow<String>()
@@ -196,10 +202,18 @@ class MainViewModel @Inject constructor(
         outboundQueue.purgeExpired()
         inbox.purgeExpired()
         publishQueues(notifyIfUnread = true)
+        lanAlertManager.startListening { packet ->
+            onReceive(packet)
+        }
+        refreshWifiState()
+        lanAlertManager.observeWifiState { isConnected ->
+            _uiState.update { it.copy(isWifiConnected = isConnected) }
+        }
     }
 
     override fun onCleared() {
         super.onCleared()
+        lanAlertManager.stopListening()
         transport?.setListener(null)
         transport?.disconnect()
         if (diagnostics.attachedTransport === transport) {
@@ -654,29 +668,58 @@ class MainViewModel @Inject constructor(
 
     private val alertSequence = AtomicInteger(0)
 
+    fun refreshWifiState() {
+        _uiState.update { it.copy(isWifiConnected = lanAlertManager.isWifiConnected()) }
+    }
+
     private fun sendAlert(content: AlertContent) {
         val currentTransport = transport
+        val wifiConnected = lanAlertManager.isWifiConnected()
+        _uiState.update { it.copy(isWifiConnected = wifiConnected) }
+
+        val canSendViaP2P = currentTransport != null &&
+            currentTransport.state == ConnectionState.CONNECTED &&
+            _uiState.value.pairingConfirmed
+
         val payload = content.toWirePayload()
         val lang = _uiState.value.currentLanguage
-        val sequence = alertSequence.incrementAndGet().toLong()
+        val sequence = alertSequence.incrementAndGet()
 
-        AppLog.d("MainViewModel", "Triggering BLE and Wi-Fi broadcasters for sequence $sequence")
+        AppLog.d("MainViewModel", "Triggering BLE, Wi-Fi Direct, and LAN broadcasters for sequence $sequence")
         val senderName = _uiState.value.localProfile.displayName
+
+        // 1. Connectionless BLE & Wi-Fi Direct Broadcast (Always try this for offline discovery)
         try {
-            bleAlertBroadcaster.broadcastAlert(lang, content, sequence)
+            bleAlertBroadcaster.broadcastAlert(lang, content, sequence.toLong())
         } catch (e: Exception) {
             AppLog.e("MainViewModel", "BLE broadcast crashed", e)
         }
         try {
-            wifiAlertBroadcaster.broadcastAlert(lang, content, sequence, senderName)
+            wifiAlertBroadcaster.broadcastAlert(lang, content, sequence.toLong(), senderName)
         } catch (e: Exception) {
             AppLog.e("MainViewModel", "Wi-Fi broadcast crashed", e)
         }
 
-        if (currentTransport == null || currentTransport.state != ConnectionState.CONNECTED || !_uiState.value.pairingConfirmed) {
+        // 2. LAN Wi-Fi Broadcast
+        if (wifiConnected) {
+            try {
+                lanAlertManager.sendBroadcastAlert(
+                    language = lang,
+                    content = content,
+                    sequence = sequence,
+                )
+            } catch (e: Exception) {
+                AppLog.w("MainViewModel", "LAN broadcast alert send failed: ${e.message}")
+            }
+        }
+
+        // 3. P2P Direct Send or Queue
+        if (!canSendViaP2P) {
             val queuedMsg = outboundQueue.enqueue(lang, payload, isAlert = true)
             publishQueues()
-            _uiState.update { it.copy(notice = UserNotice.Raw("Alert queued for later delivery (and broadcasting nearby)")) }
+            _uiState.update { 
+                it.copy(notice = UserNotice.Raw("Alert broadcasting nearby. Queued for P2P delivery.")) 
+            }
             if (queuedMsg != null) {
                 viewModelScope.launch(Dispatchers.IO) {
                     historyDao.insertMessage(
@@ -823,6 +866,7 @@ class MainViewModel @Inject constructor(
         publishQueues()
     }
     private val profileSequence = AtomicInteger(0)
+    private val alertSequence = AtomicInteger(0)
 
     private fun sendLocalProfile() {
         val tx = transport ?: return
