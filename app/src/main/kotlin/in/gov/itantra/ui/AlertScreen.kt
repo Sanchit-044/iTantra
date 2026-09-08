@@ -30,7 +30,6 @@ fun AlertScreen(viewModel: MainViewModel) {
     val uiState by viewModel.uiState.collectAsState()
     val chrome = UiStrings.forLanguage(uiState.uiLanguage)
     var customText by rememberSaveable { mutableStateOf("") }
-    val ready = uiState.connectionState == ConnectionState.CONNECTED && uiState.pairingConfirmed
     val language = uiState.currentLanguage
 
     Column(
@@ -41,7 +40,7 @@ fun AlertScreen(viewModel: MainViewModel) {
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Text(
-            text = if (ready) chrome.alertReadyHelp else chrome.alertNeedPair,
+            text = chrome.alertReadyHelp,
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(bottom = 24.dp)
@@ -54,7 +53,7 @@ fun AlertScreen(viewModel: MainViewModel) {
                 
                 Button(
                     onClick = { viewModel.sendAlertTemplate(template) },
-                    enabled = ready && !uiState.alertSending,
+                    enabled = !uiState.alertSending,
                     modifier = Modifier.fillMaxWidth().height(60.dp),
                     shape = RoundedCornerShape(16.dp),
                     colors = ButtonDefaults.buttonColors(
@@ -104,7 +103,7 @@ fun AlertScreen(viewModel: MainViewModel) {
                     value = customText,
                     onValueChange = { if (it.length <= 200) customText = it },
                     modifier = Modifier.fillMaxWidth(),
-                    enabled = ready,
+                    enabled = true,
                     singleLine = false,
                     minLines = 3,
                     placeholder = { Text(chrome.freeText) },
@@ -122,7 +121,7 @@ fun AlertScreen(viewModel: MainViewModel) {
                         viewModel.sendCustomAlert(trimmed)
                         customText = ""
                     },
-                    enabled = ready && customText.trim().isNotEmpty() && !uiState.alertSending,
+                    enabled = customText.trim().isNotEmpty() && !uiState.alertSending,
                     modifier = Modifier.align(Alignment.End),
                     shape = RoundedCornerShape(12.dp)
                 ) {
