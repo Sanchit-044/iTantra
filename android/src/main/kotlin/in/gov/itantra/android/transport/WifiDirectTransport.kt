@@ -144,7 +144,7 @@ class WifiDirectTransport(
                     
                     discoverPeers(m, ch)
                     
-                    if (peersFound?.await(3000, TimeUnit.MILLISECONDS) != true) {
+                    if (peersFound?.await(10000, TimeUnit.MILLISECONDS) != true) {
                         android.util.Log.d("iTantra-WiFi", "Client: Peer discovery timed out. Retrying...")
                         // Retry discovery
                         continue
@@ -170,7 +170,7 @@ class WifiDirectTransport(
                         continue
                     }
                     
-                    if (connected?.await(20000, TimeUnit.MILLISECONDS) == true) {
+                    if (connected?.await(40000, TimeUnit.MILLISECONDS) == true) {
                         val info = connectionInfo
                         if (info != null && info.groupFormed) {
                             val peerName = peer?.deviceName ?: "unknown"
@@ -220,9 +220,7 @@ class WifiDirectTransport(
     private fun invite(m: WifiP2pManager, ch: WifiP2pManager.Channel, peer: WifiP2pDevice): Boolean {
         val config = WifiP2pConfig().apply {
             deviceAddress = peer.deviceAddress
-            // HACKATHON FIX: We are joining an existing group created by the Host. 
-            // We MUST NOT demand to be the owner, or the connection will instantly fail with a conflict!
-            groupOwnerIntent = 0
+            wps.setup = android.net.wifi.WpsInfo.PBC
         }
         val inviteSent = CountDownLatch(1)
         var success = false

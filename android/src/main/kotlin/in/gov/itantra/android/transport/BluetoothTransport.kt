@@ -32,6 +32,7 @@ class BluetoothTransport(
     private val role: Role,
     /** Required when [role] is [Role.CLIENT]: the MAC address of the host handset. */
     private val peerAddress: String? = null,
+    private val peerName: String? = null,
     private val serviceUuid: UUID = SERVICE_UUID,
 ) : StreamTransport(keyAgreement, winsFloorTies = role == Role.HOST) {
 
@@ -76,8 +77,18 @@ class BluetoothTransport(
 
     @SuppressLint("MissingPermission")
     private fun connectAsClient(adapter: BluetoothAdapter): Link {
-        val address = peerAddress
+        var address = peerAddress?.uppercase(java.util.Locale.US)
             ?: throw TransportException("CLIENT role requires a peer address")
+            
+        // For BLE random MAC workarounds: if devices are paired, check bondedDevices by name
+        if (peerName != null) {
+            val bondedMatch = adapter.bondedDevices?.firstOrNull { it.name.equals(peerName, ignoreCase = true) }
+            if (bondedMatch != null) {
+                address = bondedMatch.address
+                android.util.Log.d("iTantra-BT", "Found bonded device matching name $peerName, swapping BLE MAC to ${bondedMatch.address}")
+            }
+        }
+            
         if (!BluetoothAdapter.checkBluetoothAddress(address)) {
             throw TransportException("malformed Bluetooth address: $address")
         }
@@ -88,14 +99,21 @@ class BluetoothTransport(
         // that hangs and then fails. Always cancel it first.
         if (adapter.isDiscovering) adapter.cancelDiscovery()
 
-        val socket = device.createInsecureRfcommSocketToServiceRecord(serviceUuid)
-        return try {
-            socket.connect()
-            socket.toLink()
-        } catch (e: Exception) {
-            runCatching { socket.close() }
-            throw TransportException("RFCOMM connect to $address failed", e)
+        val deadline = System.currentTimeMillis() + 30_000
+        var lastException: Exception? = null
+        
+        while (System.currentTimeMillis() < deadline) {
+            val socket = device.createInsecureRfcommSocketToServiceRecord(serviceUuid)
+            try {
+                socket.connect()
+                return socket.toLink()
+            } catch (e: Exception) {
+                lastException = e
+                runCatching { socket.close() }
+                Thread.sleep(1000)
+            }
         }
+        throw TransportException("RFCOMM connect to $address failed after 30s", lastException)
     }
 
     @SuppressLint("MissingPermission")

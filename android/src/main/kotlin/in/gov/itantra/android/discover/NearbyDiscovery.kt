@@ -90,7 +90,6 @@ class NearbyDiscovery(private val context: Context) {
         handler.removeCallbacks(rescanTick)
         stopWifi()
         stopBluetooth()
-        _peers.value = emptyList()
     }
 
     @SuppressLint("MissingPermission")

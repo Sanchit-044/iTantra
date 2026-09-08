@@ -18,6 +18,8 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
@@ -48,6 +50,7 @@ import kotlin.math.hypot
 import kotlin.math.min
 import kotlin.math.sin
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun RadarScreen(
     mainViewModel: MainViewModel,
@@ -57,6 +60,8 @@ fun RadarScreen(
     val main by mainViewModel.uiState.collectAsState()
     val canJoin = main.connectionState == ConnectionState.DISCONNECTED ||
         main.connectionState == ConnectionState.FAILED
+
+    var selectedPeer by remember { mutableStateOf<NearbyPeer?>(null) }
 
     Column(
         modifier = Modifier
@@ -122,7 +127,29 @@ fun RadarScreen(
                     onPeerTap = { peer ->
                         if (!canJoin) return@RadarPlot
                         radarViewModel.stop()
-                        mainViewModel.connectToNearbyPeer(peer)
+                        
+                        val myName = main.localProfile.displayName
+                        val peerName = peer.name
+                        val isHost = if (myName != peerName) myName > peerName else true
+                        
+                        val useWifi = peer.hasWifi && (radar.filter == RadarFilter.BOTH || radar.filter == RadarFilter.WIFI)
+                        val useBluetooth = peer.hasBluetooth && (radar.filter == RadarFilter.BOTH || radar.filter == RadarFilter.BLUETOOTH)
+                        
+                        if (useWifi) {
+                            // For Wi-Fi Direct, both devices should act as CLIENT. Android will natively negotiate the Group Owner.
+                            mainViewModel.setConnectionMode(`in`.gov.itantra.ui.ConnectionMode.WIFI_DIRECT_CLIENT)
+                            mainViewModel.connect(peerAddress = peer.wifiAddress, preferredWifiAddress = peer.wifiAddress)
+                        } else if (useBluetooth) {
+                            val addr = peer.bluetoothAddress ?: ""
+                            if (isHost) {
+                                mainViewModel.setConnectionMode(`in`.gov.itantra.ui.ConnectionMode.BLUETOOTH_HOST)
+                                mainViewModel.connect()
+                            } else {
+                                mainViewModel.setConnectionMode(`in`.gov.itantra.ui.ConnectionMode.BLUETOOTH_CLIENT)
+                                mainViewModel.selectDevice(addr)
+                                mainViewModel.connect(peerAddress = addr)
+                            }
+                        }
                     },
                     modifier = Modifier.fillMaxSize().padding(16.dp),
                 )
@@ -147,11 +174,17 @@ fun RadarScreen(
                                 .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.8f), RoundedCornerShape(8.dp))
                                 .padding(12.dp)
                         ) {
-                            Text(
-                                "Connecting...",
-                                color = MaterialTheme.colorScheme.primary,
-                                style = MaterialTheme.typography.labelMedium
-                            )
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Text(
+                                    "Connecting...",
+                                    color = MaterialTheme.colorScheme.primary,
+                                    style = MaterialTheme.typography.labelMedium
+                                )
+                                Spacer(Modifier.height(8.dp))
+                                Button(onClick = { mainViewModel.disconnect() }) {
+                                    Text("Cancel")
+                                }
+                            }
                         }
                     }
                     else -> {
@@ -179,8 +212,7 @@ fun RadarScreen(
                             .padding(vertical = 4.dp)
                             .clip(RoundedCornerShape(12.dp))
                             .clickable(enabled = canJoin) {
-                                radarViewModel.stop()
-                                mainViewModel.connectToNearbyPeer(peer)
+                                selectedPeer = peer
                             },
                         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)
                     ) {
@@ -210,6 +242,48 @@ fun RadarScreen(
                 }
             }
         }
+    }
+
+    selectedPeer?.let { peer ->
+        AlertDialog(
+            onDismissRequest = { selectedPeer = null },
+            title = { Text("Connect to ${peer.name}") },
+            text = { Text("Choose your role for this connection.\nThe Host should wait for the Joiner to connect.") },
+            confirmButton = {
+                Button(onClick = {
+                    selectedPeer = null
+                    radarViewModel.stop()
+                    val useWifi = peer.hasWifi && (radar.filter == RadarFilter.BOTH || radar.filter == RadarFilter.WIFI)
+                    if (useWifi) {
+                        mainViewModel.setConnectionMode(`in`.gov.itantra.ui.ConnectionMode.WIFI_DIRECT_HOST)
+                        mainViewModel.connect()
+                    } else {
+                        mainViewModel.setConnectionMode(`in`.gov.itantra.ui.ConnectionMode.BLUETOOTH_HOST)
+                        mainViewModel.connect()
+                    }
+                }) {
+                    Text("Host")
+                }
+            },
+            dismissButton = {
+                Button(onClick = {
+                    selectedPeer = null
+                    radarViewModel.stop()
+                    val useWifi = peer.hasWifi && (radar.filter == RadarFilter.BOTH || radar.filter == RadarFilter.WIFI)
+                    if (useWifi) {
+                        mainViewModel.setConnectionMode(`in`.gov.itantra.ui.ConnectionMode.WIFI_DIRECT_CLIENT)
+                        mainViewModel.connect(peerAddress = peer.wifiAddress, preferredWifiAddress = peer.wifiAddress)
+                    } else {
+                        val addr = peer.bluetoothAddress ?: ""
+                        mainViewModel.setConnectionMode(`in`.gov.itantra.ui.ConnectionMode.BLUETOOTH_CLIENT)
+                        mainViewModel.selectDevice(addr)
+                        mainViewModel.connect(peerAddress = addr, peerName = peer.name)
+                    }
+                }) {
+                    Text("Join")
+                }
+            }
+        )
     }
 }
 

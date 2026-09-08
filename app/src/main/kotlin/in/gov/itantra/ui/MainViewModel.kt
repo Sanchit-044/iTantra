@@ -625,22 +625,9 @@ class MainViewModel @Inject constructor(
     }
 
     // --- Actions ---
-    fun connectToNearbyPeer(peer: NearbyPeer) {
-        when {
-            peer.hasWifi -> {
-                setConnectionMode(ConnectionMode.WIFI_DIRECT_CLIENT)
-                connect(peerAddress = peer.wifiAddress, preferredWifiAddress = peer.wifiAddress)
-            }
-            peer.hasBluetooth -> {
-                val address = peer.bluetoothAddress ?: return
-                setConnectionMode(ConnectionMode.BLUETOOTH_CLIENT)
-                selectDevice(address)
-                connect(peerAddress = address)
-            }
-        }
-    }
 
-    fun connect(peerAddress: String? = null, preferredWifiAddress: String? = null) {
+
+    fun connect(peerAddress: String? = null, preferredWifiAddress: String? = null, peerName: String? = null) {
         viewModelScope.launch(Dispatchers.IO) {
             try {
                 transport?.setListener(null)
@@ -661,7 +648,7 @@ class MainViewModel @Inject constructor(
                             _uiState.update { it.copy(notice = UserNotice.PleaseSelectDevice) }
                             return@launch
                         }
-                        BluetoothTransport(context, keyAgreementProvider, BluetoothTransport.Role.CLIENT, address)
+                        BluetoothTransport(context, keyAgreementProvider, BluetoothTransport.Role.CLIENT, address, peerName)
                     }
 
                 }
