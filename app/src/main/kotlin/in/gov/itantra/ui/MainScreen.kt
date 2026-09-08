@@ -141,33 +141,57 @@ fun MainScreen(
                 }
             }
 
+            // Quick Chats
+            val quickChats = listOf("Yes", "No", "Okay", "Need Help", "Wait")
+            androidx.compose.foundation.lazy.LazyRow(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 12.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                items(quickChats) { chat ->
+                    SuggestionChip(
+                        onClick = { viewModel.sendQuickChat(chat) },
+                        label = { Text(chat) }
+                    )
+                }
+            }
+
             UserNoticeBanner(
                 notice = uiState.notice,
                 strings = chrome,
                 modifier = Modifier.padding(top = 16.dp),
             )
 
-            if (uiState.outboundPending > 0) {
-                Text(
-                    text = chrome.waitingToSend(uiState.outboundPending, uiState.outboundFailed),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.padding(top = 8.dp)
-                )
-            }
-
-            // Inbox UI
-            if (uiState.inbox.isNotEmpty()) {
+            if (uiState.inbox.isNotEmpty() || uiState.queuedOutbound.isNotEmpty()) {
                 Spacer(modifier = Modifier.height(16.dp))
-                Text(
-                    text = chrome.inboxTitle,
-                    style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.align(Alignment.Start).padding(bottom = 8.dp)
-                )
                 LazyColumn(modifier = Modifier.weight(1f).fillMaxWidth()) {
-                    items(uiState.inbox, key = { it.id }) { item ->
-                        InboxItem(item = item, uiState = uiState, chrome = chrome, viewModel = viewModel)
+                    if (uiState.queuedOutbound.isNotEmpty()) {
+                        item {
+                            Text(
+                                text = "Outbox (${uiState.outboundPending} pending, ${uiState.outboundFailed} failed)",
+                                style = MaterialTheme.typography.labelLarge,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(bottom = 8.dp, top = 8.dp)
+                            )
+                        }
+                        items(uiState.queuedOutbound, key = { "out_${it.id}" }) { item ->
+                            OutboxItem(item = item, viewModel = viewModel)
+                        }
+                    }
+
+                    if (uiState.inbox.isNotEmpty()) {
+                        item {
+                            Text(
+                                text = chrome.inboxTitle,
+                                style = MaterialTheme.typography.labelLarge,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(bottom = 8.dp, top = if (uiState.queuedOutbound.isNotEmpty()) 16.dp else 8.dp)
+                            )
+                        }
+                        items(uiState.inbox, key = { "in_${it.id}" }) { item ->
+                            InboxItem(item = item, uiState = uiState, chrome = chrome, viewModel = viewModel)
+                        }
                     }
                 }
             } else {
@@ -288,8 +312,9 @@ fun InboxItem(item: `in`.gov.itantra.core.queue.InboxMessage, uiState: `in`.gov.
             verticalAlignment = Alignment.CenterVertically
         ) {
             Column(modifier = Modifier.weight(1f)) {
+                val senderInfo = if (item.senderName != null && item.senderName != "Unknown" && item.senderName != "Peer") " (from ${item.senderName})" else ""
                 Text(
-                    text = chrome.inboxLabel(item.unread, item.language.endonym),
+                    text = chrome.inboxLabel(item.unread, item.language.endonym) + senderInfo,
                     style = MaterialTheme.typography.labelSmall,
                     color = if (item.unread) MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f) else MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -316,6 +341,47 @@ fun InboxItem(item: `in`.gov.itantra.core.queue.InboxMessage, uiState: `in`.gov.
             Spacer(Modifier.width(8.dp))
             IconButton(onClick = { viewModel.dismissInbox(item.id) }) {
                 Icon(Icons.Filled.Clear, contentDescription = chrome.dismiss, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+    }
+}
+
+@Composable
+fun OutboxItem(item: `in`.gov.itantra.core.queue.OutboundMessage, viewModel: MainViewModel) {
+    Card(
+        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = if (item.state == `in`.gov.itantra.core.queue.OutboundState.FAILED) MaterialTheme.colorScheme.errorContainer else MaterialTheme.colorScheme.surfaceVariant
+        ),
+        shape = RoundedCornerShape(12.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                val statusText = if (item.state == `in`.gov.itantra.core.queue.OutboundState.DELIVERED && item.receiverName != null && item.receiverName != "Unknown" && item.receiverName != "Peer") {
+                    "${item.state.name} to ${item.receiverName} (${item.language.endonym})"
+                } else {
+                    "${item.state.name} (${item.language.endonym})"
+                }
+                Text(
+                    text = statusText,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = if (item.state == `in`.gov.itantra.core.queue.OutboundState.FAILED) MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.7f) else MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    text = if (item.isAlert) "[ALERT] ${item.text}" else item.text,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = if (item.state == `in`.gov.itantra.core.queue.OutboundState.FAILED) MaterialTheme.colorScheme.onErrorContainer else MaterialTheme.colorScheme.onSurface,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+            Spacer(Modifier.width(8.dp))
+            IconButton(onClick = { viewModel.deleteQueuedMessage(item.id) }) {
+                Icon(Icons.Filled.Clear, contentDescription = "Delete", tint = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
     }

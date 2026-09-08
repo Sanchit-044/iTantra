@@ -3,7 +3,7 @@ package `in`.gov.itantra.core.queue
 import `in`.gov.itantra.core.Language
 import java.util.UUID
 
-enum class OutboundState { QUEUED, SENDING, FAILED }
+enum class OutboundState { QUEUED, SENDING, FAILED, DELIVERED }
 
 data class OutboundMessage(
     val id: String,
@@ -11,6 +11,8 @@ data class OutboundMessage(
     val text: String,
     val createdAtMs: Long,
     val state: OutboundState,
+    val isAlert: Boolean = false,
+    val receiverName: String? = null,
 )
 
 interface QueueStore {
@@ -55,7 +57,7 @@ class OutboundMessageQueue(
         }
     }
 
-    fun enqueue(language: Language, text: String): OutboundMessage? {
+    fun enqueue(language: Language, text: String, isAlert: Boolean = false): OutboundMessage? {
         val cleaned = sanitize(text) ?: return null
         val now = clock()
         val message = OutboundMessage(
@@ -64,6 +66,7 @@ class OutboundMessageQueue(
             text = cleaned,
             createdAtMs = now,
             state = OutboundState.QUEUED,
+            isAlert = isAlert,
         )
         synchronized(lock) {
             expireLocked()
@@ -107,10 +110,9 @@ class OutboundMessageQueue(
 
     fun markFailed(id: String): Boolean = update(id, OutboundState.FAILED)
 
-    fun markSent(id: String) {
+    fun markSent(id: String, receiverName: String? = null) {
         synchronized(lock) {
-            items.removeAll { it.id == id }
-            persistLocked()
+            update(id, OutboundState.DELIVERED, receiverName)
         }
     }
 
@@ -121,7 +123,7 @@ class OutboundMessageQueue(
         }
     }
 
-    private fun update(id: String, state: OutboundState): Boolean {
+    private fun update(id: String, state: OutboundState, receiverName: String? = null): Boolean {
         synchronized(lock) {
             expireLocked()
             val index = items.indexOfFirst { it.id == id }
@@ -132,7 +134,7 @@ class OutboundMessageQueue(
                 persistLocked()
                 return false
             }
-            items[index] = current.copy(state = state)
+            items[index] = current.copy(state = state, receiverName = receiverName ?: current.receiverName)
             persistLocked()
             return true
         }

@@ -49,7 +49,18 @@ class ReceivePttTransmissionUseCase(
         }
     }
 
-    /** Operator-initiated playback for an inbox item. */
+    /**
+     * Operator-initiated playback for an inbox item.
+     *
+     * Runs on [Dispatchers.IO] because [ChunkedSpeaker.speak] is fully blocking
+     * (synthesis + AudioTrack drain). [Dispatchers.Default] has a bounded thread
+     * pool sized to the CPU count; occupying one of those threads for the entire
+     * synthesis + playback duration starves other coroutines under load.
+     *
+     * A [TTS_TIMEOUT_MS] hard deadline is applied so a stuck ONNX call (e.g., the
+     * model is loaded but inference never returns on a pathological device) cannot
+     * block the coroutine indefinitely.
+     */
     suspend fun playText(text: String, language: Language) {
         val cleaned = text.trim()
         if (cleaned.isEmpty()) {
@@ -58,7 +69,7 @@ class ReceivePttTransmissionUseCase(
         }
         AppLog.d("ReceivePttUseCase", "playText: language=$language text=$cleaned")
         playLock.withLock {
-            withContext(Dispatchers.Default) {
+            withContext(Dispatchers.IO) {
                 if (ttsEngine.activeLanguage != language) {
                     AppLog.d("ReceivePttUseCase", "Loading TTS voice for language: $language")
                     ttsEngine.loadVoice(language)
@@ -68,11 +79,29 @@ class ReceivePttTransmissionUseCase(
                 try {
                     val speaker = ChunkedSpeaker(ttsEngine)
                     val handle = speaker.speak(cleaned, language, sink)
-                    handle.await()
+                    val completed = handle.await(TTS_TIMEOUT_MS)
+                    if (!completed) {
+                        AppLog.d(
+                            "ReceivePttUseCase",
+                            "TTS timed out after ${TTS_TIMEOUT_MS} ms — cancelling utterance",
+                        )
+                        handle.cancel()
+                    }
                 } finally {
                     sink.close()
                 }
             }
         }
+    }
+
+    private companion object {
+        /**
+         * Maximum time to wait for a TTS utterance to complete before giving up.
+         *
+         * VITS on a slow CPU can take 5-15 seconds for a short Hindi sentence;
+         * 30 seconds allows for a longer sentence on a loaded low-end device while
+         * still preventing the coroutine from blocking forever if ONNX hangs.
+         */
+        const val TTS_TIMEOUT_MS = 30_000L
     }
 }

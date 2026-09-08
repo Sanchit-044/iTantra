@@ -22,6 +22,14 @@
             android:foregroundServiceType="connectedDevice"
             android:exported="false" />
 
+        <receiver
+            android:name=".service.AlertStopReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="in.gov.itantra.action.STOP_ALERT" />
+            </intent-filter>
+        </receiver>
+
         <activity
             android:name=".ui.MainActivity"
             android:exported="true"

@@ -39,6 +39,7 @@ class StartPttTransmissionUseCase(
         sendLive: Boolean = true,
         onPartialResult: (String) -> Unit,
         onFinalResult: (String) -> Unit = {},
+        onSentLive: (String, Long) -> Unit = { _, _ -> },
         onQueued: (OutboundMessage) -> Unit = {},
         onError: (String) -> Unit = {},
     ) {
@@ -86,6 +87,7 @@ class StartPttTransmissionUseCase(
                         try {
                             transport.send(packet)
                             AppLog.d("StartPttUseCase", "Sent packet live: sq=${packet.sequence}")
+                            onSentLive(text, packet.timestampMs)
                             return
                         } catch (e: Exception) {
                             AppLog.w("StartPttUseCase", "Failed to send live packet: ${e.message}, queuing it instead")

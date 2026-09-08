@@ -108,11 +108,17 @@ fun ITantraApp(
                 mainViewModel = mainViewModel,
                 onOpenSettings = { navController.navigate(AppRoutes.SETTINGS) },
                 onOpenProfile = { navController.navigate(AppRoutes.SETTINGS_PROFILE) },
+                onOpenHistory = { navController.navigate(AppRoutes.HISTORY) },
             )
         }
         composable(AppRoutes.SETTINGS) {
             SettingsScreen(
                 onBack = { navController.popBackStack() },
+            )
+        }
+        composable(AppRoutes.HISTORY) {
+            HistoryScreen(
+                onBack = { navController.popBackStack() }
             )
         }
         composable(AppRoutes.SETTINGS_PROFILE) {
@@ -131,6 +137,7 @@ fun MainContent(
     mainViewModel: MainViewModel,
     onOpenSettings: () -> Unit,
     onOpenProfile: () -> Unit,
+    onOpenHistory: () -> Unit,
 ) {
     val uiState by mainViewModel.uiState.collectAsState()
     val chrome = UiStrings.forLanguage(uiState.uiLanguage)
@@ -160,6 +167,35 @@ fun MainContent(
                     Text(chrome.pairingCancel)
                 }
             },
+        )
+    }
+
+    val activeAlert = uiState.activeIncomingAlert
+    if (activeAlert != null) {
+        AlertDialog(
+            onDismissRequest = { /* Must be explicitly dismissed via button */ },
+            icon = { Icon(Icons.Filled.Warning, contentDescription = null, tint = androidx.compose.material3.MaterialTheme.colorScheme.error) },
+            title = { Text("Incoming Alert") },
+            text = { 
+                Text(
+                    text = when (val c = activeAlert.content) {
+                        is `in`.gov.itantra.core.alert.AlertContent.Template -> c.template.phrase(activeAlert.language)
+                        is `in`.gov.itantra.core.alert.AlertContent.Custom -> c.text
+                    },
+                    style = androidx.compose.material3.MaterialTheme.typography.titleLarge
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = { mainViewModel.dismissAlert() },
+                    colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+                        containerColor = androidx.compose.material3.MaterialTheme.colorScheme.error,
+                        contentColor = androidx.compose.material3.MaterialTheme.colorScheme.onError
+                    )
+                ) {
+                    Text("Okay (Stop Alarm)")
+                }
+            }
         )
     }
 
@@ -211,6 +247,16 @@ fun MainContent(
                     onClick = {
                         coroutineScope.launch { drawerState.close() }
                         onOpenProfile()
+                    },
+                    modifier = Modifier.padding(horizontal = 12.dp)
+                )
+                androidx.compose.material3.NavigationDrawerItem(
+                    label = { Text("History") },
+                    selected = false,
+                    icon = { Icon(Icons.Default.Info, contentDescription = null) },
+                    onClick = {
+                        coroutineScope.launch { drawerState.close() }
+                        onOpenHistory()
                     },
                     modifier = Modifier.padding(horizontal = 12.dp)
                 )

@@ -13,6 +13,7 @@ object AppRoutes {
     const val MAIN = "main"
     const val SETTINGS = "settings"
     const val SETTINGS_PROFILE = "settings_profile"
+    const val HISTORY = "history"
 }
 
 @HiltViewModel

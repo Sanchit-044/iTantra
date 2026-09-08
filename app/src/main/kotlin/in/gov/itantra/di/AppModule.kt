@@ -16,6 +16,10 @@ import `in`.gov.itantra.android.discover.NearbyDiscovery
 import `in`.gov.itantra.android.pack.LocalLanguagePackManager
 import `in`.gov.itantra.android.diag.AndroidDiagnosticsService
 import `in`.gov.itantra.android.notify.QueuedMessageNotifier
+import `in`.gov.itantra.android.alert.BleAlertBroadcaster
+import `in`.gov.itantra.android.alert.BleAlertScanner
+import `in`.gov.itantra.android.alert.WifiAlertBroadcaster
+import `in`.gov.itantra.android.alert.WifiAlertScanner
 import `in`.gov.itantra.android.queue.FileQueueStore
 import `in`.gov.itantra.android.stt.OnnxCtcSttEngine
 import `in`.gov.itantra.android.tts.VitsOnnxTtsEngine
@@ -245,5 +249,35 @@ object AppModule {
     @Singleton
     fun provideNearbyDiscovery(@ApplicationContext context: Context): NearbyDiscovery {
         return NearbyDiscovery(context)
+    }
+
+    @Provides
+    @Singleton
+    fun provideBleAlertBroadcaster(@ApplicationContext context: Context): BleAlertBroadcaster {
+        return BleAlertBroadcaster(context)
+    }
+
+    @Provides
+    @Singleton
+    fun provideBleAlertScanner(
+        @ApplicationContext context: Context,
+        alertPlayer: AlertPlayer
+    ): BleAlertScanner {
+        return BleAlertScanner(context, alertPlayer)
+    }
+
+    @Provides
+    @Singleton
+    fun provideWifiAlertBroadcaster(@ApplicationContext context: Context): WifiAlertBroadcaster {
+        return WifiAlertBroadcaster(context)
+    }
+
+    @Provides
+    @Singleton
+    fun provideWifiAlertScanner(
+        @ApplicationContext context: Context,
+        alertPlayer: AlertPlayer
+    ): WifiAlertScanner {
+        return WifiAlertScanner(context, alertPlayer)
     }
 }

@@ -29,14 +29,15 @@ class FileQueueStore(context: Context) : QueueStore {
             val at = p[3].toLongOrNull() ?: return@mapNotNull null
             val text = decode(p[4]) ?: return@mapNotNull null
             if (text.isBlank()) return@mapNotNull null
-            OutboundMessage(p[0], language, text, at, state)
+            val isAlert = if (p.size > 5) p[5] == "1" else false
+            OutboundMessage(p[0], language, text, at, state, isAlert)
         }
     }
 
     override fun saveOutbound(items: List<OutboundMessage>) = synchronized(lock) {
         writeLines(
             outboundFile,
-            items.map { "${it.id}\t${it.language.code}\t${it.state.name}\t${it.createdAtMs}\t${encode(it.text)}" },
+            items.map { "${it.id}\t${it.language.code}\t${it.state.name}\t${it.createdAtMs}\t${encode(it.text)}\t${if (it.isAlert) "1" else "0"}" },
         )
     }
 

@@ -10,12 +10,27 @@ import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
+import dagger.hilt.android.AndroidEntryPoint
+import `in`.gov.itantra.android.alert.BleAlertScanner
+import `in`.gov.itantra.android.alert.WifiAlertScanner
+import javax.inject.Inject
 
+@AndroidEntryPoint
 class ConnectionService : Service() {
+
+    @Inject
+    lateinit var bleAlertScanner: BleAlertScanner
+
+    @Inject
+    lateinit var wifiAlertScanner: WifiAlertScanner
+
+    @Inject
+    lateinit var alertNotificationManager: AlertNotificationManager
 
     override fun onCreate() {
         super.onCreate()
         createNotificationChannel()
+        alertNotificationManager.startObserving()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -32,7 +47,17 @@ class ConnectionService : Service() {
         }
         
         // If the service is killed by the system, recreate it.
+        
+        bleAlertScanner.startScanning()
+        wifiAlertScanner.startScanning()
+        
         return START_STICKY
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        bleAlertScanner.stopScanning()
+        wifiAlertScanner.stopScanning()
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
@@ -40,7 +65,7 @@ class ConnectionService : Service() {
     private fun createNotification(): Notification {
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("iTantra")
-            .setContentText("Background connection active")
+            .setContentText("Listening for background alerts")
             .setSmallIcon(android.R.drawable.sym_def_app_icon)
             .setOngoing(true)
             .build()

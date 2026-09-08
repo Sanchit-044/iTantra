@@ -34,6 +34,7 @@ import `in`.gov.itantra.core.translate.TranslationUnavailableException
 import `in`.gov.itantra.core.translate.translateOrSame
 import `in`.gov.itantra.core.queue.InboxMessage
 import `in`.gov.itantra.core.queue.InboundMessageInbox
+import `in`.gov.itantra.core.queue.OutboundMessage
 import `in`.gov.itantra.core.queue.OutboundMessageQueue
 import `in`.gov.itantra.core.transport.ConnectionState
 import `in`.gov.itantra.core.transport.MessageType
@@ -46,6 +47,11 @@ import `in`.gov.itantra.core.usecase.ReceivePttTransmissionUseCase
 import `in`.gov.itantra.core.usecase.SendAlertUseCase
 import `in`.gov.itantra.core.usecase.StartPttTransmissionUseCase
 import `in`.gov.itantra.core.usecase.StopPttTransmissionUseCase
+import `in`.gov.itantra.data.history.HistoryDao
+import `in`.gov.itantra.data.history.HistoryMessage
+import `in`.gov.itantra.data.history.MessageDirection
+import `in`.gov.itantra.data.history.MessageStatus
+import java.util.UUID
 import java.util.ArrayDeque
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -83,11 +89,13 @@ data class UiState(
     val notice: UserNotice? = null,
     val outboundPending: Int = 0,
     val outboundFailed: Int = 0,
+    val queuedOutbound: List<OutboundMessage> = emptyList(),
     val inbox: List<InboxMessage> = emptyList(),
     val playingInboxId: String? = null,
     val localProfile: OperatorProfile = OperatorProfile(),
     val peerProfile: OperatorProfile? = null,
     val radioPeerName: String? = null,
+    val activeIncomingAlert: IncomingAlert? = null,
 ) {
     val talkingToName: String
         get() = peerProfile?.displayName
@@ -114,6 +122,9 @@ class MainViewModel @Inject constructor(
     private val inbox: InboundMessageInbox,
     private val notifier: QueuedMessageNotifier,
     private val profileStore: FileProfileStore,
+    private val historyDao: HistoryDao,
+    private val bleAlertBroadcaster: `in`.gov.itantra.android.alert.BleAlertBroadcaster,
+    private val wifiAlertBroadcaster: `in`.gov.itantra.android.alert.WifiAlertBroadcaster,
 ) : ViewModel(), TransportListener {
 
     private val _uiState = MutableStateFlow(UiState())
@@ -125,6 +136,11 @@ class MainViewModel @Inject constructor(
 
     init {
         loadPairedDevices()
+        viewModelScope.launch {
+            alertPlayer.activeAlertState.collect { alert ->
+                _uiState.update { it.copy(activeIncomingAlert = alert) }
+            }
+        }
         viewModelScope.launch {
             languageSettings.settings.collect { snap ->
                 val previousUi = _uiState.value.uiLanguage
@@ -206,7 +222,7 @@ class MainViewModel @Inject constructor(
         if (state == ConnectionState.CONNECTED || state == ConnectionState.HANDSHAKING) {
             `in`.gov.itantra.service.ConnectionService.start(context)
         } else if (state == ConnectionState.DISCONNECTED || state == ConnectionState.FAILED) {
-            `in`.gov.itantra.service.ConnectionService.stop(context)
+            // Do not stop the service here, so that background alert scanning continues
             stopPtt()
             _uiState.update {
                 it.copy(channelBusy = false, isRequestingFloor = false, isSpeaking = false)
@@ -262,7 +278,39 @@ class MainViewModel @Inject constructor(
                             viewModelScope.launch { languageSettings.setCurrentLanguage(refined) }
                         }
                     },
-                    onQueued = { publishQueues() },
+                    onSentLive = { text, timestampMs ->
+                        viewModelScope.launch(Dispatchers.IO) {
+                            historyDao.insertMessage(
+                                HistoryMessage(
+                                    id = UUID.randomUUID().toString(),
+                                    text = text,
+                                    language = spoken,
+                                    timestampMs = timestampMs,
+                                    direction = MessageDirection.OUTBOUND,
+                                    status = MessageStatus.DELIVERED,
+                                    peerName = _uiState.value.talkingToName,
+                                    isAlert = false
+                                )
+                            )
+                        }
+                    },
+                    onQueued = { msg ->
+                        publishQueues()
+                        viewModelScope.launch(Dispatchers.IO) {
+                            historyDao.insertMessage(
+                                HistoryMessage(
+                                    id = msg.id,
+                                    text = msg.text,
+                                    language = msg.language,
+                                    timestampMs = msg.createdAtMs,
+                                    direction = MessageDirection.OUTBOUND,
+                                    status = MessageStatus.QUEUED,
+                                    peerName = null,
+                                    isAlert = msg.isAlert
+                                )
+                            )
+                        }
+                    },
                 )
             } catch (e: Exception) {
                 stopPttUseCase.execute(currentTransport)
@@ -303,7 +351,21 @@ class MainViewModel @Inject constructor(
         viewModelScope.launch(Dispatchers.IO) {
             try {
                 when (packet.type) {
-                    MessageType.QUEUED -> handleQueuedInbound(packet)
+                    MessageType.QUEUED -> {
+                        handleQueuedInbound(packet)
+                        historyDao.insertMessage(
+                            HistoryMessage(
+                                id = UUID.randomUUID().toString(),
+                                text = packet.text,
+                                language = packet.language,
+                                timestampMs = packet.timestampMs,
+                                direction = MessageDirection.INBOUND,
+                                status = MessageStatus.QUEUED,
+                                peerName = _uiState.value.talkingToName,
+                                isAlert = false
+                            )
+                        )
+                    }
                     MessageType.ALERT -> {
                         val currentLang = _uiState.value.currentLanguage
                         val content = AlertTemplate.fromWirePayload(packet.text)
@@ -329,9 +391,35 @@ class MainViewModel @Inject constructor(
                             }
                         }
                         alertPlayer.play(alertToPlay)
+                        historyDao.insertMessage(
+                            HistoryMessage(
+                                id = UUID.randomUUID().toString(),
+                                text = packet.text,
+                                language = packet.language,
+                                timestampMs = packet.timestampMs,
+                                direction = MessageDirection.INBOUND,
+                                status = MessageStatus.RECEIVED,
+                                peerName = _uiState.value.talkingToName,
+                                isAlert = true
+                            )
+                        )
                         drainDeferredNormals()
                     }
-                    MessageType.NORMAL -> playNormalOrDefer(packet)
+                    MessageType.NORMAL -> {
+                        playNormalOrDefer(packet)
+                        historyDao.insertMessage(
+                            HistoryMessage(
+                                id = UUID.randomUUID().toString(),
+                                text = packet.text,
+                                language = packet.language,
+                                timestampMs = packet.timestampMs,
+                                direction = MessageDirection.INBOUND,
+                                status = MessageStatus.RECEIVED,
+                                peerName = _uiState.value.talkingToName,
+                                isAlert = false
+                            )
+                        )
+                    }
                     MessageType.PROFILE -> handlePeerProfile(packet)
                     else -> Unit
                 }
@@ -344,14 +432,47 @@ class MainViewModel @Inject constructor(
     }
 
     override fun onSendFailed(packet: Packet, reason: String) {
-        if (packet.type != MessageType.QUEUED) return
+        if (packet.type != MessageType.QUEUED && packet.type != MessageType.ALERT) return
         val existing = outboundQueue.snapshot().firstOrNull {
             it.text == packet.text &&
                 it.language == packet.language &&
                 it.createdAtMs == packet.timestampMs
         }
-        if (existing != null) outboundQueue.markFailed(existing.id)
-        else outboundQueue.enqueue(packet.language, packet.text)
+        if (existing != null) {
+            outboundQueue.markFailed(existing.id)
+            viewModelScope.launch(Dispatchers.IO) {
+                historyDao.insertMessage(
+                    HistoryMessage(
+                        id = existing.id,
+                        text = packet.text,
+                        language = packet.language,
+                        timestampMs = packet.timestampMs,
+                        direction = MessageDirection.OUTBOUND,
+                        status = MessageStatus.FAILED,
+                        peerName = _uiState.value.talkingToName,
+                        isAlert = packet.type == MessageType.ALERT
+                    )
+                )
+            }
+        } else {
+            val queuedMsg = outboundQueue.enqueue(packet.language, packet.text, isAlert = packet.type == MessageType.ALERT)
+            if (queuedMsg != null) {
+                viewModelScope.launch(Dispatchers.IO) {
+                    historyDao.insertMessage(
+                        HistoryMessage(
+                            id = queuedMsg.id,
+                            text = packet.text,
+                            language = packet.language,
+                            timestampMs = queuedMsg.createdAtMs,
+                            direction = MessageDirection.OUTBOUND,
+                            status = MessageStatus.QUEUED,
+                            peerName = null,
+                            isAlert = packet.type == MessageType.ALERT
+                        )
+                    )
+                }
+            }
+        }
         publishQueues()
     }
 
@@ -479,24 +600,123 @@ class MainViewModel @Inject constructor(
         sendAlert(AlertContent.Custom(trimmed))
     }
 
+    fun sendQuickChat(text: String) {
+        val trimmed = text.trim()
+        if (trimmed.isEmpty()) return
+        val lang = _uiState.value.currentLanguage
+        val queuedMsg = outboundQueue.enqueue(lang, trimmed, isAlert = false)
+        publishQueues()
+        if (queuedMsg != null) {
+            viewModelScope.launch(Dispatchers.IO) {
+                historyDao.insertMessage(
+                    HistoryMessage(
+                        id = queuedMsg.id,
+                        text = trimmed,
+                        language = lang,
+                        timestampMs = queuedMsg.createdAtMs,
+                        direction = MessageDirection.OUTBOUND,
+                        status = MessageStatus.QUEUED,
+                        peerName = null,
+                        isAlert = false
+                    )
+                )
+            }
+        }
+        flushQueue()
+    }
+
+    fun deleteQueuedMessage(id: String) {
+        outboundQueue.discard(id)
+        publishQueues()
+    }
+
+    fun dismissAlert() {
+        alertPlayer.dismissActiveAlert()
+    }
+
+    private val alertSequence = AtomicInteger(0)
+
     private fun sendAlert(content: AlertContent) {
         val currentTransport = transport
-        if (currentTransport == null) {
-            _uiState.update { it.copy(notice = UserNotice.ConnectionFailed(null)) }
+        val payload = content.toWirePayload()
+        val lang = _uiState.value.currentLanguage
+        val sequence = alertSequence.incrementAndGet().toLong()
+
+        AppLog.d("MainViewModel", "Triggering BLE and Wi-Fi broadcasters for sequence $sequence")
+        try {
+            bleAlertBroadcaster.broadcastAlert(lang, content, sequence)
+        } catch (e: Exception) {
+            AppLog.e("MainViewModel", "BLE broadcast crashed", e)
+        }
+        try {
+            wifiAlertBroadcaster.broadcastAlert(lang, content, sequence)
+        } catch (e: Exception) {
+            AppLog.e("MainViewModel", "Wi-Fi broadcast crashed", e)
+        }
+
+        if (currentTransport == null || currentTransport.state != ConnectionState.CONNECTED || !_uiState.value.pairingConfirmed) {
+            val queuedMsg = outboundQueue.enqueue(lang, payload, isAlert = true)
+            publishQueues()
+            _uiState.update { it.copy(notice = UserNotice.Raw("Alert queued for later delivery (and broadcasting nearby)")) }
+            if (queuedMsg != null) {
+                viewModelScope.launch(Dispatchers.IO) {
+                    historyDao.insertMessage(
+                        HistoryMessage(
+                            id = queuedMsg.id,
+                            text = payload,
+                            language = lang,
+                            timestampMs = queuedMsg.createdAtMs,
+                            direction = MessageDirection.OUTBOUND,
+                            status = MessageStatus.QUEUED,
+                            peerName = null,
+                            isAlert = true
+                        )
+                    )
+                }
+            }
             return
         }
+
         viewModelScope.launch(Dispatchers.IO) {
             _uiState.update { it.copy(alertSending = true, notice = null) }
             try {
                 sendAlertUseCase.execute(
                     transport = currentTransport,
-                    language = _uiState.value.currentLanguage,
+                    language = lang,
                     content = content,
-                    pairingConfirmed = _uiState.value.pairingConfirmed,
+                    pairingConfirmed = true,
                 )
                 _uiState.update { it.copy(alertSending = false, notice = UserNotice.AlertSent) }
+                historyDao.insertMessage(
+                    HistoryMessage(
+                        id = UUID.randomUUID().toString(),
+                        text = payload,
+                        language = lang,
+                        timestampMs = System.currentTimeMillis(),
+                        direction = MessageDirection.OUTBOUND,
+                        status = MessageStatus.DELIVERED,
+                        peerName = _uiState.value.talkingToName,
+                        isAlert = true
+                    )
+                )
             } catch (e: Exception) {
-                _uiState.update { it.copy(alertSending = false, notice = UserNotice.Raw(e.message)) }
+                val queuedMsg = outboundQueue.enqueue(lang, payload, isAlert = true)
+                publishQueues()
+                _uiState.update { it.copy(alertSending = false, notice = UserNotice.Raw("Alert queued: ${e.message}")) }
+                if (queuedMsg != null) {
+                    historyDao.insertMessage(
+                        HistoryMessage(
+                            id = queuedMsg.id,
+                            text = payload,
+                            language = lang,
+                            timestampMs = queuedMsg.createdAtMs,
+                            direction = MessageDirection.OUTBOUND,
+                            status = MessageStatus.QUEUED,
+                            peerName = null,
+                            isAlert = true
+                        )
+                    )
+                }
             }
         }
     }
@@ -678,6 +898,7 @@ class MainViewModel @Inject constructor(
             it.copy(
                 outboundPending = outboundQueue.pendingCount(),
                 outboundFailed = outboundQueue.failedCount(),
+                queuedOutbound = outboundQueue.snapshot(),
                 inbox = inbox.snapshot(),
             )
         }

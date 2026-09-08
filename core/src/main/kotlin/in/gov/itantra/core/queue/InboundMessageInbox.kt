@@ -8,6 +8,7 @@ data class InboxMessage(
     val text: String,
     val receivedAtMs: Long,
     val unread: Boolean = true,
+    val senderName: String? = null,
 )
 
 /**
@@ -40,6 +41,7 @@ class InboundMessageInbox(
         language: Language,
         text: String,
         receivedAtMs: Long = System.currentTimeMillis(),
+        senderName: String? = null,
     ): InboxMessage? {
         val cleaned = text.trim()
         if (cleaned.isEmpty() || id.isBlank()) return null
@@ -48,7 +50,7 @@ class InboundMessageInbox(
         synchronized(lock) {
             expireLocked()
             if (items.any { it.id == id }) return null
-            val message = InboxMessage(id, language, cleaned, receivedAtMs, unread = true)
+            val message = InboxMessage(id, language, cleaned, receivedAtMs, unread = true, senderName = senderName)
             items.addLast(message)
             trimLocked()
             persistLocked()

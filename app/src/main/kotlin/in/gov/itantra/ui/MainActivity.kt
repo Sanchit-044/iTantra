@@ -61,5 +61,8 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+        
+        // Start background service to listen for connectionless alerts at all times
+        `in`.gov.itantra.service.ConnectionService.start(this)
     }
 }

@@ -22,7 +22,7 @@ class FlushQueuedMessagesUseCase(
 
     data class Result(val sent: Int, val failed: Int)
 
-    fun execute(transport: Transport, pairingConfirmed: Boolean): Result {
+    fun execute(transport: Transport, pairingConfirmed: Boolean, receiverName: String? = null): Result {
         if (!pairingConfirmed) return Result(0, 0)
         if (transport.state != ConnectionState.CONNECTED) return Result(0, 0)
         if (!flushing.compareAndSet(false, true)) return Result(0, 0)
@@ -38,7 +38,7 @@ class FlushQueuedMessagesUseCase(
                 }
                 if (!queue.markSending(item.id)) continue
                 val packet = Packet.text(
-                    type = MessageType.QUEUED,
+                    type = if (item.isAlert) MessageType.ALERT else MessageType.QUEUED,
                     language = item.language,
                     sequence = sequence.incrementAndGet(),
                     text = item.text,
@@ -46,7 +46,7 @@ class FlushQueuedMessagesUseCase(
                 )
                 try {
                     transport.send(packet)
-                    queue.markSent(item.id)
+                    queue.markSent(item.id, receiverName)
                     sent++
                 } catch (_: Exception) {
                     queue.markFailed(item.id)
