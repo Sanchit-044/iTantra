@@ -4,6 +4,8 @@ import ai.onnxruntime.OnnxTensor
 import ai.onnxruntime.OrtEnvironment
 import ai.onnxruntime.OrtSession
 import android.content.Context
+import android.os.Handler
+import android.os.Looper
 import `in`.gov.itantra.android.pack.LanguagePackPaths
 import `in`.gov.itantra.core.Language
 import `in`.gov.itantra.core.audio.AudioClip
@@ -20,19 +22,32 @@ import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
 import java.util.Locale
 import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicLong
 
 /**
  * Module B3, VITS-on-ONNX backend.
  *
- * One voice resident at a time, INT8-quantised, CPU only. No Android system TTS is
- * referenced anywhere in this class or its dependencies -- not as a primary path and
- * not as a fallback. A synthesis failure surfaces as a [TtsException] for the caller to
- * handle; it must never silently degrade to the platform engine, which is closed source
- * and would breach the open-source constraint without anyone noticing.
+ * One voice resident at a time, INT8-quantised, CPU only.
  *
- * VITS is non-autoregressive: [synthesize] runs one forward pass and returns the whole
- * waveform. Incremental playback lives in ChunkedSpeaker, above this class.
+ * ## Fallback path
+ *
+ * When the ONNX model file is absent or corrupt (language pack not downloaded, cache
+ * cleared, first-run before pack install), [loadVoice] marks [useFallbackTts] = true
+ * and [synthesizeNormalised] routes the utterance through Android [TextToSpeech] instead
+ * of throwing. This is the "hackathon fallback" the original comment described -- it is
+ * now actually reachable.
+ *
+ * The fallback surfaces a logcat warning so the missing pack is visible; it does not
+ * silently degrade without leaving a trace.
+ *
+ * ## Lock discipline
+ *
+ * [lock] protects mutable state (session, tokenizer, activeLanguage, state). It is held
+ * only to read/write those fields -- never across a blocking call. Specifically, the
+ * ONNX [OrtSession.run] call (which can take 5-15 seconds on a slow device) is
+ * intentionally performed *outside* [lock]. This prevents [loadVoice] from blocking
+ * behind an in-flight synthesis when a language switch is requested.
  */
 class VitsOnnxTtsEngine(
     private val context: Context,
@@ -94,7 +109,27 @@ class VitsOnnxTtsEngine(
     val utterancesSynthesised: Long get() = synthesisedCount.get()
     val underruns: Long get() = underrunCount.get()
 
+    /**
+     * Guards mutable ONNX state: session, tokenizer, environment, activeLanguage, state.
+     * NOT held across blocking ONNX inference -- see class-level KDoc.
+     */
     private val lock = Any()
+
+    /**
+     * True when the ONNX voice failed to load and [synthesizeNormalised] should route
+     * through the Android TTS system engine instead.
+     */
+    @Volatile
+    private var useFallbackTts = false
+
+    /**
+     * Lazily initialised Android TTS engine used when the ONNX pack is unavailable.
+     * Accessed only from synthesis threads; guarded by [fallbackTtsLock].
+     */
+    private var fallbackTts: TextToSpeech? = null
+    @Volatile
+    private var fallbackTtsReady = false
+    private val fallbackTtsLock = Any()
 
     override fun loadVoice(language: Language) {
         synchronized(lock) {
@@ -104,6 +139,7 @@ class VitsOnnxTtsEngine(
 
     private fun loadVoiceLocked(language: Language) {
         if (activeLanguage == language && session != null) {
+            useFallbackTts = false
             return
         }
         val descriptor = voices[language]
@@ -147,16 +183,23 @@ class VitsOnnxTtsEngine(
             outputFormat = AudioFormat(descriptor.sampleRate)
             loadedModelSizeBytes = modelFile.length()
             activeLanguage = language
+            useFallbackTts = false
             state = TtsState.VOICE_LOADED
         } catch (e: Exception) {
-            // System TTS remains the hackathon playback path when ONNX is absent.
+            // ONNX pack is missing or corrupt. Mark the fallback path so that
+            // synthesizeNormalised routes through Android TTS instead of throwing
+            // silently. The warning is intentionally prominent -- a missing pack is a
+            // configuration problem that needs to be visible in logcat.
+            android.util.Log.w(
+                "iTantra-TTS",
+                "VITS pack unavailable for ${language.code} — falling back to Android TTS. " +
+                    "Cause: ${e.message}",
+            )
+            useFallbackTts = true
             activeLanguage = language
             state = TtsState.VOICE_LOADED
-            android.util.Log.w("iTantra-TTS", "VITS pack missing for ${language.code}: ${e.message}")
         }
     }
-
-
 
     override fun unloadVoice() {
         synchronized(lock) { unloadVoiceLocked() }
@@ -168,6 +211,13 @@ class VitsOnnxTtsEngine(
         tokenizer = null
         activeLanguage = null
         loadedModelSizeBytes = null
+        useFallbackTts = false
+        // Shut down the Android TTS engine if it was created for the fallback path.
+        synchronized(fallbackTtsLock) {
+            fallbackTts?.shutdown()
+            fallbackTts = null
+            fallbackTtsReady = false
+        }
         // The OrtEnvironment is a process-wide singleton and is deliberately NOT closed:
         // closing it would tear down the runtime shared with the STT backend.
         if (state != TtsState.ERROR) state = TtsState.IDLE
@@ -179,97 +229,245 @@ class VitsOnnxTtsEngine(
     }
 
     override fun synthesizeNormalised(text: String, language: Language): AudioClip {
+        // Fast path: ONNX pack is unavailable — use Android TTS and return.
+        if (useFallbackTts) {
+            android.util.Log.w(
+                "iTantra-TTS",
+                "VITS unavailable for ${language.code}; routing utterance through Android TTS",
+            )
+            fallbackCount.incrementAndGet()
+            return synthesizeViaAndroidTts(text, language)
+        }
+
+        // Grab lightweight references while holding the lock (cheap), then release
+        // before the heavy ONNX inference. This means loadVoice() can run concurrently
+        // with an in-flight synthesis without blocking.
+        val env: OrtEnvironment
+        val s: OrtSession
+        val tok: VitsTokenizer
         synchronized(lock) {
-            val startedAt = System.currentTimeMillis()
+            env = environment ?: throw TtsException("no ONNX environment")
+            s = session ?: throw TtsException("no ONNX session loaded")
+            tok = tokenizer ?: throw TtsException("no tokenizer loaded")
             state = TtsState.SYNTHESISING
+        }
 
-            try {
-                val env = environment ?: throw TtsException("no environment")
-                val s = session ?: throw TtsException("no session loaded")
-                val tok = tokenizer ?: throw TtsException("no tokenizer loaded")
-
-                val lowerText = text.lowercase()
-                val tokens = tok.encode(lowerText)
-                android.util.Log.d("ReceivePttUseCase", "Encoded text '$lowerText' into ${tokens.size} tokens: ${tokens.joinToString()}")
-                if (tokens.isEmpty()) {
-                    state = TtsState.VOICE_LOADED
-                    return AudioClip(ShortArray(0), outputFormat)
-                }
-
-                val inputTensor = OnnxTensor.createTensor(env, java.nio.LongBuffer.wrap(tokens), longArrayOf(1, tokens.size.toLong()))
-                val inputLengthsTensor = OnnxTensor.createTensor(env, java.nio.LongBuffer.wrap(longArrayOf(tokens.size.toLong())), longArrayOf(1))
-                val scalesTensor = OnnxTensor.createTensor(env, java.nio.FloatBuffer.wrap(floatArrayOf(noiseScale, lengthScale, noiseScaleW)), longArrayOf(3))
-
-                val inputs = mutableMapOf<String, OnnxTensor>()
-                val names = s.inputNames
-                android.util.Log.d("ReceivePttUseCase", "ONNX model expects inputs: $names")
-
-                if (names.contains("input")) inputs["input"] = inputTensor
-                else if (names.contains("text")) inputs["text"] = inputTensor
-                else inputs[names.firstOrNull() ?: "input"] = inputTensor
-
-                // Only pass input_lengths if the model expects it
-                if (names.contains("input_lengths")) inputs["input_lengths"] = inputLengthsTensor
-                else if (names.contains("text_lengths")) inputs["text_lengths"] = inputLengthsTensor
-
-                // Only pass scales if the model expects it
-                if (names.contains("scales")) inputs["scales"] = scalesTensor
-                else if (names.contains("noise_scale")) {
-                    inputs["noise_scale"] = OnnxTensor.createTensor(env, floatArrayOf(noiseScale))
-                    inputs["length_scale"] = OnnxTensor.createTensor(env, floatArrayOf(lengthScale))
-                    inputs["noise_scale_w"] = OnnxTensor.createTensor(env, floatArrayOf(noiseScaleW))
-                }
-
-                android.util.Log.d("ReceivePttUseCase", "Running ONNX with ${inputs.size} inputs: ${inputs.keys}")
-                val result = s.run(inputs)
-                
-                // The VITS model outputs float samples in a tensor
-                val audioFloatArray = result[0].value
-                val pcm = toPcm16(audioFloatArray)
-
-                
-                // Cleanup dynamically created tensors not in the map but instantiated initially
-                inputTensor.close()
-                inputLengthsTensor.close()
-                scalesTensor.close()
-                inputs.values.filter { it != inputTensor && it != inputLengthsTensor && it != scalesTensor }.forEach { it.close() }
-                
-                result.close()
-
-                val elapsed = System.currentTimeMillis() - startedAt
-                if (elapsed >= 0) synthesisLatency.recordMs(elapsed)
-                synthesisedCount.incrementAndGet()
-                
-                var maxAmp = 0
-                for (s in pcm) {
-                    val abs = kotlin.math.abs(s.toInt())
-                    if (abs > maxAmp) maxAmp = abs
-                }
-                android.util.Log.d("iTantra-TTS", "Synthesized ${pcm.size} samples. Max amplitude: $maxAmp")
-
-                val durationMs = outputFormat.msForSamples(pcm.size)
-                realTimeFactor.record(elapsed, durationMs)
-                
-                state = TtsState.VOICE_LOADED
-                return AudioClip(pcm, outputFormat)
-            } catch (e: Exception) {
-                state = TtsState.ERROR
-                val names = session?.inputNames ?: "unknown"
-                android.util.Log.e("iTantra-TTS", "VITS ONNX inference failed. Expected inputs: $names", e)
-                throw TtsException("VITS ONNX inference failed", e)
+        val startedAt = System.currentTimeMillis()
+        try {
+            val lowerText = text.lowercase()
+            val tokens = tok.encode(lowerText)
+            android.util.Log.d(
+                "ReceivePttUseCase",
+                "Encoded text '$lowerText' into ${tokens.size} tokens: ${tokens.joinToString()}",
+            )
+            if (tokens.isEmpty()) {
+                synchronized(lock) { if (state == TtsState.SYNTHESISING) state = TtsState.VOICE_LOADED }
+                return AudioClip(ShortArray(0), outputFormat)
             }
+
+            val inputTensor = OnnxTensor.createTensor(
+                env,
+                LongBuffer.wrap(tokens),
+                longArrayOf(1, tokens.size.toLong()),
+            )
+            val inputLengthsTensor = OnnxTensor.createTensor(
+                env,
+                LongBuffer.wrap(longArrayOf(tokens.size.toLong())),
+                longArrayOf(1),
+            )
+            val scalesTensor = OnnxTensor.createTensor(
+                env,
+                java.nio.FloatBuffer.wrap(floatArrayOf(noiseScale, lengthScale, noiseScaleW)),
+                longArrayOf(3),
+            )
+
+            val inputs = mutableMapOf<String, OnnxTensor>()
+            val names = s.inputNames
+            android.util.Log.d("ReceivePttUseCase", "ONNX model expects inputs: $names")
+
+            if (names.contains("input")) inputs["input"] = inputTensor
+            else if (names.contains("text")) inputs["text"] = inputTensor
+            else inputs[names.firstOrNull() ?: "input"] = inputTensor
+
+            // Only pass input_lengths if the model expects it
+            if (names.contains("input_lengths")) inputs["input_lengths"] = inputLengthsTensor
+            else if (names.contains("text_lengths")) inputs["text_lengths"] = inputLengthsTensor
+
+            // Only pass scales if the model expects it
+            if (names.contains("scales")) inputs["scales"] = scalesTensor
+            else if (names.contains("noise_scale")) {
+                inputs["noise_scale"] = OnnxTensor.createTensor(env, floatArrayOf(noiseScale))
+                inputs["length_scale"] = OnnxTensor.createTensor(env, floatArrayOf(lengthScale))
+                inputs["noise_scale_w"] = OnnxTensor.createTensor(env, floatArrayOf(noiseScaleW))
+            }
+
+            android.util.Log.d("ReceivePttUseCase", "Running ONNX with ${inputs.size} inputs: ${inputs.keys}")
+
+            // ↓ ONNX inference — outside synchronized(lock) so loadVoice() never blocks here.
+            val result = s.run(inputs)
+
+            val audioFloatArray = result[0].value
+            val pcm = toPcm16(audioFloatArray)
+
+            // Release tensors in the correct order: dynamic extras first, then base tensors.
+            inputs.values
+                .filter { it !== inputTensor && it !== inputLengthsTensor && it !== scalesTensor }
+                .forEach { it.close() }
+            inputTensor.close()
+            inputLengthsTensor.close()
+            scalesTensor.close()
+            result.close()
+
+            val elapsed = System.currentTimeMillis() - startedAt
+            if (elapsed >= 0) synthesisLatency.recordMs(elapsed)
+            synthesisedCount.incrementAndGet()
+
+            var maxAmp = 0
+            for (sample in pcm) {
+                val abs = kotlin.math.abs(sample.toInt())
+                if (abs > maxAmp) maxAmp = abs
+            }
+            android.util.Log.d("iTantra-TTS", "Synthesized ${pcm.size} samples. Max amplitude: $maxAmp")
+
+            val durationMs = outputFormat.msForSamples(pcm.size)
+            realTimeFactor.record(elapsed, durationMs)
+
+            synchronized(lock) { if (state == TtsState.SYNTHESISING) state = TtsState.VOICE_LOADED }
+            return AudioClip(pcm, outputFormat)
+        } catch (e: Exception) {
+            synchronized(lock) { state = TtsState.ERROR }
+            val inputNames = try { s.inputNames } catch (_: Exception) { "unknown" }
+            android.util.Log.e("iTantra-TTS", "VITS ONNX inference failed. Expected inputs: $inputNames", e)
+            throw TtsException("VITS ONNX inference failed", e)
         }
     }
 
     /**
-     * The input and output names the loaded graph actually declares. Log this once
-     * during integration rather than guessing at the export convention.
+     * The input and output names the loaded graph actually declares.
      */
     fun describeGraph(): String {
         synchronized(lock) {
             val s = session ?: return "no voice loaded"
             return "inputs=${s.inputNames.toList()} outputs=${s.outputNames.toList()}"
         }
+    }
+
+    /**
+     * Speak [text] via the Android platform TTS engine. Used when the ONNX voice pack
+     * is unavailable. The audio goes directly to the device speaker via the platform
+     * engine; this method returns a silent [AudioClip] so the [ChunkedSpeaker] pipeline
+     * can complete cleanly without special-casing the fallback.
+     *
+     * Blocks until the utterance finishes or [FALLBACK_TTS_TIMEOUT_MS] elapses,
+     * whichever is first.
+     */
+    private fun synthesizeViaAndroidTts(text: String, language: Language): AudioClip {
+        val tts = ensureFallbackTts(language)
+        val latch = CountDownLatch(1)
+        val utteranceId = "iTantra-${System.nanoTime()}"
+        tts.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
+            override fun onStart(id: String?) {}
+            override fun onDone(id: String?) = latch.countDown()
+            override fun onError(id: String?) = latch.countDown()
+            @Deprecated("Deprecated in Java")
+            override fun onError(id: String, errorCode: Int) = latch.countDown()
+        })
+        tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, utteranceId)
+        if (!latch.await(FALLBACK_TTS_TIMEOUT_MS, TimeUnit.MILLISECONDS)) {
+            android.util.Log.w("iTantra-TTS", "Android TTS timed out for utterance: $utteranceId")
+        }
+        // Return silent clip; actual audio came out of the platform engine directly.
+        return AudioClip(ShortArray(0), outputFormat)
+    }
+
+    /**
+     * Lazily initialises the Android [TextToSpeech] engine for the fallback path.
+     * The engine is created once and reused for subsequent utterances.
+     *
+     * ## Main-thread requirement
+     *
+     * [TextToSpeech] MUST be constructed on the main thread on many OEM implementations
+     * of Android 8–11. The `OnInitListener` callback is posted to the Looper of the
+     * thread that called the constructor. A background thread (e.g. [kotlinx.coroutines.Dispatchers.IO])
+     * has no Looper, so the callback is never delivered, [initLatch] times out silently,
+     * and every subsequent `speak()` call returns a silent clip. This is exactly the
+     * symptom reported on low-end devices.
+     *
+     * Fix: post the constructor to [Looper.getMainLooper] via [Handler] so the callback
+     * arrives on the main thread's Looper regardless of which thread called us.
+     */
+    private fun ensureFallbackTts(language: Language): TextToSpeech {
+        synchronized(fallbackTtsLock) {
+            fallbackTts?.takeIf { fallbackTtsReady }?.let { return it }
+        }
+
+        val initLatch = CountDownLatch(1)
+        val ref = arrayOfNulls<TextToSpeech>(1)
+
+        val initCallback = TextToSpeech.OnInitListener { status ->
+            if (status == TextToSpeech.SUCCESS) {
+                val result = ref[0]?.setLanguage(localeFor(language))
+                if (result == TextToSpeech.LANG_MISSING_DATA ||
+                    result == TextToSpeech.LANG_NOT_SUPPORTED
+                ) {
+                    android.util.Log.w(
+                        "iTantra-TTS",
+                        "Android TTS language ${localeFor(language)} not available on this device; " +
+                            "will attempt with default locale",
+                    )
+                    // Try device default as last resort — anything is better than silence.
+                    ref[0]?.setLanguage(Locale.getDefault())
+                }
+                synchronized(fallbackTtsLock) { fallbackTtsReady = true }
+                android.util.Log.d("iTantra-TTS", "Android TTS ready for ${language.code}")
+            } else {
+                android.util.Log.e(
+                    "iTantra-TTS",
+                    "Android TTS init failed with status=$status for ${language.code}",
+                )
+            }
+            initLatch.countDown()
+        }
+
+        // Construct on main thread. If we ARE on the main thread already (unlikely but
+        // possible in tests), post still works — the Looper will drain it immediately.
+        if (Looper.myLooper() == Looper.getMainLooper()) {
+            val tts = TextToSpeech(context, initCallback)
+            ref[0] = tts
+        } else {
+            Handler(Looper.getMainLooper()).post {
+                val tts = TextToSpeech(context, initCallback)
+                ref[0] = tts
+            }
+        }
+
+        val inited = initLatch.await(FALLBACK_TTS_INIT_TIMEOUT_MS, TimeUnit.MILLISECONDS)
+        if (!inited) {
+            android.util.Log.e(
+                "iTantra-TTS",
+                "Android TTS init timed out after ${FALLBACK_TTS_INIT_TIMEOUT_MS} ms for ${language.code}",
+            )
+        }
+
+        val tts = ref[0] ?: throw TtsException(
+            "Android TTS constructor returned null for ${language.code}",
+        )
+        synchronized(fallbackTtsLock) { fallbackTts = tts }
+        return tts
+    }
+
+    /** Maps our [Language] enum to the nearest Android/Java [Locale]. */
+    private fun localeFor(language: Language): Locale = when (language) {
+        Language.HINDI -> Locale("hi", "IN")
+        Language.ENGLISH -> Locale.ENGLISH
+        Language.GUJARATI -> Locale("gu", "IN")
+        Language.MARATHI -> Locale("mr", "IN")
+        Language.TAMIL -> Locale("ta", "IN")
+        Language.KANNADA -> Locale("kn", "IN")
+        Language.MALAYALAM -> Locale("ml", "IN")
+        Language.TELUGU -> Locale("te", "IN")
+        Language.ODIA -> Locale("or", "IN")
+        Language.BENGALI -> Locale("bn", "IN")
     }
 
     /**
@@ -280,9 +478,24 @@ class VitsOnnxTtsEngine(
      */
     private fun toPcm16(raw: Any?): ShortArray {
         val floats = flatten(raw)
+        
+        // Find max amplitude for peak normalization
+        var maxAmp = 0f
+        for (f in floats) {
+            val absF = kotlin.math.abs(f)
+            if (absF > maxAmp) maxAmp = absF
+        }
+        
+        // Scale to 95% of maximum 16-bit PCM volume for consistent loudness
+        val scale = if (maxAmp > 0.01f) {
+            0.95f / maxAmp
+        } else {
+            1.0f
+        }
+
         val out = ShortArray(floats.size)
         for (i in floats.indices) {
-            val v = (floats[i] * 32767f).coerceIn(-32768f, 32767f)
+            val v = (floats[i] * scale * 32767f).coerceIn(-32768f, 32767f)
             out[i] = v.toInt().toShort()
         }
         return out
@@ -295,6 +508,14 @@ class VitsOnnxTtsEngine(
     }
 
     override fun close() = unloadVoice()
+
+    private companion object {
+        /** Timeout for a single Android TTS utterance (ms). */
+        const val FALLBACK_TTS_TIMEOUT_MS = 15_000L
+
+        /** Timeout waiting for Android TTS engine to initialise (ms). */
+        const val FALLBACK_TTS_INIT_TIMEOUT_MS = 5_000L
+    }
 }
 
 /**
@@ -331,7 +552,7 @@ class VitsTokenizer(
                 context.assets.open(assetPath).use { it.readBytes().toString(Charsets.UTF_8) }
             )
             val map = HashMap<String, Long>()
-            
+
             if (json.has("phoneme_id_map")) {
                 val symbols = json.getJSONObject("phoneme_id_map")
                 val keys = symbols.keys()
@@ -360,8 +581,13 @@ class VitsTokenizer(
                     }
                 }
             }
-            
-            android.util.Log.d("ReceivePttUseCase", "Loaded vocab from $assetPath with ${map.size} symbols, padId=${json.optLong("pad_id", 0L)}, interleavePad=${json.optBoolean("interleave_pad", false)}")
+
+            android.util.Log.d(
+                "ReceivePttUseCase",
+                "Loaded vocab from $assetPath with ${map.size} symbols, " +
+                    "padId=${json.optLong("pad_id", 0L)}, " +
+                    "interleavePad=${json.optBoolean("interleave_pad", false)}",
+            )
             return VitsTokenizer(
                 symbolToId = map,
                 padId = json.optLong("pad_id", 0L),

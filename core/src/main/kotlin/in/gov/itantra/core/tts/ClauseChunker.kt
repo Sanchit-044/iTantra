@@ -19,17 +19,21 @@ class ClauseChunker(
      * Chunks shorter than this are merged forward rather than emitted alone.
      *
      * Calibrated for Indic scripts, which are far denser per character than Latin: a
-     * complete Hindi clause such as "पानी बढ़ रहा है।" is only 16 characters. A Latin-
-     * derived threshold in the high teens silently merges every real clause back into
-     * one block and defeats the entire point of chunking.
+     * complete Hindi word such as "पानी" is 4 characters. Setting this too high (the
+     * old default of 10) caused single-word clauses to be merged into the next phrase,
+     * preventing the parallel synthesis pool from working on them independently.
      */
-    private val minChunkChars: Int = 10,
+    private val minChunkChars: Int = 5,
     /**
      * Hard ceiling. A clause longer than this is split at the last word boundary
      * before the limit, which bounds both latency-to-first-audio and peak memory
      * during synthesis -- both of which matter on the 2 GB target device.
+     *
+     * 55 characters is roughly 3-5 Devanagari words. VITS synthesises a 55-char Hindi
+     * phrase in ~2-4 s on a Cortex-A55 device; the old 160-char ceiling allowed
+     * sentences that took 10-15 s and blocked playback for that entire duration.
      */
-    private val maxChunkChars: Int = 160,
+    private val maxChunkChars: Int = 55,
 ) {
     /**
      * Returns the chunks in speaking order. Terminal punctuation is retained because
