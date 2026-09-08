@@ -144,16 +144,68 @@ class LanBroadcastAlertManager(
     }
 
     /**
-     * Check if the device is currently connected to a Wi-Fi network.
+     * Check if the device is currently connected to a Wi-Fi network, hotspot, or has Wi-Fi enabled.
      */
     fun isWifiConnected(): Boolean {
-        return try {
-            val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager ?: return false
-            val activeNetwork = cm.activeNetwork ?: return false
-            val capabilities = cm.getNetworkCapabilities(activeNetwork) ?: return false
-            capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)
-        } catch (_: Exception) {
-            false
+        try {
+            val wm = context.applicationContext.getSystemService(Context.WIFI_SERVICE) as? WifiManager
+            if (wm != null && wm.isWifiEnabled) {
+                return true
+            }
+
+            val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
+            if (cm != null) {
+                val activeNetwork = cm.activeNetwork
+                if (activeNetwork != null) {
+                    val caps = cm.getNetworkCapabilities(activeNetwork)
+                    if (caps != null && caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)) {
+                        return true
+                    }
+                }
+                // Check all available networks (handles offline Wi-Fi APs without internet)
+                for (network in cm.allNetworks) {
+                    val caps = cm.getNetworkCapabilities(network) ?: continue
+                    if (caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)) {
+                        return true
+                    }
+                }
+            }
+
+            // Fallback: Check active network interfaces for active WLAN / AP / SoftAP IPs
+            val interfaces = java.net.NetworkInterface.getNetworkInterfaces() ?: return false
+            for (iface in interfaces) {
+                if (!iface.isUp || iface.isLoopback) continue
+                val name = iface.name.lowercase()
+                if (name.contains("wlan") || name.contains("ap") || name.contains("p2p") || name.contains("swlan") || name.contains("eth")) {
+                    val hasIp = iface.inetAddresses.asSequence().any { !it.isLoopbackAddress && it is java.net.Inet4Address }
+                    if (hasIp) return true
+                }
+            }
+        } catch (e: Exception) {
+            AppLog.w(TAG, "isWifiConnected check error: ${e.message}")
+        }
+        return false
+    }
+
+    /**
+     * Register OS network callback to receive instant events when Wi-Fi connects or disconnects.
+     */
+    fun observeWifiState(onChanged: (Boolean) -> Unit) {
+        try {
+            val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager ?: return
+            val request = android.net.NetworkRequest.Builder()
+                .addTransportType(NetworkCapabilities.TRANSPORT_WIFI)
+                .build()
+            cm.registerNetworkCallback(request, object : ConnectivityManager.NetworkCallback() {
+                override fun onAvailable(network: android.net.Network) {
+                    onChanged(true)
+                }
+                override fun onLost(network: android.net.Network) {
+                    onChanged(isWifiConnected())
+                }
+            })
+        } catch (e: Exception) {
+            AppLog.w(TAG, "Failed to register network callback: ${e.message}")
         }
     }
 

@@ -166,6 +166,9 @@ class MainViewModel @Inject constructor(
             onReceive(packet)
         }
         refreshWifiState()
+        lanAlertManager.observeWifiState { isConnected ->
+            _uiState.update { it.copy(isWifiConnected = isConnected) }
+        }
     }
 
     override fun onCleared() {

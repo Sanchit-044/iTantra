@@ -25,23 +25,22 @@ import `in`.gov.itantra.core.alert.AlertTemplate
 import `in`.gov.itantra.core.lang.UiStrings
 import `in`.gov.itantra.core.transport.ConnectionState
 
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.ui.text.font.FontWeight
+
 @Composable
 fun AlertScreen(viewModel: MainViewModel) {
     val uiState by viewModel.uiState.collectAsState()
     val chrome = UiStrings.forLanguage(uiState.uiLanguage)
     var customText by rememberSaveable { mutableStateOf("") }
+
     LaunchedEffect(Unit) {
         viewModel.refreshWifiState()
     }
 
     val ready = uiState.canSendAlert
     val language = uiState.currentLanguage
-
-    val statusText = when {
-        uiState.isWifiConnected -> "Wi-Fi LAN Broadcast Active — Alerts will reach all devices on this network."
-        ready -> chrome.alertReadyHelp
-        else -> chrome.alertNeedPair
-    }
+    val isP2pConnected = uiState.connectionState == ConnectionState.CONNECTED && uiState.pairingConfirmed
 
     Column(
         modifier = Modifier
@@ -50,11 +49,12 @@ fun AlertScreen(viewModel: MainViewModel) {
             .padding(16.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Text(
-            text = statusText,
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(bottom = 24.dp)
+        // Prominent Connection Mode & Status Card
+        AlertStatusHeader(
+            isWifiConnected = uiState.isWifiConnected,
+            isP2pConnected = isP2pConnected,
+            talkingToName = uiState.talkingToName,
+            chrome = chrome
         )
 
         // Pre-defined Alerts
@@ -145,5 +145,79 @@ fun AlertScreen(viewModel: MainViewModel) {
 
         UserNoticeBanner(notice = uiState.notice, strings = chrome, modifier = Modifier.padding(top = 16.dp))
         Spacer(Modifier.height(32.dp))
+    }
+}
+
+@Composable
+private fun AlertStatusHeader(
+    isWifiConnected: Boolean,
+    isP2pConnected: Boolean,
+    talkingToName: String,
+    chrome: UiStrings,
+) {
+    val title: String
+    val subtitle: String
+    val badgeColor: Color
+    val containerColor: Color
+
+    if (isWifiConnected) {
+        title = "Wi-Fi LAN Broadcast Active"
+        subtitle = "Connected to local Wi-Fi / Hotspot. Emergency alerts will reach ALL phones on this network with zero pairing."
+        badgeColor = Color(0xFF388E3C) // Muted Forest Green
+        containerColor = MaterialTheme.colorScheme.surfaceVariant
+    } else if (isP2pConnected) {
+        title = "P2P Direct Link Active"
+        subtitle = "Direct encrypted channel active with $talkingToName."
+        badgeColor = Color(0xFF1976D2) // Muted Blue
+        containerColor = MaterialTheme.colorScheme.surfaceVariant
+    } else {
+        title = "Offline / Unpaired"
+        subtitle = "Connect devices to the same Wi-Fi router/hotspot OR pair a peer to send instant emergency alerts."
+        badgeColor = Color(0xFFD84315) // Muted Amber
+        containerColor = MaterialTheme.colorScheme.surfaceVariant
+    }
+
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(bottom = 20.dp),
+        colors = CardDefaults.cardColors(containerColor = containerColor),
+        shape = RoundedCornerShape(16.dp)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(42.dp)
+                    .background(badgeColor, CircleShape),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = if (isWifiConnected || isP2pConnected) Icons.Filled.CheckCircle else Icons.Filled.Warning,
+                    contentDescription = null,
+                    tint = Color.White,
+                    modifier = Modifier.size(24.dp)
+                )
+            }
+            Spacer(Modifier.width(14.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = badgeColor
+                )
+                Spacer(Modifier.height(2.dp))
+                Text(
+                    text = subtitle,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
     }
 }
