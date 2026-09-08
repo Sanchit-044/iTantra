@@ -17,16 +17,11 @@ import `in`.gov.itantra.core.alert.IncomingAlert
 import `in`.gov.itantra.core.diag.AppLog
 import kotlinx.coroutines.launch
 
-import `in`.gov.itantra.data.history.HistoryDao
-import `in`.gov.itantra.data.history.HistoryMessage
-import `in`.gov.itantra.data.history.MessageDirection
-import `in`.gov.itantra.data.history.MessageStatus
 import java.util.UUID
 
 class BleAlertScanner(
     private val context: Context,
-    private val alertPlayer: AlertPlayer,
-    private val historyDao: HistoryDao
+    private val alertPlayer: AlertPlayer
 ) {
     private var isScanning = false
     
@@ -77,18 +72,6 @@ class BleAlertScanner(
                 AppLog.d("BleAlertScanner", "Received connectionless BLE alert: ${template.name}")
                 kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
                     alertPlayer.play(alert)
-                    historyDao.insertMessage(
-                        HistoryMessage(
-                            id = UUID.randomUUID().toString(),
-                            text = content.toWirePayload(),
-                            language = language,
-                            timestampMs = alert.receivedAtMs,
-                            direction = MessageDirection.INBOUND,
-                            status = MessageStatus.RECEIVED,
-                            peerName = decoded.senderName, // Usually null for BLE
-                            isAlert = true
-                        )
-                    )
                 }
 
             } catch (e: Exception) {

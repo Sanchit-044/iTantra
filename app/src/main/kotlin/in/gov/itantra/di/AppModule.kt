@@ -262,10 +262,9 @@ object AppModule {
     @Singleton
     fun provideBleAlertScanner(
         @ApplicationContext context: Context,
-        alertPlayer: AlertPlayer,
-        historyDao: HistoryDao
+        alertPlayer: AlertPlayer
     ): BleAlertScanner {
-        return BleAlertScanner(context, alertPlayer, historyDao)
+        return BleAlertScanner(context, alertPlayer)
     }
 
     @Provides
@@ -278,9 +277,8 @@ object AppModule {
     @Singleton
     fun provideWifiAlertScanner(
         @ApplicationContext context: Context,
-        alertPlayer: AlertPlayer,
-        historyDao: HistoryDao
+        alertPlayer: AlertPlayer
     ): WifiAlertScanner {
-        return WifiAlertScanner(context, alertPlayer, historyDao)
+        return WifiAlertScanner(context, alertPlayer)
     }
 }

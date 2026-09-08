@@ -142,7 +142,27 @@ class MainViewModel @Inject constructor(
         loadPairedDevices()
         viewModelScope.launch {
             alertPlayer.activeAlertState.collect { alert ->
-                _uiState.update { it.copy(activeIncomingAlert = alert) }
+                if (alert != null) {
+                    _uiState.update { it.copy(activeIncomingAlert = alert) }
+                    try {
+                        historyDao.insertMessage(
+                            HistoryMessage(
+                                id = java.util.UUID.randomUUID().toString(),
+                                text = alert.content.toWirePayload(),
+                                language = alert.language,
+                                timestampMs = alert.receivedAtMs,
+                                direction = MessageDirection.INBOUND,
+                                status = MessageStatus.RECEIVED,
+                                peerName = alert.senderName ?: _uiState.value.talkingToName,
+                                isAlert = true
+                            )
+                        )
+                    } catch (e: Exception) {
+                        AppLog.w("MainViewModel", "Failed to save alert history: ${e.message}")
+                    }
+                } else {
+                    _uiState.update { it.copy(activeIncomingAlert = null) }
+                }
             }
         }
         viewModelScope.launch {
@@ -395,18 +415,6 @@ class MainViewModel @Inject constructor(
                             }
                         }
                         alertPlayer.play(alertToPlay)
-                        historyDao.insertMessage(
-                            HistoryMessage(
-                                id = UUID.randomUUID().toString(),
-                                text = packet.text,
-                                language = packet.language,
-                                timestampMs = packet.timestampMs,
-                                direction = MessageDirection.INBOUND,
-                                status = MessageStatus.RECEIVED,
-                                peerName = _uiState.value.talkingToName,
-                                isAlert = true
-                            )
-                        )
                         drainDeferredNormals()
                     }
                     MessageType.NORMAL -> {
