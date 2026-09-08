@@ -130,6 +130,7 @@ class MainViewModel @Inject constructor(
     private val profileStore: FileProfileStore,
     private val historyDao: HistoryDao,
     private val bleAlertBroadcaster: `in`.gov.itantra.android.alert.BleAlertBroadcaster,
+    private val bleAlertScanner: `in`.gov.itantra.android.alert.BleAlertScanner,
     private val wifiAlertBroadcaster: `in`.gov.itantra.android.alert.WifiAlertBroadcaster,
     private val lanAlertManager: LanBroadcastAlertManager,
 ) : ViewModel(), TransportListener {
@@ -188,6 +189,11 @@ class MainViewModel @Inject constructor(
                                     receiverName = _uiState.value.localProfile.displayName
                                 )
                             }
+                            // Always send BLE ACK for fully offline cases
+                            bleAlertBroadcaster.broadcastAck(
+                                payloadHash = alert.content.toWirePayload().hashCode(),
+                                receiverName = _uiState.value.localProfile.displayName
+                            )
                         } catch (e: Exception) {
                             AppLog.w("MainViewModel", "Failed to save alert history: ${e.message}")
                         }
@@ -244,6 +250,20 @@ class MainViewModel @Inject constructor(
         refreshWifiState()
         lanAlertManager.observeWifiState { isConnected ->
             _uiState.update { it.copy(isWifiConnected = isConnected) }
+        }
+        
+        viewModelScope.launch {
+            bleAlertScanner.acks.collect { (payloadHash, receiverName) ->
+                val ids = recentAlertIds[payloadHash]
+                if (!ids.isNullOrEmpty()) {
+                    for (id in ids) {
+                        historyDao.addPeerToMessage(id, MessageStatus.DELIVERED, receiverName)
+                        outboundQueue.discard(id)
+                    }
+                    _snackbarMessage.emit("Alert received by $receiverName (via BLE)")
+                    publishQueues()
+                }
+            }
         }
     }
 
