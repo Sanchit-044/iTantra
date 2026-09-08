@@ -48,12 +48,10 @@ fun AlertScreen(viewModel: MainViewModel) {
             .padding(16.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        // Prominent Connection Mode & Status Card
-        AlertStatusHeader(
-            isWifiConnected = uiState.isWifiConnected,
-            isP2pConnected = isP2pConnected,
-            talkingToName = uiState.talkingToName,
-            chrome = chrome
+        // Broadcast Channel Selector
+        AlertChannelSelector(
+            selectedChannel = uiState.alertChannel,
+            onChannelSelected = { viewModel.setAlertChannel(it) }
         )
 
         // Pre-defined Alerts
@@ -147,76 +145,53 @@ fun AlertScreen(viewModel: MainViewModel) {
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun AlertStatusHeader(
-    isWifiConnected: Boolean,
-    isP2pConnected: Boolean,
-    talkingToName: String,
-    chrome: UiStrings,
+private fun AlertChannelSelector(
+    selectedChannel: `in`.gov.itantra.ui.AlertChannel,
+    onChannelSelected: (`in`.gov.itantra.ui.AlertChannel) -> Unit
 ) {
-    val title: String
-    val subtitle: String
-    val badgeColor: Color
-    val containerColor: Color
-
-    if (isWifiConnected) {
-        title = "Wi-Fi LAN Broadcast Active"
-        subtitle = "Connected to local Wi-Fi / Hotspot. Emergency alerts will reach ALL phones on this network with zero pairing."
-        badgeColor = Color(0xFF388E3C) // Muted Forest Green
-        containerColor = MaterialTheme.colorScheme.surfaceVariant
-    } else if (isP2pConnected) {
-        title = "P2P Direct Link Active"
-        subtitle = "Direct encrypted channel active with $talkingToName."
-        badgeColor = Color(0xFF1976D2) // Muted Blue
-        containerColor = MaterialTheme.colorScheme.surfaceVariant
-    } else {
-        title = "Offline / Unpaired"
-        subtitle = "Connect devices to the same Wi-Fi router/hotspot OR pair a peer to send instant emergency alerts."
-        badgeColor = Color(0xFFD84315) // Muted Amber
-        containerColor = MaterialTheme.colorScheme.surfaceVariant
-    }
-
     Card(
         modifier = Modifier
             .fillMaxWidth()
             .padding(bottom = 20.dp),
-        colors = CardDefaults.cardColors(containerColor = containerColor),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
         shape = RoundedCornerShape(16.dp)
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(42.dp)
-                    .background(badgeColor, CircleShape),
-                contentAlignment = Alignment.Center
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text(
+                text = "Broadcast Channel",
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.primary
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Icon(
-                    imageVector = if (isWifiConnected || isP2pConnected) Icons.Filled.CheckCircle else Icons.Filled.Warning,
-                    contentDescription = null,
-                    tint = Color.White,
-                    modifier = Modifier.size(24.dp)
-                )
+                `in`.gov.itantra.ui.AlertChannel.entries.forEach { channel ->
+                    val isSelected = channel == selectedChannel
+                    FilterChip(
+                        selected = isSelected,
+                        onClick = { onChannelSelected(channel) },
+                        label = { Text(channel.name) },
+                        leadingIcon = if (isSelected) {
+                            { Icon(Icons.Filled.CheckCircle, contentDescription = null, modifier = Modifier.size(16.dp)) }
+                        } else null
+                    )
+                }
             }
-            Spacer(Modifier.width(14.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = title,
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.Bold,
-                    color = badgeColor
-                )
-                Spacer(Modifier.height(2.dp))
-                Text(
-                    text = subtitle,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text = when (selectedChannel) {
+                    `in`.gov.itantra.ui.AlertChannel.ALL -> "Alerts will be broadcast over both Wi-Fi and Bluetooth simultaneously for maximum reach."
+                    `in`.gov.itantra.ui.AlertChannel.WIFI -> "Alerts will only be broadcast over Wi-Fi (LAN & P2P). Bluetooth is disabled for alerts."
+                    `in`.gov.itantra.ui.AlertChannel.BLUETOOTH -> "Alerts will only be broadcast over Bluetooth. Wi-Fi is disabled for alerts."
+                },
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
         }
     }
 }

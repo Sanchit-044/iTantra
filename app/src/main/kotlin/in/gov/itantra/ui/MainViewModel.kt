@@ -71,6 +71,10 @@ enum class ConnectionMode {
     BLUETOOTH_CLIENT
 }
 
+enum class AlertChannel {
+    ALL, WIFI, BLUETOOTH
+}
+
 data class BluetoothDeviceInfo(val name: String, val address: String)
 
 data class UiState(
@@ -99,6 +103,7 @@ data class UiState(
     val radioPeerName: String? = null,
     val activeIncomingAlert: IncomingAlert? = null,
     val isWifiConnected: Boolean = false,
+    val alertChannel: AlertChannel = AlertChannel.ALL,
 ) {
     val canSendAlert: Boolean
         get() = (connectionState == ConnectionState.CONNECTED && pairingConfirmed) || isWifiConnected
@@ -279,6 +284,10 @@ class MainViewModel @Inject constructor(
 
     fun setConnectionMode(mode: ConnectionMode) {
         _uiState.update { it.copy(connectionMode = mode) }
+    }
+
+    fun setAlertChannel(channel: AlertChannel) {
+        _uiState.update { it.copy(alertChannel = channel) }
     }
 
     private fun loadPairedDevices() {
@@ -766,33 +775,39 @@ class MainViewModel @Inject constructor(
         val payload = content.toWirePayload()
         val lang = _uiState.value.currentLanguage
         val sequence = alertSequence.incrementAndGet()
+        val channel = _uiState.value.alertChannel
 
-        AppLog.d("MainViewModel", "Triggering BLE, Wi-Fi Direct, and LAN broadcasters for sequence $sequence")
+        AppLog.d("MainViewModel", "Triggering broadcasters for sequence $sequence over channel $channel")
         val senderName = _uiState.value.localProfile.displayName
 
-        // 1. Connectionless BLE & Wi-Fi Direct Broadcast (Always try this for offline discovery)
-        try {
-            bleAlertBroadcaster.broadcastAlert(lang, content, sequence.toLong(), senderName)
-        } catch (e: Exception) {
-            AppLog.e("MainViewModel", "BLE broadcast crashed", e)
-        }
-        try {
-            wifiAlertBroadcaster.broadcastAlert(lang, content, sequence.toLong(), senderName)
-        } catch (e: Exception) {
-            AppLog.e("MainViewModel", "Wi-Fi broadcast crashed", e)
+        // 1. Connectionless BLE (If ALL or BLUETOOTH)
+        if (channel == AlertChannel.ALL || channel == AlertChannel.BLUETOOTH) {
+            try {
+                bleAlertBroadcaster.broadcastAlert(lang, content, sequence.toLong(), senderName)
+            } catch (e: Exception) {
+                AppLog.e("MainViewModel", "BLE broadcast crashed", e)
+            }
         }
 
-        // 2. LAN Wi-Fi Broadcast
-        if (wifiConnected) {
+        // 2. Wi-Fi Direct and LAN (If ALL or WIFI)
+        if (channel == AlertChannel.ALL || channel == AlertChannel.WIFI) {
             try {
-                lanAlertManager.sendBroadcastAlert(
-                    language = lang,
-                    content = content,
-                    sequence = sequence,
-                    senderName = senderName
-                )
+                wifiAlertBroadcaster.broadcastAlert(lang, content, sequence.toLong(), senderName)
             } catch (e: Exception) {
-                AppLog.w("MainViewModel", "LAN broadcast alert send failed: ${e.message}")
+                AppLog.e("MainViewModel", "Wi-Fi broadcast crashed", e)
+            }
+
+            if (wifiConnected) {
+                try {
+                    lanAlertManager.sendBroadcastAlert(
+                        language = lang,
+                        content = content,
+                        sequence = sequence,
+                        senderName = senderName
+                    )
+                } catch (e: Exception) {
+                    AppLog.w("MainViewModel", "LAN broadcast alert send failed: ${e.message}")
+                }
             }
         }
 
