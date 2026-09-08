@@ -63,7 +63,7 @@ class BleAlertScanner(
             val alertUuid = ParcelUuid(BleAlertBroadcaster.ALERT_UUID)
             val payload = record.serviceData[alertUuid] ?: return
             
-            if (payload.size != 3) return // Must be exactly 3 bytes
+            if (payload.size < 3) return // Must be at least 3 bytes
 
             try {
                 val decoded = AlertCodec.decodeBlePayload(payload)
@@ -76,6 +76,7 @@ class BleAlertScanner(
                 val template = (decoded.content as? AlertContent.Template)?.template ?: return
                 val sequence = decoded.sequence
                 val content = decoded.content
+                val senderName = decoded.senderName
                 
                 // Deduplication key: device address + sequence
                 val dedupKey = "${result.device.address}:$sequence"
@@ -96,9 +97,10 @@ class BleAlertScanner(
                     content = content,
                     language = language,
                     sequence = sequence,
-                    receivedAtMs = System.currentTimeMillis()
+                    receivedAtMs = System.currentTimeMillis(),
+                    senderName = senderName
                 )
-                AppLog.d("BleAlertScanner", "Received connectionless BLE alert: ${template.name}")
+                AppLog.d("BleAlertScanner", "Received connectionless BLE alert from $senderName: ${template.name}")
                 kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
                     alertPlayer.play(alert)
                 }

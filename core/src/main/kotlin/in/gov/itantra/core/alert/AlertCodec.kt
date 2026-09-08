@@ -12,15 +12,21 @@ object AlertCodec {
      * Encodes a template alert into a 3-byte payload for BLE advertising.
      * @return 3-byte array or null if the content is not a template (BLE cannot fit custom text).
      */
-    fun encodeBlePayload(language: Language, content: AlertContent, sequence: Long): ByteArray? {
+    fun encodeBlePayload(language: Language, content: AlertContent, sequence: Long, senderName: String? = null): ByteArray? {
         if (content !is AlertContent.Template) {
             return null
         }
         
-        val buffer = java.nio.ByteBuffer.allocate(3)
+        val nameBytes = senderName?.toByteArray(Charsets.UTF_8) ?: ByteArray(0)
+        val nameLen = Math.min(nameBytes.size, 10)
+        
+        val buffer = java.nio.ByteBuffer.allocate(3 + nameLen)
         buffer.put(language.wire)
         buffer.put(sequence.toByte())
         buffer.put(content.template.ordinal.toByte())
+        if (nameLen > 0) {
+            buffer.put(nameBytes, 0, nameLen)
+        }
         return buffer.array()
     }
 
@@ -40,7 +46,15 @@ object AlertCodec {
             val template = AlertTemplate.entries.getOrNull(templateOrdinal) ?: return null
             val content = AlertContent.Template(template)
             
-            return DecodedAlert(language, content, sequence)
+            val senderName = if (buffer.hasRemaining()) {
+                val nameBytes = ByteArray(buffer.remaining())
+                buffer.get(nameBytes)
+                String(nameBytes, Charsets.UTF_8)
+            } else {
+                null
+            }
+            
+            return DecodedAlert(language, content, sequence, senderName)
         } catch (e: Exception) {
             return null
         }

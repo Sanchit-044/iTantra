@@ -23,7 +23,7 @@ class BleAlertBroadcaster(private val context: Context) {
     private var advertiseAckCallback: AdvertiseCallback? = null
 
     @SuppressLint("MissingPermission")
-    fun broadcastAlert(language: Language, content: AlertContent, sequence: Long) {
+    fun broadcastAlert(language: Language, content: AlertContent, sequence: Long, senderName: String? = null) {
         val adapter = (context.getSystemService(Context.BLUETOOTH_SERVICE) as? BluetoothManager)?.adapter
         if (adapter == null || !adapter.isEnabled) {
             AppLog.w("BleAlertBroadcaster", "Bluetooth disabled, cannot broadcast alert")
@@ -36,7 +36,7 @@ class BleAlertBroadcaster(private val context: Context) {
             return
         }
 
-        val payload = encodePayload(language, content, sequence)
+        val payload = encodePayload(language, content, sequence, senderName)
         if (payload == null) {
             AppLog.w("BleAlertBroadcaster", "Alert too large for BLE broadcast (connectionless)")
             return
@@ -170,8 +170,8 @@ class BleAlertBroadcaster(private val context: Context) {
         isAdvertisingAck = false
     }
 
-    private fun encodePayload(language: Language, content: AlertContent, sequence: Long): ByteArray? {
-        return AlertCodec.encodeBlePayload(language, content, sequence)
+    private fun encodePayload(language: Language, content: AlertContent, sequence: Long, senderName: String? = null): ByteArray? {
+        return AlertCodec.encodeBlePayload(language, content, sequence, senderName)
     }
 
     companion object {

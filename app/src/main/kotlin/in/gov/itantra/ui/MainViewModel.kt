@@ -772,7 +772,7 @@ class MainViewModel @Inject constructor(
 
         // 1. Connectionless BLE & Wi-Fi Direct Broadcast (Always try this for offline discovery)
         try {
-            bleAlertBroadcaster.broadcastAlert(lang, content, sequence.toLong())
+            bleAlertBroadcaster.broadcastAlert(lang, content, sequence.toLong(), senderName)
         } catch (e: Exception) {
             AppLog.e("MainViewModel", "BLE broadcast crashed", e)
         }
