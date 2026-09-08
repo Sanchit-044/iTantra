@@ -20,20 +20,20 @@ class FlushQueuedMessagesUseCase(
 ) {
     private val flushing = AtomicBoolean(false)
 
-    data class Result(val sent: Int, val failed: Int)
+    data class Result(val sentIds: List<String>, val failedIds: List<String>)
 
     fun execute(transport: Transport, pairingConfirmed: Boolean, receiverName: String? = null): Result {
-        if (!pairingConfirmed) return Result(0, 0)
-        if (transport.state != ConnectionState.CONNECTED) return Result(0, 0)
-        if (!flushing.compareAndSet(false, true)) return Result(0, 0)
+        if (!pairingConfirmed) return Result(emptyList(), emptyList())
+        if (transport.state != ConnectionState.CONNECTED) return Result(emptyList(), emptyList())
+        if (!flushing.compareAndSet(false, true)) return Result(emptyList(), emptyList())
 
-        var sent = 0
-        var failed = 0
+        val sent = mutableListOf<String>()
+        val failed = mutableListOf<String>()
         try {
             for (item in queue.itemsToFlush()) {
                 if (transport.state != ConnectionState.CONNECTED) {
                     queue.markFailed(item.id)
-                    failed++
+                    failed.add(item.id)
                     break
                 }
                 if (!queue.markSending(item.id)) continue
@@ -47,10 +47,10 @@ class FlushQueuedMessagesUseCase(
                 try {
                     transport.send(packet)
                     queue.markSent(item.id, receiverName)
-                    sent++
+                    sent.add(item.id)
                 } catch (_: Exception) {
                     queue.markFailed(item.id)
-                    failed++
+                    failed.add(item.id)
                     break
                 }
             }

@@ -22,4 +22,10 @@ interface HistoryDao {
     
     @Query("DELETE FROM history_messages")
     suspend fun clearHistory()
+
+    @Query("UPDATE history_messages SET status = :status WHERE id = :id")
+    suspend fun updateMessageStatus(id: String, status: MessageStatus)
+
+    @Query("UPDATE history_messages SET status = :status, peerName = :peerName WHERE id = :id")
+    suspend fun updateMessageStatusAndPeer(id: String, status: MessageStatus, peerName: String?)
 }

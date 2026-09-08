@@ -57,6 +57,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.util.concurrent.atomic.AtomicBoolean
@@ -126,6 +127,9 @@ class MainViewModel @Inject constructor(
     private val bleAlertBroadcaster: `in`.gov.itantra.android.alert.BleAlertBroadcaster,
     private val wifiAlertBroadcaster: `in`.gov.itantra.android.alert.WifiAlertBroadcaster,
 ) : ViewModel(), TransportListener {
+
+    private val _snackbarMessage = kotlinx.coroutines.flow.MutableSharedFlow<String>()
+    val snackbarMessage = _snackbarMessage.asSharedFlow()
 
     private val _uiState = MutableStateFlow(UiState())
     val uiState: StateFlow<UiState> = _uiState.asStateFlow()
@@ -625,6 +629,12 @@ class MainViewModel @Inject constructor(
         flushQueue()
     }
 
+    fun showSnackbar(message: String) {
+        viewModelScope.launch {
+            _snackbarMessage.emit(message)
+        }
+    }
+
     fun deleteQueuedMessage(id: String) {
         outboundQueue.discard(id)
         publishQueues()
@@ -643,13 +653,14 @@ class MainViewModel @Inject constructor(
         val sequence = alertSequence.incrementAndGet().toLong()
 
         AppLog.d("MainViewModel", "Triggering BLE and Wi-Fi broadcasters for sequence $sequence")
+        val senderName = _uiState.value.localProfile.displayName
         try {
             bleAlertBroadcaster.broadcastAlert(lang, content, sequence)
         } catch (e: Exception) {
             AppLog.e("MainViewModel", "BLE broadcast crashed", e)
         }
         try {
-            wifiAlertBroadcaster.broadcastAlert(lang, content, sequence)
+            wifiAlertBroadcaster.broadcastAlert(lang, content, sequence, senderName)
         } catch (e: Exception) {
             AppLog.e("MainViewModel", "Wi-Fi broadcast crashed", e)
         }
@@ -870,7 +881,20 @@ class MainViewModel @Inject constructor(
         if (!isLiveReady()) return
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                flushQueuedUseCase.execute(tx, pairingConfirmed = true)
+                val result = flushQueuedUseCase.execute(tx, pairingConfirmed = true, receiverName = uiState.value.talkingToName)
+                if (result.sentIds.isNotEmpty()) {
+                    result.sentIds.forEach { id ->
+                        historyDao.updateMessageStatusAndPeer(id, MessageStatus.DELIVERED, uiState.value.talkingToName)
+                        outboundQueue.discard(id)
+                    }
+                    _snackbarMessage.emit("${result.sentIds.size} message(s) delivered")
+                }
+                if (result.failedIds.isNotEmpty()) {
+                    result.failedIds.forEach { id ->
+                        historyDao.updateMessageStatus(id, MessageStatus.FAILED)
+                    }
+                    _snackbarMessage.emit("${result.failedIds.size} message(s) failed to send")
+                }
             } catch (e: Exception) {
                 _uiState.update { it.copy(notice = UserNotice.QueueSendFailed(e.message)) }
             } finally {
