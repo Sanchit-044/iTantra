@@ -169,29 +169,25 @@ class AbbreviationLexicon(
             paise = "paise",
         )
 
+        /**
+         * Every language resolves to a lexicon written in its own script.
+         *
+         * The six languages below previously borrowed the English lexicon. That was not
+         * a benign stand-in: a non-Latin VITS voice drops every character it has no
+         * symbol for, so an English expansion in an Odia or Devanagari voice is not
+         * merely accented -- it is silent. See [AbbreviationLexiconExtras].
+         */
         fun forLanguage(language: Language): AbbreviationLexicon = when (language) {
             Language.HINDI -> HINDI
             Language.TAMIL -> TAMIL
             Language.BENGALI -> BENGALI
             Language.ENGLISH -> ENGLISH
-            Language.GUJARATI,
-            Language.MARATHI,
-            Language.KANNADA,
-            Language.MALAYALAM,
-            Language.TELUGU,
-            Language.ODIA -> ENGLISH.copyFor(language)
+            Language.GUJARATI -> AbbreviationLexiconExtras.GUJARATI
+            Language.MARATHI -> AbbreviationLexiconExtras.MARATHI
+            Language.KANNADA -> AbbreviationLexiconExtras.KANNADA
+            Language.MALAYALAM -> AbbreviationLexiconExtras.MALAYALAM
+            Language.TELUGU -> AbbreviationLexiconExtras.TELUGU
+            Language.ODIA -> AbbreviationLexiconExtras.ODIA
         }
-
-        private fun AbbreviationLexicon.copyFor(language: Language): AbbreviationLexicon =
-            AbbreviationLexicon(
-                language = language,
-                abbreviations = abbreviations,
-                months = months,
-                units = units,
-                hourWord = hourWord,
-                minuteWord = minuteWord,
-                rupees = rupees,
-                paise = paise,
-            )
     }
 }

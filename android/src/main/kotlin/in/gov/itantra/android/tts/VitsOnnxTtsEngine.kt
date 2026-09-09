@@ -179,7 +179,16 @@ class VitsOnnxTtsEngine(
 
             session = env.createSession(modelFile.absolutePath, options)
             environment = env
-            tokenizer = VitsTokenizer.fromAsset(context, descriptor.vocabAsset)
+            // The vocabulary must come from wherever the model came from. Loading an
+            // APK-bundled vocabulary alongside a sideloaded pack model silently pairs a
+            // graph with the wrong symbol table: inference succeeds and the audio is
+            // noise. OnnxCtcDecoder already prefers the pack; this now matches it.
+            val packVocab = LanguagePackPaths.ttsVocab(context, language)
+            tokenizer = if (packVocab.exists() && packVocab.length() > 0L) {
+                VitsTokenizer.fromFile(packVocab, language)
+            } else {
+                VitsTokenizer.fromAsset(context, descriptor.vocabAsset, language)
+            }
             outputFormat = AudioFormat(descriptor.sampleRate)
             loadedModelSizeBytes = modelFile.length()
             activeLanguage = language
@@ -530,27 +539,128 @@ class VitsTokenizer(
     private val padId: Long,
     /** Whether the export expects a pad token interleaved between symbols. */
     private val interleavePad: Boolean,
+    /** Id of the vocabulary's unknown-symbol token, when it declares one. */
+    private val unkId: Long? = null,
+    /** Only used to label diagnostics. */
+    private val languageCode: String = "?",
 ) {
-    /** Unknown characters are dropped rather than mapped to a wrong symbol. */
+    /**
+     * Maps [text] onto model symbol ids.
+     *
+     * ## Unknown characters
+     *
+     * A character the vocabulary does not contain is mapped to the vocabulary's
+     * unknown-symbol token when it has one, and dropped otherwise. Dropping is the last
+     * resort, not the default: it used to be the only behaviour, and it made a whole
+     * class of bug invisible. A lexicon entry written in the wrong script -- an English
+     * abbreviation expansion routed to an Odia voice, say -- is not a character or two
+     * out of place, it is every character of the phrase, and the utterance came out
+     * truncated with nothing above debug level to say why.
+     *
+     * The drop count is therefore summarised at warn level, and a run where most of the
+     * text was unmappable is logged as an error, because that is the signature of a
+     * model and vocabulary that do not belong to each other.
+     */
     fun encode(text: String): LongArray {
         val ids = ArrayList<Long>(text.length * 2 + 1)
         if (interleavePad) ids += padId
-        for (ch in text) {
+
+        var mapped = 0
+        var substituted = 0
+        var dropped = 0
+        val unmappable = LinkedHashSet<Char>()
+
+        for (raw in text) {
+            // Tabs and newlines carry a word boundary that the vocabulary only ever
+            // spells as a plain space; without this they are dropped and words merge.
+            val ch = if (raw.isWhitespace()) ' ' else raw
             val id = symbolToId[ch.toString()]
-            if (id == null) {
-                android.util.Log.d("ReceivePttUseCase", "Unknown symbol: $ch (code ${ch.code})")
-                continue
+            when {
+                id != null -> {
+                    ids += id
+                    mapped++
+                }
+                unkId != null -> {
+                    ids += unkId
+                    substituted++
+                    if (unmappable.size < MAX_REPORTED_SYMBOLS) unmappable += ch
+                }
+                else -> {
+                    dropped++
+                    if (unmappable.size < MAX_REPORTED_SYMBOLS) unmappable += ch
+                    continue
+                }
             }
-            ids += id
             if (interleavePad) ids += padId
+        }
+
+        val unmapped = substituted + dropped
+        if (unmapped > 0) {
+            val detail = unmappable.joinToString(" ") { "'$it'(U+%04X)".format(it.code) }
+            val total = mapped + unmapped
+            // A handful of stray symbols is ordinary; most of the text being unmappable
+            // is a configuration fault and must not be reported as routine.
+            if (total > 0 && unmapped * 100 >= total * MISMATCH_PERCENT) {
+                android.util.Log.e(
+                    "iTantra-TTS",
+                    "Vocabulary mismatch for $languageCode: $unmapped of $total characters " +
+                        "are not in this voice's vocabulary. The text is probably in the wrong " +
+                        "script for the voice, or the model and vocabulary are from different " +
+                        "exports. Unmappable: $detail",
+                )
+            } else {
+                android.util.Log.w(
+                    "iTantra-TTS",
+                    "$languageCode: $unmapped of $total characters not in vocabulary " +
+                        "(${if (unkId != null) "substituted with <unk>" else "dropped"}): $detail",
+                )
+            }
         }
         return ids.toLongArray()
     }
+
     companion object {
-        fun fromAsset(context: android.content.Context, assetPath: String): VitsTokenizer {
+        /** Cap on distinct unmappable characters named in one log line. */
+        private const val MAX_REPORTED_SYMBOLS = 12
+
+        /**
+         * Share of unmappable characters above which the failure is logged as an error
+         * rather than a warning.
+         */
+        private const val MISMATCH_PERCENT = 50
+
+        /** Sentinel for "the vocabulary declares no explicit unk_id". */
+        private const val NO_UNK_ID = -1L
+
+        /** Vocabulary keys that are metadata rather than pronounceable symbols. */
+        private val METADATA_KEYS = setOf("pad_id", "interleave_pad", "unk_id")
+
+        /** Conventional spellings of the unknown-symbol token across export toolchains. */
+        private val UNK_KEYS = listOf("<unk>", "[UNK]", "<UNK>", "unk")
+
+        fun fromFile(file: java.io.File, language: Language): VitsTokenizer =
+            fromJson(
+                JSONObject(file.readText(Charsets.UTF_8)),
+                source = file.absolutePath,
+                languageCode = language.code,
+            )
+
+        fun fromAsset(
+            context: android.content.Context,
+            assetPath: String,
+            language: Language,
+        ): VitsTokenizer {
             val json = JSONObject(
                 context.assets.open(assetPath).use { it.readBytes().toString(Charsets.UTF_8) }
             )
+            return fromJson(json, source = assetPath, languageCode = language.code)
+        }
+
+        private fun fromJson(
+            json: JSONObject,
+            source: String,
+            languageCode: String,
+        ): VitsTokenizer {
             val map = HashMap<String, Long>()
 
             if (json.has("phoneme_id_map")) {
@@ -568,11 +678,10 @@ class VitsTokenizer(
                     map[k] = symbols.getLong(k)
                 }
             } else {
-                val metadataKeys = setOf("pad_id", "interleave_pad")
                 val keys = json.keys()
                 while (keys.hasNext()) {
                     val k = keys.next()
-                    if (k in metadataKeys) continue
+                    if (k in METADATA_KEYS) continue
                     val value = json.opt(k)
                     if (value is Number) {
                         map[k] = value.toLong()
@@ -582,16 +691,40 @@ class VitsTokenizer(
                 }
             }
 
+            if (map.isEmpty()) {
+                throw TtsException("VITS vocabulary at $source contains no symbols")
+            }
+
+            val padId = json.optLong("pad_id", 0L)
+            val interleavePad = json.optBoolean("interleave_pad", true)
+            // In the MMS exports id 0 is both the interleaved pad and a real character
+            // ('k' in English, 'फ' in Hindi). That is how those graphs were trained, so
+            // the symbol stays in the map -- removing it would make that one letter
+            // unpronounceable. Only a token that is *only* a pad is excluded, and the
+            // unknown token is never allowed to alias the pad.
+            val unkId = (
+                json.optLong("unk_id", NO_UNK_ID).takeIf { it != NO_UNK_ID }
+                    ?: UNK_KEYS.firstNotNullOfOrNull { map[it] }
+                )?.takeIf { it != padId }
+
             android.util.Log.d(
-                "ReceivePttUseCase",
-                "Loaded vocab from $assetPath with ${map.size} symbols, " +
-                    "padId=${json.optLong("pad_id", 0L)}, " +
-                    "interleavePad=${json.optBoolean("interleave_pad", true)}",
+                "iTantra-TTS",
+                "Loaded $languageCode vocab from $source: ${map.size} symbols, " +
+                    "padId=$padId, interleavePad=$interleavePad, unkId=${unkId ?: "none"}",
             )
+            if (!map.containsKey(" ")) {
+                android.util.Log.w(
+                    "iTantra-TTS",
+                    "$languageCode vocab from $source has no space symbol; word boundaries " +
+                        "will be lost in synthesis",
+                )
+            }
             return VitsTokenizer(
                 symbolToId = map,
-                padId = json.optLong("pad_id", 0L),
-                interleavePad = json.optBoolean("interleave_pad", true),
+                padId = padId,
+                interleavePad = interleavePad,
+                unkId = unkId,
+                languageCode = languageCode,
             )
         }
     }
