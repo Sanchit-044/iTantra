@@ -34,5 +34,8 @@ harness/src/androidTest/assets/roundtrip/**
 core/bin/
 *.onnx
 
+# Kotlin compiler's incremental-build cache and per-run error logs
+.kotlin/
+
 # Python bytecode from the export scripts
 __pycache__/
