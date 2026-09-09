@@ -7,16 +7,18 @@ import kotlin.test.assertTrue
 
 class FloorControllerTest {
 
-    private val sent = mutableListOf<MessageType>()
+    private val sent = mutableListOf<Pair<MessageType, String>>()
     private val events = mutableListOf<String>()
     private lateinit var scheduler: FakeScheduler
+
+    private val sentTypes: List<MessageType> get() = sent.map { it.first }
 
     private fun controller(winsTies: Boolean): FloorController {
         scheduler = FakeScheduler()
         sent.clear()
         events.clear()
         return FloorController(
-            send = { sent += it },
+            send = { type, token -> sent += type to token },
             scheduler = scheduler,
             winsTies = winsTies,
         ).apply {
@@ -29,11 +31,14 @@ class FloorControllerTest {
         }
     }
 
+    /** The token this controller most recently sent for the given message type. */
+    private fun tokenFor(type: MessageType): String = sent.last { it.first == type }.second
+
     @Test
     fun `idle request is sent and stt must wait for grant`() {
         val f = controller(winsTies = true)
         f.requestLocal()
-        assertEquals(listOf(MessageType.FLOOR_REQUEST), sent)
+        assertEquals(listOf(MessageType.FLOOR_REQUEST), sentTypes)
         assertEquals(FloorState.REQUESTING, f.current)
         assertFalse(f.hasFloor)
         assertTrue(events.isEmpty())
@@ -43,7 +48,7 @@ class FloorControllerTest {
     fun `grant opens the floor`() {
         val f = controller(winsTies = true)
         f.requestLocal()
-        f.onRemote(MessageType.FLOOR_GRANT)
+        f.onRemote(MessageType.FLOOR_GRANT, tokenFor(MessageType.FLOOR_REQUEST))
         assertTrue(f.hasFloor)
         assertEquals(listOf("granted"), events)
     }
@@ -52,7 +57,7 @@ class FloorControllerTest {
     fun `deny does not open the mic`() {
         val f = controller(winsTies = false)
         f.requestLocal()
-        f.onRemote(MessageType.FLOOR_DENY)
+        f.onRemote(MessageType.FLOOR_DENY, tokenFor(MessageType.FLOOR_REQUEST))
         assertEquals(FloorState.IDLE, f.current)
         assertFalse(f.hasFloor)
         assertEquals(listOf("denied:${FloorController.BUSY}"), events)
@@ -61,8 +66,9 @@ class FloorControllerTest {
     @Test
     fun `peer request while idle is granted and marks channel busy`() {
         val f = controller(winsTies = true)
-        f.onRemote(MessageType.FLOOR_REQUEST)
-        assertEquals(listOf(MessageType.FLOOR_GRANT), sent)
+        f.onRemote(MessageType.FLOOR_REQUEST, "peer-token")
+        assertEquals(listOf(MessageType.FLOOR_GRANT), sentTypes)
+        assertEquals("peer-token", tokenFor(MessageType.FLOOR_GRANT))
         assertTrue(f.peerHolds)
         assertEquals(listOf("peer"), events)
     }
@@ -70,7 +76,7 @@ class FloorControllerTest {
     @Test
     fun `local request while peer holds is denied without a new request`() {
         val f = controller(winsTies = true)
-        f.onRemote(MessageType.FLOOR_REQUEST)
+        f.onRemote(MessageType.FLOOR_REQUEST, "peer-token")
         sent.clear()
         f.requestLocal()
         assertTrue(sent.isEmpty())
@@ -83,22 +89,25 @@ class FloorControllerTest {
         val host = controller(winsTies = true)
         val guest = controller(winsTies = false)
         host.requestLocal()
+        val hostToken = tokenFor(MessageType.FLOOR_REQUEST)
         guest.requestLocal()
-        host.onRemote(MessageType.FLOOR_REQUEST)
-        guest.onRemote(MessageType.FLOOR_REQUEST)
+        val guestToken = tokenFor(MessageType.FLOOR_REQUEST)
+
+        host.onRemote(MessageType.FLOOR_REQUEST, guestToken)
+        guest.onRemote(MessageType.FLOOR_REQUEST, hostToken)
 
         assertTrue(host.hasFloor)
         assertTrue(guest.peerHolds)
         assertFalse(guest.hasFloor)
-        assertTrue(sent.contains(MessageType.FLOOR_DENY))
-        assertTrue(sent.contains(MessageType.FLOOR_GRANT))
+        assertTrue(sentTypes.contains(MessageType.FLOOR_DENY))
+        assertTrue(sentTypes.contains(MessageType.FLOOR_GRANT))
     }
 
     @Test
     fun `release frees the peer`() {
         val f = controller(winsTies = true)
-        f.onRemote(MessageType.FLOOR_REQUEST)
-        f.onRemote(MessageType.FLOOR_RELEASE)
+        f.onRemote(MessageType.FLOOR_REQUEST, "peer-token")
+        f.onRemote(MessageType.FLOOR_RELEASE, "")
         assertEquals(FloorState.IDLE, f.current)
         assertTrue(events.contains("idle"))
     }
@@ -107,10 +116,10 @@ class FloorControllerTest {
     fun `local release while holding announces free`() {
         val f = controller(winsTies = true)
         f.requestLocal()
-        f.onRemote(MessageType.FLOOR_GRANT)
+        f.onRemote(MessageType.FLOOR_GRANT, tokenFor(MessageType.FLOOR_REQUEST))
         sent.clear()
         f.releaseLocal()
-        assertEquals(listOf(MessageType.FLOOR_RELEASE), sent)
+        assertEquals(listOf(MessageType.FLOOR_RELEASE), sentTypes)
         assertEquals(FloorState.IDLE, f.current)
     }
 
@@ -120,7 +129,7 @@ class FloorControllerTest {
         f.requestLocal()
         f.releaseLocal()
         assertEquals(FloorState.IDLE, f.current)
-        assertTrue(sent.contains(MessageType.FLOOR_RELEASE))
+        assertTrue(sentTypes.contains(MessageType.FLOOR_RELEASE))
         assertFalse(f.hasFloor)
     }
 
@@ -139,18 +148,48 @@ class FloorControllerTest {
     fun `stale grant after cancel is ignored`() {
         val f = controller(winsTies = true)
         f.requestLocal()
+        val token = tokenFor(MessageType.FLOOR_REQUEST)
         f.releaseLocal()
         events.clear()
-        f.onRemote(MessageType.FLOOR_GRANT)
+        f.onRemote(MessageType.FLOOR_GRANT, token)
         assertFalse(f.hasFloor)
         assertTrue(events.isEmpty())
+    }
+
+    @Test
+    fun `stale grant for an abandoned request is ignored even after a new request starts`() {
+        // Regression test: a grant delayed by retransmission (see ChannelArbiter) must
+        // not be misapplied to a fresh request just because the state machine happens
+        // to be REQUESTING again -- see FloorController's class doc for why a bare
+        // state check is not enough correlation.
+        val f = controller(winsTies = true)
+        f.requestLocal()
+        val firstToken = tokenFor(MessageType.FLOOR_REQUEST)
+        f.releaseLocal()
+
+        f.requestLocal()
+        events.clear()
+
+        // The late answer to the abandoned first request arrives while we are
+        // REQUESTING again for a second, distinct attempt.
+        f.onRemote(MessageType.FLOOR_GRANT, firstToken)
+
+        assertFalse(f.hasFloor)
+        assertEquals(FloorState.REQUESTING, f.current)
+        assertTrue(events.isEmpty())
+
+        // The real answer to the second request still works.
+        val secondToken = tokenFor(MessageType.FLOOR_REQUEST)
+        f.onRemote(MessageType.FLOOR_GRANT, secondToken)
+        assertTrue(f.hasFloor)
+        assertEquals(listOf("granted"), events)
     }
 
     @Test
     fun `second request while holding is already granted`() {
         val f = controller(winsTies = true)
         f.requestLocal()
-        f.onRemote(MessageType.FLOOR_GRANT)
+        f.onRemote(MessageType.FLOOR_GRANT, tokenFor(MessageType.FLOOR_REQUEST))
         events.clear()
         f.requestLocal()
         assertEquals(listOf("granted"), events)
@@ -161,10 +200,10 @@ class FloorControllerTest {
     fun `holding denies a late peer request`() {
         val f = controller(winsTies = false)
         f.requestLocal()
-        f.onRemote(MessageType.FLOOR_GRANT)
+        f.onRemote(MessageType.FLOOR_GRANT, tokenFor(MessageType.FLOOR_REQUEST))
         sent.clear()
-        f.onRemote(MessageType.FLOOR_REQUEST)
-        assertEquals(listOf(MessageType.FLOOR_DENY), sent)
+        f.onRemote(MessageType.FLOOR_REQUEST, "peer-token")
+        assertEquals(listOf(MessageType.FLOOR_DENY), sentTypes)
         assertTrue(f.hasFloor)
     }
 
@@ -172,10 +211,59 @@ class FloorControllerTest {
     fun `reset clears floor without sending`() {
         val f = controller(winsTies = true)
         f.requestLocal()
-        f.onRemote(MessageType.FLOOR_GRANT)
+        f.onRemote(MessageType.FLOOR_GRANT, tokenFor(MessageType.FLOOR_REQUEST))
         sent.clear()
         f.reset()
         assertEquals(FloorState.IDLE, f.current)
+        assertTrue(sent.isEmpty())
+    }
+
+    @Test
+    fun `peer holding self-heals if the peer never sends release`() {
+        // Regression test: without a hold lease, a lost RELEASE (auth failure,
+        // queue eviction, unclean disconnect) leaves this device believing the
+        // channel is busy forever, denying every future request.
+        val f = controller(winsTies = true)
+        f.onRemote(MessageType.FLOOR_REQUEST, "peer-token")
+        assertTrue(f.peerHolds)
+        events.clear()
+
+        scheduler.runPending()
+
+        assertEquals(FloorState.IDLE, f.current)
+        assertFalse(f.peerHolds)
+        assertEquals(listOf("idle"), events)
+    }
+
+    @Test
+    fun `holding too long force-releases and notifies locally`() {
+        val f = controller(winsTies = true)
+        f.requestLocal()
+        f.onRemote(MessageType.FLOOR_GRANT, tokenFor(MessageType.FLOOR_REQUEST))
+        assertTrue(f.hasFloor)
+        sent.clear()
+        events.clear()
+
+        scheduler.runPending()
+
+        assertEquals(FloorState.IDLE, f.current)
+        assertFalse(f.hasFloor)
+        assertEquals(listOf(MessageType.FLOOR_RELEASE), sentTypes)
+        assertEquals(listOf("denied:${FloorController.HOLD_TIMEOUT}"), events)
+    }
+
+    @Test
+    fun `a real release before the hold timeout cancels it`() {
+        val f = controller(winsTies = true)
+        f.requestLocal()
+        f.onRemote(MessageType.FLOOR_GRANT, tokenFor(MessageType.FLOOR_REQUEST))
+        f.releaseLocal()
+        events.clear()
+        sent.clear()
+
+        scheduler.runPending()
+
+        assertTrue(events.isEmpty())
         assertTrue(sent.isEmpty())
     }
 }

@@ -37,6 +37,12 @@ interface Scheduler {
  * head of the pending queue rather than behind ordinary traffic. In a disaster-response
  * app, a queued alert arriving after three ordinary messages is a safety problem, and
  * FIFO would produce exactly that. Ordering within each priority class stays FIFO.
+ *
+ * Floor-control packets (FLOOR_REQUEST/GRANT/DENY/RELEASE) share that head-of-queue
+ * priority. They are small, latency-sensitive handshake messages that gate whether the
+ * microphone may open at all -- if one sits FIFO behind a queued voice message it can
+ * easily miss [FloorController]'s grant-timeout window even though the channel was
+ * only briefly busy, producing spurious "no floor grant" failures under real traffic.
  */
 class ChannelArbiter(
     private val sender: Sender,
@@ -102,18 +108,19 @@ class ChannelArbiter(
         synchronized(lock) {
             if (queue.size >= maxQueueDepth) {
                 // Drop the oldest NORMAL packet rather than the newest: stale position
-                // reports are worth less than current ones. Never drop an alert.
-                // Alerts sit at the head, so the first non-alert is the oldest one.
-                val victim = queue.firstOrNull { !it.packet.isAlert }
+                // reports are worth less than current ones. Never drop a priority packet
+                // (alert or floor control). Priority packets sit at the head, so the
+                // first non-priority packet is the oldest ordinary one.
+                val victim = queue.firstOrNull { !it.packet.isPriority }
                 if (victim == null) {
-                    listener?.onSendFailed(packet, "send queue full (${queue.size}) and all queued packets are alerts")
+                    listener?.onSendFailed(packet, "send queue full (${queue.size}) and all queued packets are priority")
                     return
                 }
                 queue.remove(victim)
                 listener?.onSendFailed(victim.packet, "evicted: send queue full")
             }
             val pending = Pending(packet)
-            if (packet.isAlert) queue.addFirst(pending) else queue.addLast(pending)
+            if (packet.isPriority) queue.addFirst(pending) else queue.addLast(pending)
         }
         pump()
     }

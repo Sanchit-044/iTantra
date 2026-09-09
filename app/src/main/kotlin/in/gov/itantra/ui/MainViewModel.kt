@@ -330,7 +330,13 @@ class MainViewModel @Inject constructor(
         
         if (state == ConnectionState.CONNECTED || state == ConnectionState.HANDSHAKING) {
             `in`.gov.itantra.service.ConnectionService.start(context)
+        }
+        if (state == ConnectionState.CONNECTED) {
+            // Protect the socket/reader thread from Doze and Wi-Fi power-save for as
+            // long as this session is live -- released the moment it stops being CONNECTED.
+            `in`.gov.itantra.service.ConnectionService.notifyTransportConnected(context)
         } else if (state == ConnectionState.DISCONNECTED || state == ConnectionState.FAILED) {
+            `in`.gov.itantra.service.ConnectionService.notifyTransportDisconnected(context)
             // Do not stop the service here, so that background alert scanning continues
             stopPtt()
             _uiState.update {
@@ -433,14 +439,24 @@ class MainViewModel @Inject constructor(
     override fun onFloorDenied(reason: String) {
         AppLog.w("MainViewModel", "Floor denied: $reason")
         pttWanted.set(false)
-        _uiState.update {
-            it.copy(
-                isSpeaking = false,
-                isRequestingFloor = false,
-                channelBusy = reason.contains("busy", ignoreCase = true),
-                recognizedText = "",
-                notice = null,
-            )
+        // FloorController's callback runs on whichever thread produced the denial --
+        // the transport's read thread for a remote FLOOR_DENY, the scheduler thread
+        // for a local grant-timeout. Hop to Main so this can never interleave with
+        // onFloorGranted's own Main-dispatched state updates.
+        viewModelScope.launch(Dispatchers.Main) {
+            _uiState.update {
+                it.copy(
+                    isSpeaking = false,
+                    isRequestingFloor = false,
+                    // Do not re-derive channelBusy from the reason string: onChannelBusyChanged
+                    // already ran with the transport's actual peer-holds state moments earlier
+                    // (see StreamTransport's FloorListener.onDenied), and a substring match here
+                    // ("channel busy" vs. e.g. "no floor grant") can disagree with it -- showing
+                    // this device as busy when it is not, or vice versa.
+                    recognizedText = "",
+                    notice = null,
+                )
+            }
         }
     }
 

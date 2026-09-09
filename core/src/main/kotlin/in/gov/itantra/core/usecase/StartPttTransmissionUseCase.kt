@@ -56,24 +56,31 @@ class StartPttTransmissionUseCase(
             }
 
             override fun onFinal(result: SttResult) {
-                val cancelled = result.trigger == EndpointTrigger.CANCELLED
-                runCatching {
-                    diagnostics?.onSttFinal(
-                        text = result.text,
-                        language = result.language,
-                        finalisationMs = result.finalisationLatencyMs,
-                        audioMs = result.utteranceDurationMs,
-                        cancelled = cancelled,
-                    )
-                }
-                if (cancelled || result.text.isBlank()) {
-                    AppLog.d("StartPttUseCase", "Ignoring empty or cancelled STT result (cancelled=$cancelled)")
-                    return
-                }
-                val text = result.text.trim()
-                AppLog.d("StartPttUseCase", "Final STT text ready: $text")
-                
+                // Everything below must release the floor on the way out -- including
+                // a blank/cancelled result, which is not rare: it is exactly what a
+                // language with weaker STT model coverage (garbled or silent
+                // recognition, low-confidence endpointing) produces more often than
+                // others. Skipping releaseFloor() on that path left the sender HOLDING
+                // and the receiver PEER_HOLDING forever, which is why "channel stuck
+                // busy" showed up as language-selective rather than universal.
                 try {
+                    val cancelled = result.trigger == EndpointTrigger.CANCELLED
+                    runCatching {
+                        diagnostics?.onSttFinal(
+                            text = result.text,
+                            language = result.language,
+                            finalisationMs = result.finalisationLatencyMs,
+                            audioMs = result.utteranceDurationMs,
+                            cancelled = cancelled,
+                        )
+                    }
+                    if (cancelled || result.text.isBlank()) {
+                        AppLog.d("StartPttUseCase", "Ignoring empty or cancelled STT result (cancelled=$cancelled)")
+                        return
+                    }
+                    val text = result.text.trim()
+                    AppLog.d("StartPttUseCase", "Final STT text ready: $text")
+
                     onPartialResult(text)
                     onFinalResult(text)
 

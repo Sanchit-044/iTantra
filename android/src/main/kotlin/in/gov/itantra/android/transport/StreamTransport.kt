@@ -76,6 +76,7 @@ abstract class StreamTransport(
     private var crypto: AesGcmSessionCrypto? = null
     private var readerThread: Thread? = null
     private val running = AtomicBoolean(false)
+    private var heartbeatTask: Cancellable? = null
 
     private val sequence = AtomicInteger(0)
     private val pairingConfirmed = AtomicBoolean(false)
@@ -106,7 +107,7 @@ abstract class StreamTransport(
     }
 
     private val floor = FloorController(
-        send = { type -> enqueueFloor(type) },
+        send = { type, token -> enqueueFloor(type, token) },
         scheduler = scheduler,
         winsTies = winsFloorTies,
     ).apply {
@@ -157,6 +158,7 @@ abstract class StreamTransport(
             running.set(true)
             readerThread = Thread({ readLoop(l) }, "itantra-transport-rx").apply { start() }
             updateState(ConnectionState.CONNECTED)
+            scheduleHeartbeatLoop()
         } catch (e: Exception) {
             `in`.gov.itantra.core.diag.AppLog.e("StreamTransport", "connect failed", e)
             updateState(ConnectionState.FAILED)
@@ -268,10 +270,10 @@ abstract class StreamTransport(
         floor.releaseLocal()
     }
 
-    private fun enqueueFloor(type: MessageType) {
+    private fun enqueueFloor(type: MessageType, token: String) {
         if (state != ConnectionState.CONNECTED) return
         arbiter.submit(
-            Packet.text(type, Language.HINDI, sequence.incrementAndGet(), "")
+            Packet.text(type, Language.HINDI, sequence.incrementAndGet(), token)
         )
     }
 
@@ -282,6 +284,24 @@ abstract class StreamTransport(
         arbiter.submit(
             Packet.text(MessageType.HEARTBEAT, language, seq, "", flags = Packet.FLAG_REQUIRES_ACK)
         )
+    }
+
+    /**
+     * Keeps a heartbeat going for the whole CONNECTED session, not just while the
+     * Diagnostics screen happens to be on-screen (that screen's own poll loop calls
+     * [sendHeartbeat] too, but stops the moment it's left). Two things this buys:
+     * routers/NAT on a LAN transport won't reclaim an idle-looking connection, and a
+     * silently-dead peer (radio dropped, app killed) is detected within one interval
+     * instead of only on the next real send failure.
+     */
+    private fun scheduleHeartbeatLoop() {
+        heartbeatTask?.cancel()
+        heartbeatTask = scheduler.schedule(HEARTBEAT_INTERVAL_MS) {
+            if (state == ConnectionState.CONNECTED) {
+                sendHeartbeat()
+                scheduleHeartbeatLoop()
+            }
+        }
     }
 
     private fun writePacket(packet: Packet): Boolean {
@@ -384,7 +404,7 @@ abstract class StreamTransport(
             MessageType.FLOOR_REQUEST,
             MessageType.FLOOR_GRANT,
             MessageType.FLOOR_DENY,
-            MessageType.FLOOR_RELEASE -> floor.onRemote(packet.type)
+            MessageType.FLOOR_RELEASE -> floor.onRemote(packet.type, packet.text)
         }
     }
 
@@ -392,6 +412,8 @@ abstract class StreamTransport(
         if (state == ConnectionState.CONNECTED) {
             floor.releaseLocal()
         }
+        heartbeatTask?.cancel()
+        heartbeatTask = null
         running.set(false)
         floor.reset()
         arbiter.reset()
@@ -422,6 +444,7 @@ abstract class StreamTransport(
         const val MAX_HELLO_LEN = 4096
         const val MAX_KEY_LEN = 2048
         const val READ_BUFFER_BYTES = 4096
+        const val HEARTBEAT_INTERVAL_MS = 20_000L
     }
 }
 

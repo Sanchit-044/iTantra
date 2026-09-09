@@ -14,7 +14,11 @@ import `in`.gov.itantra.core.theme.ThemeStore
 import javax.inject.Inject
 
 import android.Manifest
+import android.content.Intent
+import android.net.Uri
 import android.os.Build
+import android.os.PowerManager
+import android.provider.Settings
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.enableEdgeToEdge
 
@@ -28,6 +32,27 @@ class MainActivity : ComponentActivity() {
         ActivityResultContracts.RequestMultiplePermissions()
     ) { permissions ->
         `in`.gov.itantra.service.ConnectionService.start(this)
+        requestIgnoreBatteryOptimizations()
+    }
+
+    /**
+     * A foreground service alone does not stop many OEM battery managers (Xiaomi,
+     * Oppo/OnePlus/Realme's ColorOS, etc.) from killing the process in the background
+     * regardless of standard Doze/App Standby exemptions. This asks the standard
+     * AOSP whitelist question; it's a one-time system dialog the user can decline,
+     * and does nothing if the app is already exempted or on a very old OS.
+     */
+    private fun requestIgnoreBatteryOptimizations() {
+        val pm = getSystemService(POWER_SERVICE) as? PowerManager ?: return
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !pm.isIgnoringBatteryOptimizations(packageName)) {
+            runCatching {
+                startActivity(
+                    Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
+                        data = Uri.parse("package:$packageName")
+                    }
+                )
+            }
+        }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -55,6 +80,7 @@ class MainActivity : ComponentActivity() {
 
         if (missingPermissions.isEmpty()) {
             `in`.gov.itantra.service.ConnectionService.start(this)
+            requestIgnoreBatteryOptimizations()
         } else {
             requestPermissionLauncher.launch(missingPermissions.toTypedArray())
         }

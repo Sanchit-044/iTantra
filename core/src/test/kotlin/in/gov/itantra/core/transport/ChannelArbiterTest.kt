@@ -112,6 +112,24 @@ class ChannelArbiterTest {
     }
 
     @Test
+    fun `floor control jumps ahead of queued normal traffic`() {
+        // Regression test: a FLOOR_REQUEST stuck FIFO behind ordinary voice traffic
+        // can easily miss FloorController's grant-timeout window under real
+        // half-duplex contention, producing a spurious "no floor grant" failure.
+        val a = arbiter()
+        a.onReceiveStarted()
+        a.submit(packet(1))
+        a.submit(packet(2))
+        a.submit(packet(3, MessageType.FLOOR_REQUEST))
+        a.onReceiveFinished()
+
+        assertEquals(
+            listOf(3, 1, 2), delivered.map { it.sequence },
+            "a floor-control packet was delivered behind ordinary traffic",
+        )
+    }
+
+    @Test
     fun `a send that keeps failing is abandoned after the configured attempts`() {
         val a = arbiter(maxAttempts = 3)
         deliverySucceeds = false

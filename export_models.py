@@ -42,7 +42,11 @@ LANGUAGES = {
     "gu": None,
     "mr": None,
     "or": None,
-    "en": None,
+    # Confirmed by comparing the bundled indicwav2vec-en-vocab.json's 32-token,
+    # letter-frequency-ordered uppercase vocabulary byte-for-byte against this repo's
+    # tokenizer -- it is not an IndicWav2Vec model (AI4Bharat does not publish an
+    # English one), it is the standard public English wav2vec2 CTC checkpoint.
+    "en": "facebook/wav2vec2-base-960h",
 }
 
 # One second of audio is enough to trace the graph; the sequence axis is dynamic.
