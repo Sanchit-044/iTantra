@@ -37,6 +37,8 @@ import `in`.gov.itantra.core.pack.LanguagePackManager
 import `in`.gov.itantra.core.stt.LanguageIdEngine
 import `in`.gov.itantra.core.stt.ScriptLanguageId
 import `in`.gov.itantra.core.stt.SttEngine
+import `in`.gov.itantra.android.translate.IndicTransOnnxTranslationEngine
+import `in`.gov.itantra.core.translate.ChainedTranslationEngine
 import `in`.gov.itantra.core.translate.DictionaryTranslationEngine
 import `in`.gov.itantra.core.translate.TranslationEngine
 import `in`.gov.itantra.core.tts.ChunkedSpeaker
@@ -145,8 +147,23 @@ object AppModule {
 
     @Provides
     @Singleton
-    fun provideTranslationEngine(): TranslationEngine {
-        return DictionaryTranslationEngine()
+    fun provideIndicTransOnnxEngine(
+        @ApplicationContext context: Context,
+    ): IndicTransOnnxTranslationEngine {
+        return IndicTransOnnxTranslationEngine(context)
+    }
+
+    @Provides
+    @Singleton
+    fun provideTranslationEngine(
+        onnxEngine: IndicTransOnnxTranslationEngine,
+    ): TranslationEngine {
+        return ChainedTranslationEngine(
+            listOf(
+                DictionaryTranslationEngine(),
+                onnxEngine,
+            )
+        )
     }
 
     @Provides

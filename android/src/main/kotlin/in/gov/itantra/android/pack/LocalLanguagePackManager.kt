@@ -30,7 +30,7 @@ class LocalLanguagePackManager(
 
     override fun isTranslationReady(): Boolean =
         LanguagePackPaths.translationMarker(context).exists() ||
-            LanguagePackPaths.translationModel(context).exists()
+            LanguagePackPaths.translationEncoder(context).exists()
 
     override suspend fun install(
         languages: Set<Language>,
@@ -92,9 +92,19 @@ class LocalLanguagePackManager(
     private fun installTranslation() {
         LanguagePackPaths.translationDir(context).mkdirs()
         copyAssetOrDownload(
-            assetPath = "models/translation/indictrans2.onnx",
-            dest = LanguagePackPaths.translationModel(context),
-            remoteName = "translation/indictrans2.onnx",
+            assetPath = "models/translation/indictrans2-encoder-int8.onnx",
+            dest = LanguagePackPaths.translationEncoder(context),
+            remoteName = "translation/indictrans2-encoder-int8.onnx",
+        )
+        copyAssetOrDownload(
+            assetPath = "models/translation/indictrans2-decoder-int8.onnx",
+            dest = LanguagePackPaths.translationDecoder(context),
+            remoteName = "translation/indictrans2-decoder-int8.onnx",
+        )
+        copyAssetOrDownload(
+            assetPath = "models/translation/indictrans2-vocab.json",
+            dest = LanguagePackPaths.translationVocab(context),
+            remoteName = "translation/indictrans2-vocab.json",
         )
         LanguagePackPaths.translationMarker(context).writeText("ok")
     }

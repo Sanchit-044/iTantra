@@ -14,7 +14,8 @@ alwaysApply: true
 - After detect, update `current` so inbound audio is translated into that language.
 - Translate **only on receive**. Send original text + source language.
 - Missing translation → user-visible error / download, not wrong-voice TTS.
-- Packs: install only ticked languages. `INTERNET` is for packs only.
+- Translation chain: `DictionaryTranslationEngine` (8 demo phrases, instant) → `IndicTransOnnxTranslationEngine` (IndicTrans2 200M, arbitrary text, ~2-4s on mid-range). Dictionary always available; ONNX only when `translation/.ready` or model files exist. Both fail → `TranslationUnavailableException`.
+- Packs: install only ticked languages. `INTERNET` is for packs only. Translation model: encoder + decoder + vocab JSON under `models/translation/`.
 
 Picker: `LanguageSelectionScreen` (after compulsory profile, and Settings). Persist: `PrefsLanguageSettingsStore`. After a language is added, also add `AlertTemplate.phrase()` for that language.
 

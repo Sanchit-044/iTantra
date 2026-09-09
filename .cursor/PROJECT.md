@@ -110,7 +110,9 @@ Receive (live NORMAL)
 Original text + source language. **No translation on send.**
 
 **Translation (receiver only)**  
-`TranslationEngine` / `DictionaryTranslationEngine`. Same language → no-op. Demo phrase table. Unknown sentence without a real model → `TranslationUnavailableException` → UI message. Never feed Hindi text to a Tamil TTS voice.
+`ChainedTranslationEngine` tries in order: 1) `DictionaryTranslationEngine` (8 hardcoded phrases, instant) → 2) `IndicTransOnnxTranslationEngine` (IndicTrans2 200M distilled, arbitrary text). Same language → no-op. Both fail → `TranslationUnavailableException` → UI message. Never feed Hindi text to a Tamil TTS voice.
+
+IndicTrans2 ONNX: encoder + decoder (no KV cache), greedy decoding, INT8-quantized. BPE tokenizer (`BpeTokenizer`) loaded from `indictrans2-vocab.json`. FLORES-200 language tags for source/target. Export: `export_translation_models.py`.
 
 **TTS (receiver)**  
 `VitsOnnxTtsEngine` intended: Indic-TTS VITS ONNX. **Current runtime:** Android `TextToSpeech` is used when the ONNX graph is missing (hackathon fallback). `loadVoice` must not die when packs are absent. Text pipeline in `:core`: `TextNormalizer`, `NumberLexicon`, `AbbreviationLexicon`, `ClauseChunker`, `ChunkedSpeaker`. Receive path today synthesizes the whole utterance (chunked speaker exists but is not wired on receive).
@@ -121,7 +123,10 @@ Only selected languages are installed. `LocalLanguagePackManager` writes under `
 
 - `stt/<code>/indicwav2vec-<code>-int8.onnx` (+ vocab, `.ready`)
 - `tts/<code>/vits-<code>-int8.onnx` (+ vocab)
-- `translation/indictrans2.onnx` (+ `.ready`)
+- `translation/indictrans2-encoder-int8.onnx` (encoder)
+- `translation/indictrans2-decoder-int8.onnx` (decoder)
+- `translation/indictrans2-vocab.json` (BPE vocab + merges + lang tags)
+- `translation/.ready`
 
 Copy from APK assets if present, else optional HTTP if `baseUrl` is set (default empty). Marker lets setup finish before weights exist.
 
@@ -221,7 +226,8 @@ Single Activity (`MainActivity`). Permissions: mic, BT, nearby Wi-Fi / location.
 - `core/.../profile/` — `OperatorProfile`, `ProfileStore`, `ProfileCodec`
 - `core/.../stt/` — `SttEngine`, `SilenceEndpointer`, `ModelRegistry`, `LanguageIdEngine`, `ScriptLanguageId`
 - `core/.../tts/` — engines, normalizer, lexicons, chunker
-- `core/.../translate/` — `TranslationEngine`, `DictionaryTranslationEngine`
+- `core/.../translate/` — `TranslationEngine`, `DictionaryTranslationEngine`, `ChainedTranslationEngine`, `BpeTokenizer`
+- `android/.../translate/` — `IndicTransOnnxTranslationEngine`
 - `core/.../pack/LanguagePackManager.kt`
 - `core/.../usecase/` — start/stop/receive PTT, `SendAlertUseCase`, `FlushQueuedMessagesUseCase`
 - `core/.../transport/` — `Packet`, `PacketCodec`, `ChannelArbiter`, `FloorController`
@@ -270,7 +276,7 @@ Prefer **code + this folder** when they disagree.
 
 **Wired in the app:** language picker, persist, pack install markers, Talk connect + pairing, live PTT + floor, offline queue + inbox, Alert tab, Analysis tab, Radar tab (proximity join), receive + translate hook, current-language header.
 
-**Not ready for a measured demo:** ONNX weights not in repo; TTS often system engine; LID is script/heuristic not a neural model; translation is a phrase table; Tamil/Bengali lexicons need native review; extra languages use placeholder number tokens; spoken alert WAVs may be missing (TTS fallback); `:models-pack` unwired; Room unused; LAN not on Talk picker.
+**Not ready for a measured demo:** ONNX weights not in repo; TTS often system engine; LID is script/heuristic not a neural model; translation ONNX engine wired but models not in repo (run `export_translation_models.py` to generate); Tamil/Bengali lexicons need native review; extra languages use placeholder number tokens; spoken alert WAVs may be missing (TTS fallback); `:models-pack` unwired; Room unused; LAN not on Talk picker.
 
 ## Tests and commands
 
