@@ -11,12 +11,14 @@ import `in`.gov.itantra.core.lang.UiLanguage
 import `in`.gov.itantra.core.lang.UiStrings
 import `in`.gov.itantra.core.pack.LanguagePackManager
 import `in`.gov.itantra.core.pack.PackProgress
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import javax.inject.Inject
 
 enum class LanguageSetupPage { PACKS, APP_LANGUAGE }
@@ -31,6 +33,8 @@ data class LanguageSelectionUiState(
     val progress: PackProgress? = null,
     val error: String? = null,
     val finished: Boolean = false,
+    /** Languages whose files are actually present on disk right now, per [LanguagePackManager.isLanguagePackReady]. */
+    val downloaded: Set<Language> = emptySet(),
 ) {
     val appLanguageOptions: List<Language>
         get() = UiLanguage.options(selected)
@@ -61,7 +65,16 @@ class LanguageSelectionViewModel @Inject constructor(
                     )
                 }
             }
+            refreshDownloaded()
         }
+    }
+
+    /** Re-checks disk state for every language; cheap (file existence checks) but still off the main thread. */
+    private suspend fun refreshDownloaded() {
+        val ready = withContext(Dispatchers.IO) {
+            Language.entries.filter { packs.isLanguagePackReady(it) }.toSet()
+        }
+        _uiState.update { it.copy(downloaded = ready) }
     }
 
     fun toggle(language: Language) {
@@ -127,6 +140,7 @@ class LanguageSelectionViewModel @Inject constructor(
         viewModelScope.launch {
             val snap = store.settings.first()
             if (snap.setupDone) apply(snap)
+            refreshDownloaded()
         }
     }
 
@@ -150,6 +164,7 @@ class LanguageSelectionViewModel @Inject constructor(
                 } else {
                     store.completeSetup(selected, current, uiLanguage)
                 }
+                refreshDownloaded()
                 _uiState.update { it.copy(busy = false, finished = true, progress = null) }
             } catch (e: Exception) {
                 val chromeLang = if (_uiState.value.setupDone) {
@@ -157,6 +172,9 @@ class LanguageSelectionViewModel @Inject constructor(
                 } else {
                     Language.ENGLISH
                 }
+                // install() keeps going after a per-language failure, so languages that
+                // did succeed before the failing one should still show as downloaded.
+                refreshDownloaded()
                 _uiState.update {
                     it.copy(
                         busy = false,
