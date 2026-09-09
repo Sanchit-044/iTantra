@@ -1,0 +1,21 @@
+---
+description: Language, LID, translation, and pack-install rules
+alwaysApply: true
+---
+
+# Languages
+
+- Set: hi, gu, mr, kn, ml, ta, te, or, bn, en. Default **Hindi**.
+- Wire: HI/TA/BN stay `0x01/0x02/0x03`. Do not renumber.
+- **No separate speak vs listen.** `current` is both STT and TTS.
+- App chrome `uiLanguage` is separate: English ∪ installed. English UI does not need an English STT pack. Untick the UI language → snap to English. Setup chrome stays English until setup finishes. Missing chrome string → English, never blank. Alert spoken phrases follow `current`. Do not use `res/values-*` for chrome.
+- Empty install set → Hindi. Never allow zero languages.
+- LID only if 2+ installed; result must be in that set. Unsure → current, else Hindi if installed.
+- After detect, update `current` so inbound audio is translated into that language.
+- Translate **only on receive**. Send original text + source language.
+- Missing translation → user-visible error / download, not wrong-voice TTS.
+- Packs: install only ticked languages. `INTERNET` is for packs only.
+
+Picker: `LanguageSelectionScreen` (after compulsory profile, and Settings). Persist: `PrefsLanguageSettingsStore`. After a language is added, also add `AlertTemplate.phrase()` for that language.
+
+Profile (name + photo) is separate from speech `current`. After pairing, PROFILE `0x0A` carries the operator name; STT/TTS are unchanged.

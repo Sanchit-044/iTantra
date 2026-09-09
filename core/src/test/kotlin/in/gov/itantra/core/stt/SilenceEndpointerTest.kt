@@ -102,7 +102,40 @@ class SilenceEndpointerTest {
     }
 
     @Test
-    fun `default timeout is the specified 800ms`() {
-        assertEquals(800L, SilenceEndpointer.DEFAULT_SILENCE_TIMEOUT_MS)
+    fun `default timeout is the specified 1500ms`() {
+        assertEquals(1500L, SilenceEndpointer.DEFAULT_SILENCE_TIMEOUT_MS)
+    }
+
+    @Test
+    fun `distant speech at minus 50 dBFS is detected`() {
+        // Before the retuning, minSpeechLevelDb was -40 dBFS, which silently discarded
+        // any frame below that level. -50 dBFS is typical for a speaker ~1 m away.
+        val e = endpointer()
+        val result = feed(e, -50.0, 400)
+        assertEquals(
+            SilenceEndpointer.Event.SPEECH_STARTED,
+            result,
+            "distant speech at -50 dBFS should be detected; gate was not lowered",
+        )
+    }
+
+    @Test
+    fun `single noise burst does not raise floor enough to block subsequent speech`() {
+        // With RISE_ALPHA=0.25, a single -35 dBFS transient raised the adaptive floor by
+        // 6-7 dB, making the detector temporarily deaf to -50 dBFS distant speech.
+        // With RISE_ALPHA=0.15, the same burst raises it only ~3.75 dB.
+        val e = endpointer()
+        // Give the floor a chance to settle around ambient (-65 dBFS).
+        feed(e, -65.0, 500)
+        // Simulate a door slam / clap at -35 dBFS for one frame (20 ms).
+        e.onFrameDb(-35.0)
+        // Immediately after, distant speech at -50 dBFS should still be detectable.
+        val result = feed(e, -50.0, 400)
+        assertEquals(
+            SilenceEndpointer.Event.SPEECH_STARTED,
+            result,
+            "speech at -50 dBFS was not detected after a transient noise burst; " +
+                "RISE_ALPHA may be too high",
+        )
     }
 }

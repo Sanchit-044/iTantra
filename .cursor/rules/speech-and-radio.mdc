@@ -1,0 +1,17 @@
+---
+description: STT, TTS, PTT, alerts, queue, and transport behavior
+globs: iTantra/**/{stt,tts,translate,usecase,transport,crypto,alert,queue,diag,discover}/**/*.kt
+alwaysApply: false
+---
+
+# Speech and radio
+
+- STT: IndicWav2Vec CTC ONNX, 800 ms silence endpointer. Vosk is gone.
+- TTS shipping path: VITS ONNX. Android TTS is fallback only when the graph is missing; `loadVoice` must survive missing files.
+- Receive use case takes `currentLanguage` and a `TranslationEngine`. Same language → no translate. Do not TTS `ALERT` or `QUEUED` as live PTT.
+- Live PTT: request **floor** (`FloorController`) before STT. Host wins ties. Offline PTT stores text (no live send).
+- Transports share `PacketCodec`. Heartbeats stay internal. Pairing must be confirmed before content.
+- **Alerts (UI + engine):** packet `0x02`, `SendAlertUseCase` + `AlertScreen`. Send only when connected and paired. Auto-play via `AlertPlayer` (alarm volume). Missing WAV → TTS. Next alert queues; NORMAL waits (`tryPlayNormal`).
+- **Queue:** `QUEUED` `0x09`, 30-day TTL. Inbox does not autoplay. Alerts are not queued.
+- Analysis tab reads `AndroidDiagnosticsService`. Do not invent metrics.
+- Radar is discovery only: Wi-Fi Direct peers + BLE ads of our UUID. RSSI → near/mid/far. Tap joins via existing connect. Not GPS.

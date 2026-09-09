@@ -145,6 +145,38 @@ class NumberLexicon(
             Language.HINDI -> HINDI
             Language.TAMIL -> TAMIL
             Language.BENGALI -> BENGALI
+            Language.ENGLISH -> NumberLexiconExtras.ENGLISH
+            Language.GUJARATI -> NumberLexiconExtras.GUJARATI
+            Language.MARATHI -> NumberLexiconExtras.MARATHI
+            Language.KANNADA -> NumberLexiconExtras.KANNADA
+            Language.MALAYALAM -> NumberLexiconExtras.MALAYALAM
+            Language.TELUGU -> NumberLexiconExtras.TELUGU
+            Language.ODIA -> NumberLexiconExtras.ODIA
+        }
+
+        /**
+         * Builds a 0..99 table from ones, teens, standalone tens and combining tens.
+         * Used for languages whose 21..99 forms are regular enough to compose.
+         */
+        internal fun composeUnits(
+            ones: List<String>,
+            teens: List<String>,
+            tens: List<String>,
+            tensCombining: List<String>,
+        ): List<String> {
+            require(ones.size == 10 && teens.size == 10 && tens.size == 8 && tensCombining.size == 8)
+            return buildList(100) {
+                addAll(ones)
+                addAll(teens)
+                for (ten in 2..9) {
+                    for (unit in 0..9) {
+                        add(
+                            if (unit == 0) tens[ten - 2]
+                            else "${tensCombining[ten - 2]} ${ones[unit]}"
+                        )
+                    }
+                }
+            }
         }
     }
 }

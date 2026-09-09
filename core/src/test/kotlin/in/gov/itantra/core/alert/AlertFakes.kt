@@ -49,6 +49,6 @@ class FakeTemplateAudioSource(
     override fun load(template: AlertTemplate, language: Language): AudioClip {
         loads += template to language
         val pcm = ShortArray(samplesPerClip) { (template.ordinal + 1).toShort() }
-        return AudioClip(pcm, AudioFormat.TTS_22K)
+        return AudioClip(pcm, AudioFormat.TTS_16K)
     }
 }

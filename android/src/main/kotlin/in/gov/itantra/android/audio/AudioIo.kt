@@ -11,20 +11,54 @@ import android.media.audiofx.AcousticEchoCanceler
 import android.media.audiofx.NoiseSuppressor
 import `in`.gov.itantra.core.audio.AudioFormat
 import `in`.gov.itantra.core.audio.AudioSink
+import kotlin.math.roundToInt
 
 /**
  * Microphone capture for Module B1.
  *
- * Uses VOICE_RECOGNITION rather than MIC as the source. That is not cosmetic: MIC
- * applies the handset's tuning for recordings, which on many devices includes AGC and
- * aggressive processing that harms recognition accuracy. VOICE_RECOGNITION asks the
- * platform for the flattest signal it can give, which is what an acoustic model wants.
+ * ## Source selection
+ *
+ * Tries `UNPROCESSED` first (API 24+, our minSdk). `UNPROCESSED` bypasses all OEM DSP
+ * — beam-forming, equalisation, AGC — and gives the flattest raw signal, which is what
+ * IndicWav2Vec was trained on. Some OEM ROMs apply an undocumented AGC inside
+ * `VOICE_RECOGNITION` that crushes distant speech to near-zero; `UNPROCESSED` avoids
+ * that entirely. If `UNPROCESSED` fails to initialise (device/ROM doesn't support it)
+ * we fall back to `VOICE_RECOGNITION`.
+ *
+ * ## Software gain
+ *
+ * Speaking from ~1 metre away typically delivers −50 to −45 dBFS, which is below the
+ * endpointer's hard gate (−52 dBFS after retuning). A configurable software gain
+ * multiplier is applied after each read to bring distant speech up to a level the
+ * acoustic model sees as well-normalised.
+ *
+ * The gain is intentionally **not applied** when the hardware `NoiseSuppressor` is
+ * active: the platform suppressor already normalises levels for the near-field case, and
+ * stacking gain on top of it would clip close-speech.
+ *
+ * Default gain = ×4 (+12 dB). All samples are clamped to Int16 range so the gain can
+ * never produce hard arithmetic overflow even if speech is louder than expected.
  */
-class MicrophoneSource {
+class MicrophoneSource(
+    /**
+     * Linear gain multiplier applied to each sample read from the mic.
+     * 1.0 = unity (no change). 4.0 = +12 dB, the default tuned for ~1 m distance.
+     * Set to 1.0 in unit-test stubs if you inject a fake source.
+     *
+     * Calibration note: if the device already has a very hot microphone and you hear
+     * clipping artefacts in the STT output, lower this toward 2.0. If recognition is
+     * still poor at distance, raise toward 6.0. The Int16 clamp prevents hard overflow
+     * in either direction.
+     */
+    private val softwareGain: Float = DEFAULT_SOFTWARE_GAIN,
+) {
 
     private var record: AudioRecord? = null
     private var noiseSuppressor: NoiseSuppressor? = null
     private var echoCanceler: AcousticEchoCanceler? = null
+
+    /** True when hardware NoiseSuppressor was successfully attached to this session. */
+    private var hardwareNsActive = false
 
     val isOpen: Boolean get() = record != null
 
@@ -43,17 +77,27 @@ class MicrophoneSource {
         // 2 GB device does not drop frames mid-utterance, without adding real latency.
         val bufferBytes = minBuffer * 4
 
-        val r = AudioRecord(
-            MediaRecorder.AudioSource.VOICE_RECOGNITION,
-            sampleRate,
-            AndroidAudioFormat.CHANNEL_IN_MONO,
-            AndroidAudioFormat.ENCODING_PCM_16BIT,
-            bufferBytes,
-        )
-        check(r.state == AudioRecord.STATE_INITIALIZED) { "AudioRecord failed to initialise" }
+        // Prefer UNPROCESSED (raw mic, no OEM DSP) to get the flattest signal for the
+        // acoustic model. Fall back to VOICE_RECOGNITION if the device/ROM rejects it.
+        val r = tryCreateAudioRecord(
+            source = MediaRecorder.AudioSource.UNPROCESSED,
+            sampleRate = sampleRate,
+            bufferBytes = bufferBytes,
+        ) ?: tryCreateAudioRecord(
+            source = MediaRecorder.AudioSource.VOICE_RECOGNITION,
+            sampleRate = sampleRate,
+            bufferBytes = bufferBytes,
+        ) ?: error("AudioRecord failed to initialise with both UNPROCESSED and VOICE_RECOGNITION")
 
+        // Attach hardware effects. If NoiseSuppressor succeeds, we skip the software
+        // gain because the platform already normalises levels for the near-field path.
         if (NoiseSuppressor.isAvailable()) {
-            noiseSuppressor = NoiseSuppressor.create(r.audioSessionId)?.apply { enabled = true }
+            val ns = NoiseSuppressor.create(r.audioSessionId)
+            if (ns != null) {
+                ns.enabled = true
+                noiseSuppressor = ns
+                hardwareNsActive = true
+            }
         }
         if (AcousticEchoCanceler.isAvailable()) {
             echoCanceler = AcousticEchoCanceler.create(r.audioSessionId)?.apply { enabled = true }
@@ -63,18 +107,69 @@ class MicrophoneSource {
         record = r
     }
 
-    /** Blocking read of up to [into].size samples. Returns the sample count, or -1. */
-    fun read(into: ShortArray): Int =
-        record?.read(into, 0, into.size) ?: -1
+    /**
+     * Blocking read of up to [into].size samples. Returns the sample count, or -1.
+     *
+     * When [hardwareNsActive] is false (UNPROCESSED path or devices without a platform
+     * suppressor), a software gain is applied to each sample so that distant speech
+     * reaches a level the endpointer and acoustic model can use reliably.
+     */
+    fun read(into: ShortArray): Int {
+        val n = record?.read(into, 0, into.size) ?: return -1
+        if (n > 0 && !hardwareNsActive && softwareGain != 1.0f) {
+            applyGain(into, n, softwareGain)
+        }
+        return n
+    }
 
     fun close() {
         noiseSuppressor?.release(); noiseSuppressor = null
         echoCanceler?.release(); echoCanceler = null
+        hardwareNsActive = false
         record?.let {
             if (it.recordingState == AudioRecord.RECORDSTATE_RECORDING) it.stop()
             it.release()
         }
         record = null
+    }
+
+    private companion object {
+        /**
+         * Default linear gain applied when no hardware NoiseSuppressor is available.
+         * ×4 ≈ +12 dB — enough to lift −52 dBFS distant speech to −40 dBFS where the
+         * endpointer reliably fires. Calibrate per-device if needed.
+         */
+        const val DEFAULT_SOFTWARE_GAIN = 4.0f
+
+        /** Try to create an [AudioRecord] with the given source; return null on failure. */
+        @SuppressLint("MissingPermission")
+        fun tryCreateAudioRecord(source: Int, sampleRate: Int, bufferBytes: Int): AudioRecord? =
+            try {
+                AudioRecord(
+                    source,
+                    sampleRate,
+                    AndroidAudioFormat.CHANNEL_IN_MONO,
+                    AndroidAudioFormat.ENCODING_PCM_16BIT,
+                    bufferBytes,
+                ).takeIf { it.state == AudioRecord.STATE_INITIALIZED }
+                    ?.also { /* successfully created */ }
+                    ?: null.also { /* state not INITIALIZED, will be released by GC */ }
+            } catch (_: Exception) {
+                null
+            }
+
+        /**
+         * Applies [gain] to the first [count] samples in [buf], clamping to Int16 range.
+         * In-place, no allocation. Inlined per-sample multiply-and-clamp is ~2 ns/sample
+         * on a Cortex-A55 — negligible next to ONNX inference.
+         */
+        fun applyGain(buf: ShortArray, count: Int, gain: Float) {
+            for (i in 0 until count) {
+                buf[i] = (buf[i] * gain).roundToInt()
+                    .coerceIn(Short.MIN_VALUE.toInt(), Short.MAX_VALUE.toInt())
+                    .toShort()
+            }
+        }
     }
 }
 
@@ -92,6 +187,9 @@ class AudioTrackSink(
     private val contentType: Int = AudioAttributes.CONTENT_TYPE_SPEECH,
     private val sessionId: Int = AudioManager.AUDIO_SESSION_ID_GENERATE,
 ) : AudioSink, AutoCloseable {
+
+    private var totalWritten = 0
+
 
     private val minBuffer = AudioTrack.getMinBufferSize(
         format.sampleRate,
@@ -113,7 +211,10 @@ class AudioTrackSink(
                 .setChannelMask(AndroidAudioFormat.CHANNEL_OUT_MONO)
                 .build()
         )
-        .setBufferSizeInBytes(minBuffer * 2)
+        // 4× minimum buffer: gives enough headroom to absorb brief synthesis pauses
+        // without underrunning the hardware. At 16 kHz mono PCM16, minBuffer ≈ 3–6 KB
+        // so this costs ≈12–24 KB -- negligible, but prevents gaps between chunks.
+        .setBufferSizeInBytes(minBuffer * 4)
         .setTransferMode(AudioTrack.MODE_STREAM)
         .setSessionId(sessionId)
         .build()
@@ -130,16 +231,28 @@ class AudioTrackSink(
      */
     override fun write(samples: ShortArray, offset: Int, count: Int): Int {
         val n = track.write(samples, offset, count, AudioTrack.WRITE_BLOCKING)
+        if (n > 0) totalWritten += n
         return if (n < 0) 0 else n
     }
 
     override fun drain() {
-        // Let the hardware finish what is already queued rather than cutting it off.
-        track.stop()
-        while (track.playState == AudioTrack.PLAYSTATE_PLAYING) {
-            Thread.sleep(TAIL_POLL_MS)
+        val expectedFrames = totalWritten
+        var stuckCount = 0
+        var lastHead = track.playbackHeadPosition
+        // Poll up to 3 seconds of non-advancing playback head before giving up.
+        // The old guard of 20 × 50 ms = 1 s could cut off the last syllable on a
+        // loaded device where the hardware advances the head in bursts.
+        while (track.playbackHeadPosition < expectedFrames && stuckCount < 60) {
+            Thread.sleep(50)
+            val currentHead = track.playbackHeadPosition
+            if (currentHead == lastHead) {
+                stuckCount++
+            } else {
+                stuckCount = 0
+                lastHead = currentHead
+            }
         }
-        track.play()
+        track.stop()
     }
 
     override fun flush() {

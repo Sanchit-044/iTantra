@@ -20,7 +20,7 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
         // Restrict language resources to supported languages to save APK size
-        resourceConfigurations.addAll(listOf("en", "hi", "ta", "bn"))
+        resourceConfigurations.addAll(listOf("en", "hi", "ta", "bn", "gu", "mr", "kn", "ml", "te", "or"))
 
         ndk {
             // Drop x86/x86_64 to save tens of MBs from ONNX native libs
@@ -44,6 +44,8 @@ android {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
+
+
 }
 
 kotlin {
@@ -53,6 +55,7 @@ kotlin {
 dependencies {
     implementation(project(":core"))
     implementation(project(":android"))
+    implementation(libs.androidx.benchmark.common)
     // assetPacks is defined inside the android { ... } block below
 
     implementation(libs.kotlin.coroutines.core)
@@ -66,13 +69,16 @@ dependencies {
     implementation(libs.compose.ui.graphics)
     implementation(libs.compose.ui.tooling.preview)
     implementation(libs.compose.material3)
+    implementation(libs.compose.material.icons.extended)
     implementation(libs.activity.compose)
+    implementation(libs.androidx.core.ktx)
     implementation(libs.lifecycle.viewmodel.compose)
     debugImplementation(libs.compose.ui.tooling)
 
     // Hilt
     implementation(libs.hilt.android)
     ksp(libs.hilt.compiler)
+    implementation("androidx.navigation:navigation-compose:2.8.4")
     implementation("androidx.hilt:hilt-navigation-compose:1.2.0")
 
     // Room

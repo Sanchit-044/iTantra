@@ -1,0 +1,15 @@
+---
+description: Tests, measurements, and how to change iTantra safely
+alwaysApply: true
+---
+
+# Engineering
+
+- Tests: `cd iTantra && ./gradlew :core:test`. Language loops use `Language.entries`, not “three languages.”
+- Changing PTT, receive, LID, packs, `Language`, alerts, floor, or queue requires `:core` tests.
+- Do not invent WER, RTF, RAM, latency, or APK size. See `iTantra/docs/MEASUREMENTS.md`.
+- Do not bundle huge ONNX files into git. Paths and pack manager are enough until weights exist.
+- After changing tabs, packet types, or wired features, update `iTantra/.cursor/PROJECT.md` and the matching rule.
+- Out of scope unless asked: mesh, power-button SOS, true GPS map of peers, call mode / FGS, OTA store, fake eval tables.
+
+Adding a language: enum + new wire code + lexicons + alert `phrase()` + (optional) dictionary pairs. Registry/UI are enum-driven.

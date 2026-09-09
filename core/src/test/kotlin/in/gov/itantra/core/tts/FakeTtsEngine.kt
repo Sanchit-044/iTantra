@@ -16,7 +16,7 @@ class FakeTtsEngine(
 ) : TtsEngine {
     override var state: TtsState = TtsState.VOICE_LOADED
     override var activeLanguage: Language? = null
-    override val outputFormat: AudioFormat = AudioFormat.TTS_22K
+    override val outputFormat: AudioFormat = AudioFormat.TTS_16K
 
     val synthesisedChunks = mutableListOf<String>()
 

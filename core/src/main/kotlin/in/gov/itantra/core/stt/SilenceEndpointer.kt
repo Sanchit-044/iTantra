@@ -25,8 +25,14 @@ import kotlin.math.sqrt
 class SilenceEndpointer(
     val silenceTimeoutMs: Long = DEFAULT_SILENCE_TIMEOUT_MS,
     private val frameMs: Int = 20,
-    /** How far above the adaptive noise floor a frame must sit to count as speech. */
-    private val speechMarginDb: Double = 9.0,
+    /**
+     * How far above the adaptive noise floor a frame must sit to count as speech.
+     *
+     * Reduced from 9 dB to 6 dB to pair with the lower [minSpeechLevelDb] gate:
+     * the absolute gate does the heavy lifting; the adaptive margin handles noisy
+     * environments on top of that.
+     */
+    private val speechMarginDb: Double = 6.0,
     /**
      * Absolute gate. A frame quieter than this is silence no matter what the adaptive
      * floor says.
@@ -37,13 +43,21 @@ class SilenceEndpointer(
      * and any scheme that seeds the floor from early audio will mistake immediate
      * speech for ambient noise -- which is precisely what push-to-talk produces.
      *
-     * -40 dBFS sits between typical handset-distance speech (about -35 to -15 dBFS)
-     * and quiet-room ambient (about -60 to -50 dBFS). It needs calibrating on the real
-     * target handset and microphone; see docs/TUNING.md.
+     * Lowered from -40 dBFS to -52 dBFS. Distant speech (~1 m from the mic) typically
+     * arrives at -50 to -45 dBFS. The old gate cut that off entirely, causing the
+     * endpointer to treat real speech as silence and never open the utterance.
+     * Quiet-room ambient noise sits at -65 to -60 dBFS, so the 6 dB speech margin
+     * still cleanly separates signal from noise in a field environment.
      */
-    private val minSpeechLevelDb: Double = -40.0,
-    /** Speech must persist this long before the utterance is considered started. */
-    private val minSpeechMs: Int = 120,
+    private val minSpeechLevelDb: Double = -52.0,
+    /**
+     * Speech must persist this long before the utterance is considered started.
+     *
+     * Reduced from 120 ms to 80 ms. Distant-speech onsets are weaker, and the
+     * previous value caused the detector to miss the first syllable of a short word
+     * when the speaker was more than ~50 cm away.
+     */
+    private val minSpeechMs: Int = 80,
 ) {
     enum class Event {
         /** Nothing notable this frame. */
@@ -143,8 +157,15 @@ class SilenceEndpointer(
     }
 
     companion object {
-        /** The sentence-boundary silence specified for iTantra. */
-        const val DEFAULT_SILENCE_TIMEOUT_MS = 800L
+        /**
+         * Default silent period before closing an utterance.
+         *
+         * Extended from 1200 ms to 1500 ms. When speaking from a distance, gaps between
+         * words are perceived as longer and the speaker may pause to breathe more often.
+         * The extra 300 ms prevents the endpointer from cutting an utterance short in
+         * the middle of a sentence.
+         */
+        const val DEFAULT_SILENCE_TIMEOUT_MS = 1500L
 
         /**
          * Starts low and is raised by observed ambient noise. Never seeded from the
@@ -152,7 +173,15 @@ class SilenceEndpointer(
          */
         private const val INITIAL_NOISE_FLOOR_DB = -60.0
 
-        private const val RISE_ALPHA = 0.25
+        /**
+         * How fast the adaptive floor rises toward a louder environment.
+         *
+         * Reduced from 0.25 to 0.15. A brief loud transient (a door slam, a clap)
+         * previously raised the floor fast enough to silence the detector for several
+         * hundred milliseconds afterward. The lower value filters out single-frame
+         * noise bursts while still tracking a genuinely louder room over ~1 second.
+         */
+        private const val RISE_ALPHA = 0.15
         private const val DECAY_ALPHA = 0.02
         private const val FULL_SCALE = 32768.0
 

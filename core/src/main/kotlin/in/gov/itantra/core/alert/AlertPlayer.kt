@@ -7,6 +7,9 @@ import `in`.gov.itantra.core.audio.AudioSink
 import `in`.gov.itantra.core.tts.ChunkedSpeaker
 import java.util.ArrayDeque
 import java.util.concurrent.atomic.AtomicBoolean
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 
 /** Supplies the pre-rendered WAV for a bundled template. */
 interface TemplateAudioSource {
@@ -44,13 +47,27 @@ class AlertPlayer(
     private val clock: () -> Long = System::currentTimeMillis,
 ) {
     private val alertActive = AtomicBoolean(false)
+    private val dismissed = AtomicBoolean(false)
     private val lock = Any()
     private val pending = ArrayDeque<IncomingAlert>()
+    private var activeSpeechHandle: ChunkedSpeaker.SpeechHandle? = null
+
+    private val _activeAlertState = MutableStateFlow<IncomingAlert?>(null)
+    val activeAlertState: StateFlow<IncomingAlert?> = _activeAlertState.asStateFlow()
 
     /** True while an alert is playing. A future UI can show a banner from this. */
     val isAlertActive: Boolean get() = alertActive.get()
 
     val queuedAlerts: Int get() = synchronized(lock) { pending.size }
+
+    fun dismissActiveAlert() {
+        dismissed.set(true)
+        synchronized(lock) {
+            activeSpeechHandle?.cancel()
+            pending.clear()
+        }
+        _activeAlertState.value = null
+    }
 
     /**
      * Play [alert], or queue it if one is already playing. Blocks the calling thread
@@ -60,30 +77,50 @@ class AlertPlayer(
     fun play(alert: IncomingAlert) {
         synchronized(lock) {
             if (alertActive.get()) {
+                val currentAlert = _activeAlertState.value
+                val isDuplicate = currentAlert != null &&
+                    currentAlert.sequence == alert.sequence &&
+                    currentAlert.content.toWirePayload().hashCode() == alert.content.toWirePayload().hashCode()
+                
+                if (isDuplicate) {
+                    if (currentAlert.senderName == null && alert.senderName != null) {
+                        _activeAlertState.value = currentAlert.copy(senderName = alert.senderName)
+                    }
+                    return
+                }
+
+                pending.clear()
                 pending.addLast(alert)
+                dismissed.set(true)
+                activeSpeechHandle?.cancel()
                 listener?.onAlertQueued(alert, pending.size)
                 return
             }
             alertActive.set(true)
+            dismissed.set(false)
         }
 
         var current: IncomingAlert? = alert
         try {
             while (current != null) {
+                _activeAlertState.value = current
                 playNow(current)
                 // Draining the queue and clearing the flag must happen under the same
-                // lock as the enqueue check above. Otherwise an alert submitted in
-                // that window is added to the queue by a caller that then returns,
-                // while this thread has already decided it is finished -- leaving the
-                // alert queued with nobody to play it.
+                // lock as the enqueue check above.
                 current = synchronized(lock) {
                     val next = pending.pollFirst()
-                    if (next == null) alertActive.set(false)
+                    if (next == null) {
+                        alertActive.set(false)
+                        _activeAlertState.value = null
+                    } else {
+                        dismissed.set(false) // Reset for the replacement alert
+                    }
                     next
                 }
             }
         } catch (t: Throwable) {
             synchronized(lock) { alertActive.set(false) }
+            _activeAlertState.value = null
             throw t
         }
     }
@@ -108,21 +145,68 @@ class AlertPlayer(
      * exactly one place -- inside the forced-focus scope.
      */
     private fun renderAlert(alert: IncomingAlert) {
+        val startedAt = clock()
+        val timeoutMs = 2 * 60 * 1000L // 2 minutes
+
         when (val content = alert.content) {
             is AlertContent.Template -> {
-                val clip = templates.load(content.template, alert.language)
-                val sink = sinkProvider(clip.format)
-                writeFully(sink, clip)
-                sink.drain()
+                val clip = try {
+                    templates.load(content.template, alert.language)
+                } catch (_: Exception) {
+                    null
+                }
+                if (clip != null) {
+                    val sink = sinkProvider(clip.format)
+                    try {
+                        while (!dismissed.get() && (clock() - startedAt < timeoutMs)) {
+                            writeFully(sink, clip)
+                            if (dismissed.get()) break
+                            Thread.sleep(1000)
+                        }
+                        sink.drain()
+                    } finally {
+                        sink.close()
+                    }
+                } else {
+                    while (!dismissed.get() && (clock() - startedAt < timeoutMs)) {
+                        speakCustom(content.template.phrase(alert.language), alert.language)
+                        if (dismissed.get()) break
+                        Thread.sleep(1000)
+                    }
+                }
             }
 
             is AlertContent.Custom -> {
-                // Routed through Module B3. Note this still runs inside the focus
-                // lambda: the TTS path gets the identical escalation, which is the
-                // thing the brief asked to be verified rather than assumed.
-                val sink = sinkProvider(AudioFormat.TTS_22K)
-                speaker.speak(content.text, alert.language, sink).await()
+                while (!dismissed.get() && (clock() - startedAt < timeoutMs)) {
+                    speakCustom(content.text, alert.language)
+                    if (dismissed.get()) break
+                    Thread.sleep(1000)
+                }
             }
+        }
+    }
+
+    private fun speakCustom(text: String, language: Language) {
+        val sink = sinkProvider(AudioFormat.TTS_16K)
+        try {
+            val handle = speaker.speak(text, language, sink)
+            synchronized(lock) {
+                if (dismissed.get()) {
+                    handle.cancel()
+                } else {
+                    activeSpeechHandle = handle
+                }
+            }
+            handle.await()
+        } catch (_: Exception) {
+            // Ignore cancellation or chunker failures during loop
+        } finally {
+            synchronized(lock) {
+                if (activeSpeechHandle != null) {
+                    activeSpeechHandle = null
+                }
+            }
+            sink.close()
         }
     }
 
@@ -142,8 +226,9 @@ class AlertPlayer(
 
     private fun writeFully(sink: AudioSink, clip: AudioClip) {
         var off = 0
-        while (off < clip.pcm.size) {
-            val n = sink.write(clip.pcm, off, clip.pcm.size - off)
+        while (off < clip.pcm.size && !dismissed.get()) {
+            val chunk = minOf(clip.pcm.size - off, 4096)
+            val n = sink.write(clip.pcm, off, chunk)
             if (n <= 0) return
             off += n
         }

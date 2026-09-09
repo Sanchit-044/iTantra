@@ -2,7 +2,7 @@ package `in`.gov.itantra.core.transport
 
 import `in`.gov.itantra.core.crypto.PairingCode
 
-enum class TransportKind { WIFI_DIRECT, BLUETOOTH_RFCOMM, LOOPBACK }
+enum class TransportKind { WIFI_DIRECT, BLUETOOTH_RFCOMM, LAN, LOOPBACK }
 
 enum class ConnectionState { DISCONNECTED, DISCOVERING, HANDSHAKING, CONNECTED, FAILED }
 
@@ -38,6 +38,12 @@ interface TransportListener {
      * from this. See [ChannelArbiter].
      */
     fun onChannelBusyChanged(busy: Boolean) {}
+
+    /** Local PTT may start STT. */
+    fun onFloorGranted() {}
+
+    /** Local PTT must not start STT. [reason] is for the status line, not a disconnect. */
+    fun onFloorDenied(reason: String) {}
 
     /** A packet could not be delivered after the configured retries. */
     fun onSendFailed(packet: Packet, reason: String) {}
@@ -91,6 +97,14 @@ interface Transport : AutoCloseable {
      * [TransportListener.onSendFailed].
      */
     fun send(packet: Packet)
+
+    /**
+     * Ask for the talk token. STT must start only after [TransportListener.onFloorGranted].
+     */
+    fun requestFloor()
+
+    /** Give the talk token back. Safe if we never held it. */
+    fun releaseFloor()
 
     fun disconnect()
 

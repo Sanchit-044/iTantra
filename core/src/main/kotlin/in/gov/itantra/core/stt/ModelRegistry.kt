@@ -12,7 +12,7 @@ import `in`.gov.itantra.core.Language
  * place. See docs/STT-BACKEND.md.
  */
 enum class SttBackend {
-    /** IndicWav2Vec CTC exported to ONNX and quantised to INT8. Covers all three. */
+    /** IndicWav2Vec CTC exported to ONNX and quantised to INT8. Covers every language in [Language]. */
     ONNX_CTC,
 }
 
