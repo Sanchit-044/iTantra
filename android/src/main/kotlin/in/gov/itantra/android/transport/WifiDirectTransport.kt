@@ -39,6 +39,18 @@ class WifiDirectTransport(
     private val port: Int = DEFAULT_PORT,
     /** When joining from Radar, invite this P2P address if it is still in the peer list. */
     private val preferredPeerAddress: String? = null,
+    /**
+     * 0..15, higher wins group-owner negotiation; -1 leaves it to the framework default.
+     * Only meaningful for [Role.CLIENT]: a [Role.HOST] already forces ownership via
+     * [WifiP2pManager.createGroup] and never negotiates. Radar's "tap to connect" path has
+     * both handsets call [Role.CLIENT] symmetrically (see [WifiDirectTransport] doc), which
+     * otherwise leaves the framework's own negotiation to pick a winner -- normally fine, but
+     * an unset intent on both sides is a coin flip that sometimes needs the
+     * "unexpectedly became owner" fallback below, costing a round of retries. Passing a
+     * value derived the same way on both handsets (e.g. comparing display names) makes
+     * exactly one side win on the first attempt.
+     */
+    private val groupOwnerIntent: Int = -1,
 ) : StreamTransport(keyAgreement, winsFloorTies = role == Role.HOST) {
 
     enum class Role { HOST, CLIENT }
@@ -97,29 +109,30 @@ class WifiDirectTransport(
             }
 
             if (role == Role.HOST) {
+                var attempt = 0
                 while (System.currentTimeMillis() < deadline) {
                     android.util.Log.d("iTantra-WiFi", "Host: Creating P2P Group...")
                     val groupCreated = CountDownLatch(1)
                     var createFailedReason: Int? = null
                     m.createGroup(ch, object : WifiP2pManager.ActionListener {
-                        override fun onSuccess() { 
+                        override fun onSuccess() {
                             android.util.Log.d("iTantra-WiFi", "Host: Group created successfully")
-                            groupCreated.countDown() 
+                            groupCreated.countDown()
                         }
-                        override fun onFailure(reason: Int) { 
+                        override fun onFailure(reason: Int) {
                             android.util.Log.e("iTantra-WiFi", "Host: Failed to create group. Reason: $reason")
                             createFailedReason = reason
-                            groupCreated.countDown() 
+                            groupCreated.countDown()
                         }
                     })
                     groupCreated.await(3000, TimeUnit.MILLISECONDS)
-                    
+
                     if (createFailedReason != null) {
                         if (createFailedReason == WifiP2pManager.BUSY) {
                             android.util.Log.d("iTantra-WiFi", "Host: Device BUSY, removing stale group before retry")
                             m.removeGroup(ch, null)
                         }
-                        Thread.sleep(500)
+                        Thread.sleep(retryBackoffMs(attempt++))
                         continue
                     }
 
@@ -131,33 +144,34 @@ class WifiDirectTransport(
                     } else {
                         android.util.Log.d("iTantra-WiFi", "Host: Timeout waiting for interface to come up. Cleaning up and retrying...")
                         m.removeGroup(ch, null)
-                        Thread.sleep(500)
+                        Thread.sleep(retryBackoffMs(attempt++))
                     }
                 }
                 throw TransportException("Failed to host Wi-Fi Direct group")
             } else {
                 // Not connected or fast-path failed. Enter robust retry loop.
+                var attempt = 0
                 while (System.currentTimeMillis() < deadline) {
                     android.util.Log.d("iTantra-WiFi", "Client: Starting peer discovery...")
                     peersFound = CountDownLatch(1)
                     connected = CountDownLatch(1)
-                    
+
                     discoverPeers(m, ch)
-                    
+
                     if (peersFound?.await(10000, TimeUnit.MILLISECONDS) != true) {
                         android.util.Log.d("iTantra-WiFi", "Client: Peer discovery timed out. Retrying...")
                         // Retry discovery
                         continue
                     }
-                    
+
                     val peer = discoveredPeer
                     if (peer == null) {
-                        android.util.Log.d("iTantra-WiFi", "Client: No target peer found yet. Waiting 0.5s before retry...")
-                        Thread.sleep(500)
+                        android.util.Log.d("iTantra-WiFi", "Client: No target peer found yet. Waiting before retry...")
+                        Thread.sleep(retryBackoffMs(attempt++))
                         continue
                     }
                     android.util.Log.d("iTantra-WiFi", "Client: Found target peer: ${peer.deviceName} (${peer.deviceAddress})")
-                    
+
                     val success = invite(m, ch, peer)
                     if (!success) {
                         android.util.Log.e("iTantra-WiFi", "Client: invite failed. Reason: $lastFailureReason")
@@ -166,10 +180,11 @@ class WifiDirectTransport(
                             m.cancelConnect(ch, null)
                             m.removeGroup(ch, null)
                         }
-                        Thread.sleep(500)
+                        Thread.sleep(retryBackoffMs(attempt++))
                         continue
                     }
-                    
+                    attempt = 0
+
                     if (connected?.await(40000, TimeUnit.MILLISECONDS) == true) {
                         val info = connectionInfo
                         if (info != null && info.groupFormed) {
@@ -201,6 +216,18 @@ class WifiDirectTransport(
     private fun remaining(deadline: Long): Long =
         (deadline - System.currentTimeMillis()).coerceAtLeast(0)
 
+    /**
+     * 300ms, 600ms, 1200ms, capped at 1500ms. A failed create/invite is usually a
+     * transient BUSY from the driver still tearing down a previous group -- a fixed
+     * 500ms wait on every retry pays that cost even after the driver has settled, while
+     * backing off too far would slow down recovery from a one-off glitch. Capped low
+     * (not the seconds-scale backoff used for [MainViewModel]'s post-drop reconnect)
+     * because these retries run *inside* a single [connect] call against its own
+     * multi-second deadline, not across a user-visible reconnect.
+     */
+    private fun retryBackoffMs(attempt: Int): Long =
+        (300L shl attempt.coerceAtMost(2)).coerceAtMost(1500L)
+
     @SuppressLint("MissingPermission")
     private fun discoverPeers(m: WifiP2pManager, ch: WifiP2pManager.Channel) {
         m.discoverPeers(ch, object : WifiP2pManager.ActionListener {
@@ -221,6 +248,10 @@ class WifiDirectTransport(
         val config = WifiP2pConfig().apply {
             deviceAddress = peer.deviceAddress
             wps.setup = android.net.wifi.WpsInfo.PBC
+            val intent = this@WifiDirectTransport.groupOwnerIntent
+            if (intent in 0..15) {
+                groupOwnerIntent = intent
+            }
         }
         val inviteSent = CountDownLatch(1)
         var success = false
@@ -249,6 +280,7 @@ class WifiDirectTransport(
         return try {
             val socket = server.accept()
             socket.tcpNoDelay = true
+            socket.keepAlive = true
             android.util.Log.d("iTantra-WiFi", "Host: Client connected!")
             server.close()
             serverSocket = null
@@ -269,6 +301,7 @@ class WifiDirectTransport(
         val deadline = System.currentTimeMillis() + timeoutMs
         var lastException: Exception? = null
 
+        var attempt = 0
         while (System.currentTimeMillis() < deadline) {
             val socket = Socket()
             try {
@@ -278,13 +311,14 @@ class WifiDirectTransport(
                     5000 // 5-second timeout per attempt
                 )
                 socket.tcpNoDelay = true
+                socket.keepAlive = true
                 android.util.Log.d("iTantra-WiFi", "Client: Successfully connected to GO socket!")
                 return socket.toLink(peerName, peerAddress)
             } catch (e: java.net.ConnectException) {
                 // Host may not have bound ServerSocket yet.
                 lastException = e
                 runCatching { socket.close() }
-                Thread.sleep(500)
+                Thread.sleep(retryBackoffMs(attempt++))
             } catch (e: Exception) {
                 android.util.Log.e("iTantra-WiFi", "Client: Failed to connect to GO socket", e)
                 runCatching { socket.close() }

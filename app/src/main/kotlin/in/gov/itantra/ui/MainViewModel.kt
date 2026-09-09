@@ -55,6 +55,8 @@ import `in`.gov.itantra.data.history.MessageStatus
 import java.util.UUID
 import java.util.ArrayDeque
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -104,6 +106,9 @@ data class UiState(
     val activeIncomingAlert: IncomingAlert? = null,
     val isWifiConnected: Boolean = false,
     val alertChannel: AlertChannel = AlertChannel.ALL,
+    /** True while automatically retrying a connection that dropped unexpectedly. */
+    val reconnecting: Boolean = false,
+    val reconnectAttempt: Int = 0,
 ) {
     val canSendAlert: Boolean
         get() = (connectionState == ConnectionState.CONNECTED && pairingConfirmed) || isWifiConnected
@@ -149,6 +154,22 @@ class MainViewModel @Inject constructor(
     private var transport: Transport? = null
     private val deferredNormals = ArrayDeque<Packet>()
     private val pttWanted = AtomicBoolean(false)
+
+    /** What [connect] was last asked for, so an unexpected drop can retry the same target. */
+    private data class ConnectRequest(
+        val mode: ConnectionMode,
+        val peerAddress: String?,
+        val preferredWifiAddress: String?,
+        val peerName: String?,
+        val preferGroupOwner: Boolean?,
+    )
+
+    private var lastConnectRequest: ConnectRequest? = null
+    private var reconnectJob: Job? = null
+    private var reconnectAttempts = 0
+    private val userInitiatedDisconnect = AtomicBoolean(true)
+    /** True once this session has reached CONNECTED at least once, so a later drop is a reconnect case rather than an initial-attempt failure the transport's own retry loop already gave up on. */
+    private var hasReachedConnected = false
     private var lastInsertedAlertKey = ""
     private var lastInsertedAlertHistoryId = ""
     private val recentAlertIds = object : java.util.LinkedHashMap<Int, MutableList<String>>(50, 0.75f, true) {
@@ -280,6 +301,8 @@ class MainViewModel @Inject constructor(
 
     override fun onCleared() {
         super.onCleared()
+        userInitiatedDisconnect.set(true)
+        reconnectJob?.cancel()
         lanAlertManager.stopListening()
         transport?.setListener(null)
         transport?.disconnect()
@@ -332,6 +355,9 @@ class MainViewModel @Inject constructor(
             `in`.gov.itantra.service.ConnectionService.start(context)
         }
         if (state == ConnectionState.CONNECTED) {
+            hasReachedConnected = true
+            reconnectAttempts = 0
+            _uiState.update { it.copy(reconnecting = false, reconnectAttempt = 0) }
             // Protect the socket/reader thread from Doze and Wi-Fi power-save for as
             // long as this session is live -- released the moment it stops being CONNECTED.
             `in`.gov.itantra.service.ConnectionService.notifyTransportConnected(context)
@@ -341,6 +367,15 @@ class MainViewModel @Inject constructor(
             stopPtt()
             _uiState.update {
                 it.copy(channelBusy = false, isRequestingFloor = false, isSpeaking = false)
+            }
+            // A radio drop mid-session (out of range, interference) is worth retrying
+            // automatically; an initial connection attempt that never got there has
+            // already exhausted the transport's own retry budget (see openLink()), and
+            // an operator-pressed Disconnect must never be second-guessed.
+            if (hasReachedConnected && !userInitiatedDisconnect.get()) {
+                scheduleReconnect()
+            } else {
+                _uiState.update { it.copy(reconnecting = false, reconnectAttempt = 0) }
             }
         }
     }
@@ -643,28 +678,57 @@ class MainViewModel @Inject constructor(
     // --- Actions ---
 
 
-    fun connect(peerAddress: String? = null, preferredWifiAddress: String? = null, peerName: String? = null) {
+    fun connect(
+        peerAddress: String? = null,
+        preferredWifiAddress: String? = null,
+        peerName: String? = null,
+        preferGroupOwner: Boolean? = null,
+    ) {
+        userInitiatedDisconnect.set(false)
+        reconnectJob?.cancel()
+        reconnectJob = null
+        reconnectAttempts = 0
+        hasReachedConnected = false
+        val request = ConnectRequest(
+            mode = _uiState.value.connectionMode,
+            peerAddress = peerAddress,
+            preferredWifiAddress = preferredWifiAddress,
+            peerName = peerName,
+            preferGroupOwner = preferGroupOwner,
+        )
+        lastConnectRequest = request
+        _uiState.update { it.copy(reconnecting = false, reconnectAttempt = 0) }
+        performConnect(request)
+    }
+
+    /** The actual connect attempt, shared by a fresh [connect] call and an automatic reconnect. */
+    private fun performConnect(request: ConnectRequest) {
         viewModelScope.launch(Dispatchers.IO) {
             try {
                 transport?.setListener(null)
                 transport?.disconnect()
 
-                val newTransport = when (_uiState.value.connectionMode) {
+                val newTransport = when (request.mode) {
                     ConnectionMode.WIFI_DIRECT_HOST -> WifiDirectTransport(context, keyAgreementProvider, WifiDirectTransport.Role.HOST)
                     ConnectionMode.WIFI_DIRECT_CLIENT -> WifiDirectTransport(
                         context,
                         keyAgreementProvider,
                         WifiDirectTransport.Role.CLIENT,
-                        preferredPeerAddress = preferredWifiAddress ?: peerAddress,
+                        preferredPeerAddress = request.preferredWifiAddress ?: request.peerAddress,
+                        groupOwnerIntent = when (request.preferGroupOwner) {
+                            true -> WifiDirectTransport.GROUP_OWNER_INTENT
+                            false -> 0
+                            null -> -1
+                        },
                     )
                     ConnectionMode.BLUETOOTH_HOST -> BluetoothTransport(context, keyAgreementProvider, BluetoothTransport.Role.HOST)
                     ConnectionMode.BLUETOOTH_CLIENT -> {
-                        val address = peerAddress ?: _uiState.value.selectedDeviceAddress
+                        val address = request.peerAddress ?: _uiState.value.selectedDeviceAddress
                         if (address.isNullOrBlank()) {
-                            _uiState.update { it.copy(notice = UserNotice.PleaseSelectDevice) }
+                            _uiState.update { it.copy(notice = UserNotice.PleaseSelectDevice, reconnecting = false) }
                             return@launch
                         }
-                        BluetoothTransport(context, keyAgreementProvider, BluetoothTransport.Role.CLIENT, address, peerName)
+                        BluetoothTransport(context, keyAgreementProvider, BluetoothTransport.Role.CLIENT, address, request.peerName)
                     }
 
                 }
@@ -679,16 +743,52 @@ class MainViewModel @Inject constructor(
                 // Pass a 2-minute timeout since P2P setup involves manual user discovery and pairing
                 newTransport.connect(120_000)
             } catch (e: Exception) {
-                _uiState.update { it.copy(notice = UserNotice.ConnectionFailed(e.message)) }
+                _uiState.update { it.copy(notice = UserNotice.ConnectionFailed(e.message), reconnecting = false) }
             }
         }
     }
 
+    /**
+     * Retries [lastConnectRequest] with backoff after the transport drops CONNECTED
+     * without the operator asking to disconnect. Not used for an initial connection
+     * attempt that never reached CONNECTED -- the transport's own openLink() retry loop
+     * already spends its whole timeout budget on that, so a second layer of retries on
+     * top would just repeat the same failure. See [WifiDirectTransport] / [BluetoothTransport].
+     */
+    private fun scheduleReconnect() {
+        val request = lastConnectRequest ?: return
+        reconnectAttempts++
+        if (reconnectAttempts > MAX_RECONNECT_ATTEMPTS) {
+            AppLog.w("MainViewModel", "Giving up reconnecting after $MAX_RECONNECT_ATTEMPTS attempts")
+            _uiState.update { it.copy(reconnecting = false) }
+            return
+        }
+        val delayMs = (RECONNECT_BASE_DELAY_MS shl (reconnectAttempts - 1).coerceAtMost(4))
+            .coerceAtMost(RECONNECT_MAX_DELAY_MS)
+        AppLog.d("MainViewModel", "Connection dropped; reconnect attempt $reconnectAttempts in ${delayMs}ms")
+        _uiState.update { it.copy(reconnecting = true, reconnectAttempt = reconnectAttempts) }
+        reconnectJob = viewModelScope.launch {
+            delay(delayMs)
+            if (userInitiatedDisconnect.get()) return@launch
+            performConnect(request)
+        }
+    }
+
     fun disconnect() {
+        userInitiatedDisconnect.set(true)
+        reconnectJob?.cancel()
+        reconnectJob = null
         transport?.disconnect()
         // Keep the last transport attached so session counters remain visible.
         _uiState.update {
-            it.copy(pairingConfirmed = false, pairingInfo = null, peerProfile = null, radioPeerName = null)
+            it.copy(
+                pairingConfirmed = false,
+                pairingInfo = null,
+                peerProfile = null,
+                radioPeerName = null,
+                reconnecting = false,
+                reconnectAttempt = 0,
+            )
         }
     }
 
@@ -706,9 +806,19 @@ class MainViewModel @Inject constructor(
     }
 
     fun dismissPairing() {
+        userInitiatedDisconnect.set(true)
+        reconnectJob?.cancel()
+        reconnectJob = null
         transport?.disconnect()
         _uiState.update {
-            it.copy(pairingInfo = null, pairingConfirmed = false, peerProfile = null, radioPeerName = null)
+            it.copy(
+                pairingInfo = null,
+                pairingConfirmed = false,
+                peerProfile = null,
+                radioPeerName = null,
+                reconnecting = false,
+                reconnectAttempt = 0,
+            )
         }
     }
 
@@ -1028,6 +1138,10 @@ class MainViewModel @Inject constructor(
     companion object {
         private const val MAX_DEFERRED_NORMAL = 8
         private const val PEER_THUMB_FILE = "peer-avatar.jpg"
+
+        private const val MAX_RECONNECT_ATTEMPTS = 5
+        private const val RECONNECT_BASE_DELAY_MS = 2_000L
+        private const val RECONNECT_MAX_DELAY_MS = 30_000L
     }
 
     private fun handleQueuedInbound(packet: Packet) {

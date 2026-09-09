@@ -58,8 +58,8 @@ fun RadarScreen(
 ) {
     val radar by radarViewModel.uiState.collectAsState()
     val main by mainViewModel.uiState.collectAsState()
-    val canJoin = main.connectionState == ConnectionState.DISCONNECTED ||
-        main.connectionState == ConnectionState.FAILED
+    val canJoin = (main.connectionState == ConnectionState.DISCONNECTED ||
+        main.connectionState == ConnectionState.FAILED) && !main.reconnecting
 
     var selectedPeer by remember { mutableStateOf<NearbyPeer?>(null) }
 
@@ -136,9 +136,18 @@ fun RadarScreen(
                         val useBluetooth = peer.hasBluetooth && (radar.filter == RadarFilter.BOTH || radar.filter == RadarFilter.BLUETOOTH)
                         
                         if (useWifi) {
-                            // For Wi-Fi Direct, both devices should act as CLIENT. Android will natively negotiate the Group Owner.
+                            // Both devices act as CLIENT and let Wi-Fi Direct negotiate the
+                            // Group Owner -- but an unbiased negotiation is a coin flip that
+                            // sometimes needs a retry (see WifiDirectTransport). isHost is
+                            // computed identically on both handsets from the same two names,
+                            // so passing it as preferGroupOwner makes exactly one side win on
+                            // the first attempt instead of leaving it to chance.
                             mainViewModel.setConnectionMode(`in`.gov.itantra.ui.ConnectionMode.WIFI_DIRECT_CLIENT)
-                            mainViewModel.connect(peerAddress = peer.wifiAddress, preferredWifiAddress = peer.wifiAddress)
+                            mainViewModel.connect(
+                                peerAddress = peer.wifiAddress,
+                                preferredWifiAddress = peer.wifiAddress,
+                                preferGroupOwner = isHost,
+                            )
                         } else if (useBluetooth) {
                             val addr = peer.bluetoothAddress ?: ""
                             if (isHost) {
@@ -154,8 +163,27 @@ fun RadarScreen(
                     modifier = Modifier.fillMaxSize().padding(16.dp),
                 )
 
-                when (main.connectionState) {
-                    ConnectionState.CONNECTED -> {
+                when {
+                    main.reconnecting -> {
+                        Box(
+                            modifier = Modifier
+                                .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.8f), RoundedCornerShape(8.dp))
+                                .padding(12.dp)
+                        ) {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Text(
+                                    "Reconnecting… (attempt ${main.reconnectAttempt})",
+                                    color = MaterialTheme.colorScheme.primary,
+                                    style = MaterialTheme.typography.labelMedium
+                                )
+                                Spacer(Modifier.height(8.dp))
+                                Button(onClick = { mainViewModel.disconnect() }) {
+                                    Text("Cancel")
+                                }
+                            }
+                        }
+                    }
+                    main.connectionState == ConnectionState.CONNECTED -> {
                         Box(
                             modifier = Modifier
                                 .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.8f), RoundedCornerShape(8.dp))
@@ -168,7 +196,7 @@ fun RadarScreen(
                             )
                         }
                     }
-                    ConnectionState.DISCOVERING, ConnectionState.HANDSHAKING -> {
+                    main.connectionState == ConnectionState.DISCOVERING || main.connectionState == ConnectionState.HANDSHAKING -> {
                         Box(
                             modifier = Modifier
                                 .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.8f), RoundedCornerShape(8.dp))

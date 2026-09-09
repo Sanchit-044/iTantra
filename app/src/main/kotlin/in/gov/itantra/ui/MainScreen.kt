@@ -93,19 +93,21 @@ fun MainScreen(
             }
 
             // Connection Status Card
+            val canReconnectManually = !uiState.reconnecting &&
+                (uiState.connectionState == ConnectionState.DISCONNECTED || uiState.connectionState == ConnectionState.FAILED)
             Card(
                 modifier = Modifier
                     .fillMaxWidth()
                     .clickable {
-                        if (uiState.connectionState == ConnectionState.DISCONNECTED || uiState.connectionState == ConnectionState.FAILED) {
+                        if (canReconnectManually) {
                             showConnectionSheet = true
                         } else {
                             viewModel.disconnect()
                         }
                     },
                 colors = CardDefaults.cardColors(
-                    containerColor = if (uiState.connectionState == ConnectionState.CONNECTED) 
-                        MaterialTheme.colorScheme.secondaryContainer 
+                    containerColor = if (uiState.connectionState == ConnectionState.CONNECTED)
+                        MaterialTheme.colorScheme.secondaryContainer
                     else MaterialTheme.colorScheme.surfaceVariant
                 ),
                 shape = RoundedCornerShape(16.dp)
@@ -122,20 +124,24 @@ fun MainScreen(
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                         Text(
-                            text = uiState.connectionState.name,
+                            text = if (uiState.reconnecting) {
+                                "RECONNECTING (${uiState.reconnectAttempt})"
+                            } else {
+                                uiState.connectionState.name
+                            },
                             style = MaterialTheme.typography.titleMedium,
-                            color = if (uiState.connectionState == ConnectionState.CONNECTED) 
-                                MaterialTheme.colorScheme.onSecondaryContainer 
+                            color = if (uiState.connectionState == ConnectionState.CONNECTED)
+                                MaterialTheme.colorScheme.onSecondaryContainer
                             else MaterialTheme.colorScheme.onSurface
                         )
                     }
-                    if (uiState.connectionState == ConnectionState.DISCONNECTED || uiState.connectionState == ConnectionState.FAILED) {
+                    if (canReconnectManually) {
                         Button(onClick = { showConnectionSheet = true }) {
                             Text(chrome.connect)
                         }
                     } else {
                         OutlinedButton(onClick = { viewModel.disconnect() }) {
-                            Text(chrome.disconnect)
+                            Text(if (uiState.reconnecting) "Cancel" else chrome.disconnect)
                         }
                     }
                 }
