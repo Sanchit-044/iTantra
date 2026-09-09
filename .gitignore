@@ -11,6 +11,8 @@ local.properties
 *.dex
 captures/
 .cxx/
+keystore
+app/release/
 
 # Bundled model assets are large binaries and are provisioned separately.
 # See docs/BUILD.md. Keep the directory structure and READMEs.
