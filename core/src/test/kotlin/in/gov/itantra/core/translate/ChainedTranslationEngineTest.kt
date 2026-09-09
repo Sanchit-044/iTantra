@@ -9,12 +9,14 @@ class ChainedTranslationEngineTest {
     private class StubEngine(
         override val isAvailable: Boolean,
         private val result: String? = null,
+        private val runtimeCrash: Boolean = false,
     ) : TranslationEngine {
         var called = false
             private set
 
         override fun translate(text: String, source: Language, target: Language): String {
             called = true
+            if (runtimeCrash) throw RuntimeException("ONNX native crash simulation")
             return result
                 ?: throw TranslationUnavailableException("StubEngine: not available")
         }
@@ -130,5 +132,42 @@ class ChainedTranslationEngineTest {
         )
         assertEquals("আমার সাহায্য দরকার", result)
         assertFalse("ONNX stub should not be called", onnxStub.called)
+    }
+
+    @Test
+    fun `falls back when first engine throws RuntimeException`() {
+        val crashingEngine = StubEngine(isAvailable = true, runtimeCrash = true)
+        val fallback = StubEngine(isAvailable = true, result = "recovered")
+        val chained = ChainedTranslationEngine(listOf(crashingEngine, fallback))
+
+        val result = chained.translate("text", Language.HINDI, Language.BENGALI)
+
+        assertEquals("recovered", result)
+        assertTrue(crashingEngine.called)
+        assertTrue(fallback.called)
+    }
+
+    @Test(expected = TranslationUnavailableException::class)
+    fun `wraps RuntimeException as TranslationUnavailableException when all fail`() {
+        val crashingEngine = StubEngine(isAvailable = true, runtimeCrash = true)
+        val chained = ChainedTranslationEngine(listOf(crashingEngine))
+
+        chained.translate("text", Language.HINDI, Language.BENGALI)
+    }
+
+    @Test
+    fun `exception message includes details when RuntimeException wraps`() {
+        val crashingEngine = StubEngine(isAvailable = true, runtimeCrash = true)
+        val chained = ChainedTranslationEngine(listOf(crashingEngine))
+
+        try {
+            chained.translate("text", Language.HINDI, Language.BENGALI)
+            fail("Expected TranslationUnavailableException")
+        } catch (e: TranslationUnavailableException) {
+            assertTrue(
+                "Message should mention ONNX crash: ${e.message}",
+                e.message!!.contains("ONNX native crash simulation"),
+            )
+        }
     }
 }

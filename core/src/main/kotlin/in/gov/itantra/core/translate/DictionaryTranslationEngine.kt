@@ -26,10 +26,13 @@ class DictionaryTranslationEngine(
     }
 
     companion object {
+        private val PUNCTUATION_RE = Regex("[।.,!?\"'\\(\\)\\-:;]")
+        private val WHITESPACE_RE = Regex("\\s+")
+
         fun normalize(text: String): String =
             text.lowercase()
-                .replace(Regex("[।.,!?\"'\\(\\)]"), "")
-                .replace(Regex("\\s+"), " ")
+                .replace(PUNCTUATION_RE, "")
+                .replace(WHITESPACE_RE, " ")
                 .trim()
 
         private val CONCEPTS: List<Map<Language, String>> = listOf(

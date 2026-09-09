@@ -46,6 +46,7 @@ class IndicTransOnnxTranslationEngine(
     private val context: Context,
 ) : TranslationEngine, AutoCloseable {
 
+    private val lock = Any()
     private var encoderSession: OrtSession? = null
     private var decoderSession: OrtSession? = null
     private var tokenizer: BpeTokenizer? = null
@@ -65,10 +66,13 @@ class IndicTransOnnxTranslationEngine(
         if (source == target) return text
         if (text.isBlank()) return text
 
-        ensureLoaded()
-        val tok = tokenizer ?: throw TranslationUnavailableException("Tokenizer not loaded")
-        val enc = encoderSession ?: throw TranslationUnavailableException("Encoder not loaded")
-        val dec = decoderSession ?: throw TranslationUnavailableException("Decoder not loaded")
+        val (tok, enc, dec) = synchronized(lock) {
+            ensureLoaded()
+            val t = tokenizer ?: throw TranslationUnavailableException("Tokenizer not loaded")
+            val e = encoderSession ?: throw TranslationUnavailableException("Encoder not loaded")
+            val d = decoderSession ?: throw TranslationUnavailableException("Decoder not loaded")
+            Triple(t, e, d)
+        }
 
         val tgtLangId = tok.langTagId(BpeTokenizer.floresToCode(target))
             ?: throw TranslationUnavailableException(
@@ -108,7 +112,7 @@ class IndicTransOnnxTranslationEngine(
 
     // ---- Model loading ----
 
-    @Synchronized
+    /** Must be called inside synchronized(lock). */
     private fun ensureLoaded() {
         if (loaded) return
         loadModels()
@@ -213,15 +217,30 @@ class IndicTransOnnxTranslationEngine(
             }
 
             val result = session.run(inputs)
-            val outputName = session.outputNames.firstOrNull()
-                ?: throw TranslationUnavailableException("Encoder has no output")
+            try {
+                val outputName = session.outputNames.firstOrNull()
+                    ?: throw TranslationUnavailableException("Encoder has no output")
 
-            val hidden = result[outputName].get()
-            return if (hidden is OnnxTensor) {
-                hidden
-            } else {
-                AppLog.e(TAG, "Unexpected encoder output type: ${hidden?.javaClass}")
-                null
+                val hidden = result[outputName].get()
+                if (hidden is OnnxTensor) {
+                    // Clone the tensor data so we can safely close the Result.
+                    // OrtSession.Result owns the native memory of all its outputs;
+                    // we must copy before closing, or the tensor becomes dangling.
+                    val shape = (hidden.info as ai.onnxruntime.TensorInfo).shape
+                    val floatData = hidden.floatBuffer
+                    val copy = FloatArray(floatData.remaining())
+                    floatData.get(copy)
+                    return OnnxTensor.createTensor(
+                        env,
+                        java.nio.FloatBuffer.wrap(copy),
+                        shape,
+                    )
+                } else {
+                    AppLog.e(TAG, "Unexpected encoder output type: ${hidden?.javaClass}")
+                    return null
+                }
+            } finally {
+                result.close()
             }
         } catch (e: TranslationUnavailableException) {
             throw e
@@ -278,19 +297,22 @@ class IndicTransOnnxTranslationEngine(
                         inputNames, decoderTensor, encoderHidden, encoderMask,
                     )
                     val result = session.run(inputs)
+                    try {
+                        val logits = extractLogits(result)
+                        if (logits == null) {
+                            AppLog.e(TAG, "Decoder returned no logits at step $step")
+                            break
+                        }
 
-                    val logits = extractLogits(result)
-                    if (logits == null) {
-                        AppLog.e(TAG, "Decoder returned no logits at step $step")
-                        break
+                        val lastLogits = lastTimeStep(logits)
+                        val nextToken = argmax(lastLogits)
+
+                        if (nextToken == tok.eosId || nextToken == tok.padId) break
+
+                        generatedIds += nextToken
+                    } finally {
+                        result.close()
                     }
-
-                    val lastLogits = lastTimeStep(logits)
-                    val nextToken = argmax(lastLogits)
-
-                    if (nextToken == tok.eosId || nextToken == tok.padId) break
-
-                    generatedIds += nextToken
                 } finally {
                     decoderTensor.close()
                 }
@@ -382,12 +404,14 @@ class IndicTransOnnxTranslationEngine(
     // ---- Cleanup ----
 
     override fun close() {
-        encoderSession?.close()
-        decoderSession?.close()
-        encoderSession = null
-        decoderSession = null
-        tokenizer = null
-        loaded = false
+        synchronized(lock) {
+            encoderSession?.close()
+            decoderSession?.close()
+            encoderSession = null
+            decoderSession = null
+            tokenizer = null
+            loaded = false
+        }
     }
 
     private companion object {

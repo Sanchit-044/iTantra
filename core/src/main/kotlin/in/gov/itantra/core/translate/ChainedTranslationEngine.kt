@@ -29,7 +29,7 @@ class ChainedTranslationEngine(
     override fun translate(text: String, source: Language, target: Language): String {
         if (source == target) return text
 
-        var lastException: TranslationUnavailableException? = null
+        var lastException: Exception? = null
 
         for (engine in delegates) {
             if (!engine.isAvailable) continue
@@ -40,13 +40,21 @@ class ChainedTranslationEngine(
             } catch (e: TranslationUnavailableException) {
                 AppLog.d(TAG, "${engine.javaClass.simpleName} unavailable: ${e.message}")
                 lastException = e
+            } catch (e: Exception) {
+                AppLog.e(TAG, "${engine.javaClass.simpleName} crashed: ${e.message}", e)
+                lastException = e
             }
         }
 
-        throw lastException
-            ?: TranslationUnavailableException(
+        throw when (lastException) {
+            is TranslationUnavailableException -> lastException
+            null -> TranslationUnavailableException(
                 "No translation engine available for ${source.englishName} → ${target.englishName}"
             )
+            else -> TranslationUnavailableException(
+                "Translation failed for ${source.englishName} → ${target.englishName}: ${lastException.message}"
+            )
+        }
     }
 
     private companion object {

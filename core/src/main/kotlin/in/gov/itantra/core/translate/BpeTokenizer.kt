@@ -84,11 +84,18 @@ class BpeTokenizer private constructor(
 
     // ---- Pre-tokenization: split on whitespace, add ▁ word-boundary markers ----
 
+    /**
+     * Split text into words with SentencePiece `▁` boundary markers.
+     *
+     * SentencePiece convention: `▁` is prepended to **every** word including the
+     * first. This makes the first token different from the same word appearing
+     * mid-sentence (e.g. `▁Hello` vs `▁world`), which is how the BPE vocabulary
+     * was trained. Skipping the first `▁` would mis-align every input.
+     */
     private fun preTokenize(text: String): List<List<String>> {
         val words = text.trim().split(WHITESPACE_RE)
-        return words.filter { it.isNotEmpty() }.mapIndexed { index, word ->
-            val marked = if (index == 0) "$SPACE_MARKER$word" else "$SPACE_MARKER$word"
-            marked.map { it.toString() }
+        return words.filter { it.isNotEmpty() }.map { word ->
+            "$SPACE_MARKER$word".map { it.toString() }
         }
     }
 

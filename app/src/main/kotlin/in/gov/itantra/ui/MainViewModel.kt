@@ -492,14 +492,23 @@ class MainViewModel @Inject constructor(
                                 senderName = senderName,
                             )
                             is AlertContent.Custom -> {
-                                val translatedText = translationEngine.translateOrSame(
-                                    content.text,
-                                    packet.language,
-                                    currentLang,
-                                )
+                                val (translatedText, playLang) = try {
+                                    val translated = translationEngine.translateOrSame(
+                                        content.text,
+                                        packet.language,
+                                        currentLang,
+                                    )
+                                    translated to currentLang
+                                } catch (e: Exception) {
+                                    AppLog.w(
+                                        "MainViewModel",
+                                        "Alert translation failed (${e.message}) — playing original in ${packet.language.code}",
+                                    )
+                                    content.text to packet.language
+                                }
                                 IncomingAlert(
                                     content = AlertContent.Custom(translatedText),
-                                    language = currentLang,
+                                    language = playLang,
                                     sequence = packet.sequence,
                                     receivedAtMs = System.currentTimeMillis(),
                                     senderName = senderName,
@@ -943,10 +952,24 @@ class MainViewModel @Inject constructor(
         viewModelScope.launch(Dispatchers.IO) {
             _uiState.update { it.copy(playingInboxId = id, notice = null) }
             try {
-                receivePttUseCase.execute(
-                    Packet.text(MessageType.NORMAL, item.language, 0, item.text),
-                    _uiState.value.currentLanguage
-                )
+                val currentLang = _uiState.value.currentLanguage
+                val (playText, playLang) = if (item.language == currentLang) {
+                    item.text to currentLang
+                } else {
+                    try {
+                        val translated = translationEngine.translateOrSame(
+                            item.text, item.language, currentLang,
+                        )
+                        translated to currentLang
+                    } catch (e: Exception) {
+                        AppLog.w(
+                            "MainViewModel",
+                            "Inbox translation failed (${e.message}) — playing original in ${item.language.code}",
+                        )
+                        item.text to item.language
+                    }
+                }
+                receivePttUseCase.playText(playText, playLang)
                 inbox.markRead(id)
             } catch (e: Exception) {
                 _uiState.update { it.copy(notice = UserNotice.PlaybackError(e.message)) }
