@@ -586,12 +586,12 @@ class VitsTokenizer(
                 "ReceivePttUseCase",
                 "Loaded vocab from $assetPath with ${map.size} symbols, " +
                     "padId=${json.optLong("pad_id", 0L)}, " +
-                    "interleavePad=${json.optBoolean("interleave_pad", false)}",
+                    "interleavePad=${json.optBoolean("interleave_pad", true)}",
             )
             return VitsTokenizer(
                 symbolToId = map,
                 padId = json.optLong("pad_id", 0L),
-                interleavePad = json.optBoolean("interleave_pad", false),
+                interleavePad = json.optBoolean("interleave_pad", true),
             )
         }
     }

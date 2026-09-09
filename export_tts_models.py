@@ -97,9 +97,11 @@ if __name__ == "__main__":
     # We will use Meta's MMS TTS models which are built into HuggingFace Transformers,
     # based on the VITS architecture, and use graphemes (characters) instead of phonemes!
     LANGUAGES = {
-        "hi": "facebook/mms-tts-hin",
-        "bn": "facebook/mms-tts-ben",
-        "en": "facebook/mms-tts-eng"
+        "ta": "facebook/mms-tts-tam",
+        "kn": "facebook/mms-tts-kan",
+        "ml": "facebook/mms-tts-mal",
+        "te": "facebook/mms-tts-tel",
+        "or": "facebook/mms-tts-ory"
     }
 
     print("Starting automated TTS model extraction for all 10 languages...\n")

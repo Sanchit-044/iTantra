@@ -5,6 +5,10 @@ from onnxruntime.quantization import quantize_dynamic, QuantType
 import os
 import shutil
 from huggingface_hub import hf_hub_download
+from huggingface_hub import login
+# Token should be provided via environment variable:
+# $env:HF_TOKEN="your_token"
+# login(token=os.environ.get("HF_TOKEN"))
 
 # Ensure the output directory exists
 os.makedirs("app/src/main/assets/models/stt/onnx", exist_ok=True)
@@ -66,7 +70,9 @@ def export_stt_model(hf_repo_id, lang_code):
 if __name__ == "__main__":
     # The 10 official languages as per iTantra requirements
     LANGUAGES = {
-        "bn": "ai4bharat/indicwav2vec_v1_bengali"
+        "kn": "amoghsgopadi/wav2vec2-large-xlsr-kn",
+        "ml": "gvs/wav2vec2-large-xlsr-malayalam",
+        "te": "anuragshas/wav2vec2-large-xlsr-53-telugu"
     }
 
     print("Starting automated STT model extraction for all 10 languages...\n")

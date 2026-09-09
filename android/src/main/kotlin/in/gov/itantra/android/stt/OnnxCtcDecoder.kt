@@ -364,7 +364,7 @@ class CtcVocabulary(
     fun greedyDecode(logits: Array<FloatArray>): String = decode(logits)
 
     companion object {
-        private val SPECIAL_TOKENS = setOf("<pad>", "<s>", "</s>", "<unk>")
+        private val SPECIAL_TOKENS = setOf("<pad>", "<s>", "</s>", "<unk>", "[PAD]", "[UNK]", "[CLS]", "[SEP]")
 
         /**
          * Beam width for CTC prefix beam search.
@@ -413,7 +413,7 @@ class CtcVocabulary(
             val table = Array(size) { "" }
             for ((token, id) in pairs) table[id] = token
 
-            val blankId = pairs.firstOrNull { it.first == "<pad>" }?.second ?: 0
+            val blankId = pairs.firstOrNull { it.first == "<pad>" || it.first == "[PAD]" }?.second ?: 0
             return CtcVocabulary(table, blankId)
         }
     }

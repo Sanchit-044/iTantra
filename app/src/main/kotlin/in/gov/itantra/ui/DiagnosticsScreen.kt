@@ -158,12 +158,9 @@ private fun TransportCard(snap: DiagnosticsSnapshot) {
 private fun SystemCard(snap: DiagnosticsSnapshot) {
     val sys = snap.system
     MetricCard("System") {
-        MetricRow("App RAM", formatMb(sys.appMemoryBytes))
-        MetricRow("Model RAM loaded", formatMb(sys.modelRamBytes))
         MetricRow("CPU", formatCpu(sys.cpuLoad))
         MetricRow("Device", sys.deviceModel ?: "—")
         MetricRow("Android", sys.androidVersion ?: "—")
-        MetricRow("APK size", formatMb(sys.apkSizeBytes))
     }
 }
 
