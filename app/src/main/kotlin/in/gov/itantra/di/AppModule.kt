@@ -128,7 +128,7 @@ object AppModule {
     @Provides
     @Singleton
     fun provideLanguagePackManager(@ApplicationContext context: Context): LanguagePackManager {
-        return LocalLanguagePackManager(context)
+        return LocalLanguagePackManager(context, baseUrl = `in`.gov.itantra.BuildConfig.MODEL_PACK_BASE_URL)
     }
 
     @Provides

@@ -26,6 +26,15 @@ android {
             // Drop x86/x86_64 to save tens of MBs from ONNX native libs
             abiFilters += listOf("arm64-v8a", "armeabi-v7a")
         }
+
+        // Where LocalLanguagePackManager downloads the nine non-bundled language packs
+        // from (see model-host/README.md at the repo root) -- empty means "bundled
+        // Hindi only, no network fetch," which is the safe default for a clean clone.
+        // Override per machine/demo with -PmodelPackBaseUrl=http://<lan-ip>:8000
+        // (e.g. `python -m http.server 8000` run from model-host/) rather than editing
+        // this file, so nobody accidentally commits a demo laptop's LAN IP.
+        val modelPackBaseUrl = (project.findProperty("modelPackBaseUrl") as? String).orEmpty()
+        buildConfigField("String", "MODEL_PACK_BASE_URL", "\"$modelPackBaseUrl\"")
     }
 
     buildTypes {
@@ -38,6 +47,7 @@ android {
 
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 
     compileOptions {
