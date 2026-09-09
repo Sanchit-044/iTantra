@@ -4,6 +4,7 @@ import android.content.Context
 import `in`.gov.itantra.core.Language
 import `in`.gov.itantra.core.pack.LanguagePackManager
 import `in`.gov.itantra.core.pack.PackProgress
+import `in`.gov.itantra.core.pack.PackState
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -15,6 +16,9 @@ import java.net.URL
  * and always writes a `.ready` marker so the UI can record the user's selection
  * even before ONNX weights are dropped in.
  *
+ * A marker on its own reports [PackState.PLACEHOLDER], never [PackState.READY]:
+ * the selection is remembered, but the caller is told speech cannot run yet.
+ *
  * [baseUrl] empty (the default) means no network fetch — only assets + markers.
  */
 class LocalLanguagePackManager(
@@ -22,15 +26,26 @@ class LocalLanguagePackManager(
     private val baseUrl: String = "",
 ) : LanguagePackManager {
 
-    override fun isLanguagePackReady(language: Language): Boolean {
-        val marker = LanguagePackPaths.languageMarker(context, language)
-        val model = LanguagePackPaths.sttModel(context, language)
-        return marker.exists() || model.exists()
+    override fun packState(language: Language): PackState {
+        val weights = listOf(
+            LanguagePackPaths.sttModel(context, language),
+            LanguagePackPaths.ttsModel(context, language),
+        )
+        return when {
+            weights.all { it.isFile && it.length() > 0L } -> PackState.READY
+            LanguagePackPaths.languageMarker(context, language).exists() -> PackState.PLACEHOLDER
+            else -> PackState.MISSING
+        }
     }
 
-    override fun isTranslationReady(): Boolean =
-        LanguagePackPaths.translationMarker(context).exists() ||
-            LanguagePackPaths.translationModel(context).exists()
+    override fun translationState(): PackState {
+        val model = LanguagePackPaths.translationModel(context)
+        return when {
+            model.isFile && model.length() > 0L -> PackState.READY
+            LanguagePackPaths.translationMarker(context).exists() -> PackState.PLACEHOLDER
+            else -> PackState.MISSING
+        }
+    }
 
     override suspend fun install(
         languages: Set<Language>,

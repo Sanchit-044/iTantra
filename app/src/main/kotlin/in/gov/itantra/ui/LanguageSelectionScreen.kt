@@ -138,6 +138,17 @@ fun LanguageSelectionScreen(
             Text(text = progress.message, style = MaterialTheme.typography.bodySmall)
         }
 
+        if (uiState.placeholders.isNotEmpty()) {
+            Text(
+                text = chrome.packsPlaceholder(
+                    uiState.placeholders.sortedBy { it.wire }.map(Language::endonym),
+                ),
+                color = MaterialTheme.colorScheme.error,
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.padding(top = 8.dp),
+            )
+        }
+
         uiState.error?.let { error ->
             Text(
                 text = error,

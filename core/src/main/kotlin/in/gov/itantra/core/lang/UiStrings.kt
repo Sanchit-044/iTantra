@@ -16,6 +16,7 @@ data class UiStrings(
     val back: String,
     val defaultHint: String,
     val couldNotSave: String,
+    val packsPlaceholderTemplate: String,
     val appLanguageTitle: String,
     val appLanguageBody: String,
     val speechCurrentTitle: String,
@@ -110,6 +111,10 @@ data class UiStrings(
     fun queueSendFailed(detail: String?): String =
         queueSendFailedTemplate.replace("{detail}", detail?.takeIf { it.isNotBlank() } ?: "—")
 
+    /** Names the languages whose weights are missing, in their own script. */
+    fun packsPlaceholder(languages: List<String>): String =
+        packsPlaceholderTemplate.replace("{languages}", languages.joinToString(", "))
+
     fun genericError(detail: String?): String =
         errorTemplate.replace("{detail}", detail?.takeIf { it.isNotBlank() } ?: "—")
 
@@ -129,6 +134,7 @@ data class UiStrings(
         "back" to back,
         "defaultHint" to defaultHint,
         "couldNotSave" to couldNotSave,
+        "packsPlaceholderTemplate" to packsPlaceholderTemplate,
         "appLanguageTitle" to appLanguageTitle,
         "appLanguageBody" to appLanguageBody,
         "speechCurrentTitle" to speechCurrentTitle,
@@ -212,6 +218,7 @@ private val ENGLISH = UiStrings(
     back = "Back",
     defaultHint = "default",
     couldNotSave = "Could not save languages",
+    packsPlaceholderTemplate = "Speech models are not installed for {languages}. Your choice is saved, but speaking and playback stay off for those languages until the packs are added.",
     appLanguageTitle = "Show the app in",
     appLanguageBody = "Menus and buttons use this language. Speaking still uses Active. English does not need a speech pack.",
     speechCurrentTitle = "Active (speak and listen)",
@@ -287,6 +294,7 @@ private val HINDI = ENGLISH.copy(
     back = "वापस",
     defaultHint = "डिफ़ॉल्ट",
     couldNotSave = "भाषाएँ सहेजी नहीं जा सकीं",
+    packsPlaceholderTemplate = "{languages} के लिए स्पीच मॉडल इंस्टॉल नहीं हैं। आपका चयन सहेज लिया गया है, पर पैक जुड़ने तक उन भाषाओं में बोलना और सुनना बंद रहेगा।",
     appLanguageTitle = "ऐप किस भाषा में दिखे",
     appLanguageBody = "मेनू और बटन इस भाषा में होंगे। बोलना अभी भी सक्रिय भाषा में होगा। अंग्रेज़ी के लिए स्पीच पैक ज़रूरी नहीं।",
     speechCurrentTitle = "सक्रिय (बोलना और सुनना)",
@@ -362,6 +370,7 @@ private val TAMIL = ENGLISH.copy(
     back = "பின்",
     defaultHint = "இயல்பு",
     couldNotSave = "மொழிகளைச் சேமிக்க முடியவில்லை",
+    packsPlaceholderTemplate = "{languages} மொழிகளுக்கான பேச்சு மாதிரிகள் நிறுவப்படவில்லை. உங்கள் தேர்வு சேமிக்கப்பட்டது, ஆனால் பேக்குகள் சேர்க்கப்படும் வரை அந்த மொழிகளில் பேசவும் கேட்கவும் இயலாது.",
     appLanguageTitle = "செயலியை காட்டும் மொழி",
     appLanguageBody = "பட்டிகளும் பொத்தான்களும் இந்த மொழியில். பேச்சு இன்னும் செயலில் உள்ள மொழியில். ஆங்கிலத்திற்கு பேச்சு தொகுப்பு தேவையில்லை.",
     speechCurrentTitle = "செயலில் (பேசவும் கேட்கவும்)",
@@ -437,6 +446,7 @@ private val BENGALI = ENGLISH.copy(
     back = "পিছনে",
     defaultHint = "ডিফল্ট",
     couldNotSave = "ভাষা সংরক্ষণ করা যায়নি",
+    packsPlaceholderTemplate = "{languages} এর জন্য স্পিচ মডেল ইনস্টল করা নেই। আপনার পছন্দ সংরক্ষিত হয়েছে, তবে প্যাক যোগ না হওয়া পর্যন্ত ওই ভাষাগুলিতে কথা বলা ও শোনা বন্ধ থাকবে।",
     appLanguageTitle = "অ্যাপ কোন ভাষায় দেখাবে",
     appLanguageBody = "মেনু ও বোতাম এই ভাষায়। কথা বলা এখনও সক্রিয় ভাষায়। ইংরেজির জন্য স্পিচ প্যাক লাগে না।",
     speechCurrentTitle = "সক্রিয় (বলা ও শোনা)",
@@ -521,6 +531,7 @@ private fun UiStrings.withEnglishFallback(): UiStrings {
         back = back.orEn(ENGLISH.back),
         defaultHint = defaultHint.orEn(ENGLISH.defaultHint),
         couldNotSave = couldNotSave.orEn(ENGLISH.couldNotSave),
+        packsPlaceholderTemplate = packsPlaceholderTemplate.orEn(ENGLISH.packsPlaceholderTemplate),
         appLanguageTitle = appLanguageTitle.orEn(ENGLISH.appLanguageTitle),
         appLanguageBody = appLanguageBody.orEn(ENGLISH.appLanguageBody),
         speechCurrentTitle = speechCurrentTitle.orEn(ENGLISH.speechCurrentTitle),
