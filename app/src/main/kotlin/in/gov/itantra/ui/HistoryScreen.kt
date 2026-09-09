@@ -18,6 +18,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import `in`.gov.itantra.core.lang.UiStrings
 import `in`.gov.itantra.data.history.HistoryMessage
 import `in`.gov.itantra.data.history.MessageDirection
 import `in`.gov.itantra.data.history.MessageStatus
@@ -29,6 +30,7 @@ import java.util.Locale
 @Composable
 fun HistoryScreen(
     onBack: () -> Unit,
+    chrome: UiStrings,
     viewModel: HistoryViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -37,18 +39,18 @@ fun HistoryScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Message History") },
+                title = { Text(chrome.historyTitle) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "Back")
+                        Icon(Icons.Default.ArrowBack, contentDescription = chrome.back)
                     }
                 },
                 actions = {
                     IconButton(onClick = { showFilterDialog = true }) {
-                        Icon(Icons.Default.FilterList, contentDescription = "Filter")
+                        Icon(Icons.Default.FilterList, contentDescription = chrome.filter)
                     }
                     IconButton(onClick = { viewModel.clearHistory() }) {
-                        Icon(Icons.Default.Delete, contentDescription = "Clear History")
+                        Icon(Icons.Default.Delete, contentDescription = chrome.clearHistory)
                     }
                 }
             )
@@ -84,7 +86,7 @@ fun HistoryScreen(
                             viewModel.setDirectionFilter(null)
                             viewModel.setStatusFilter(null)
                         }) {
-                            Text("Clear Filters")
+                            Text(chrome.clearFilters)
                         }
                     }
                 }
@@ -96,7 +98,7 @@ fun HistoryScreen(
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 items(uiState.messages) { msg ->
-                    HistoryMessageItem(msg)
+                    HistoryMessageItem(msg, chrome)
                 }
             }
         }
@@ -106,6 +108,7 @@ fun HistoryScreen(
         FilterDialog(
             currentDirection = uiState.directionFilter,
             currentStatus = uiState.statusFilter,
+            chrome = chrome,
             onApply = { dir, stat ->
                 viewModel.setDirectionFilter(dir)
                 viewModel.setStatusFilter(stat)
@@ -117,7 +120,7 @@ fun HistoryScreen(
 }
 
 @Composable
-fun HistoryMessageItem(msg: HistoryMessage) {
+fun HistoryMessageItem(msg: HistoryMessage, chrome: UiStrings) {
     val formatter = remember { SimpleDateFormat("MMM dd, HH:mm:ss", Locale.getDefault()) }
     val timeStr = formatter.format(Date(msg.timestampMs))
 
@@ -149,7 +152,11 @@ fun HistoryMessageItem(msg: HistoryMessage) {
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = if (msg.direction == MessageDirection.INBOUND) "Received from ${msg.peerName ?: "Unknown"}" else "Sent to ${msg.peerName ?: "All/Unknown"}",
+                    text = if (msg.direction == MessageDirection.INBOUND) {
+                        chrome.receivedFrom(msg.peerName ?: chrome.radiosUnknown)
+                    } else {
+                        chrome.sentTo(msg.peerName ?: chrome.allUnknown)
+                    },
                     style = MaterialTheme.typography.labelMedium,
                     fontWeight = FontWeight.Bold
                 )
@@ -191,7 +198,7 @@ fun HistoryMessageItem(msg: HistoryMessage) {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     if (msg.isAlert) {
                         Badge(containerColor = MaterialTheme.colorScheme.errorContainer, contentColor = MaterialTheme.colorScheme.onErrorContainer) {
-                            Text("ALERT", modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp))
+                            Text(chrome.alertBadge, modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp))
                         }
                     }
                     Badge(containerColor = MaterialTheme.colorScheme.secondaryContainer, contentColor = MaterialTheme.colorScheme.onSecondaryContainer) {
@@ -207,6 +214,7 @@ fun HistoryMessageItem(msg: HistoryMessage) {
 fun FilterDialog(
     currentDirection: MessageDirection?,
     currentStatus: MessageStatus?,
+    chrome: UiStrings,
     onApply: (MessageDirection?, MessageStatus?) -> Unit,
     onDismiss: () -> Unit
 ) {
@@ -215,49 +223,49 @@ fun FilterDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Filter History") },
+        title = { Text(chrome.filterHistoryTitle) },
         text = {
             Column {
-                Text("Direction", fontWeight = FontWeight.Bold)
+                Text(chrome.direction, fontWeight = FontWeight.Bold)
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
                     FilterChip(
                         selected = direction == MessageDirection.INBOUND,
                         onClick = { direction = if (direction == MessageDirection.INBOUND) null else MessageDirection.INBOUND },
-                        label = { Text("Inbound") }
+                        label = { Text(chrome.inbound) }
                     )
                     FilterChip(
                         selected = direction == MessageDirection.OUTBOUND,
                         onClick = { direction = if (direction == MessageDirection.OUTBOUND) null else MessageDirection.OUTBOUND },
-                        label = { Text("Outbound") }
+                        label = { Text(chrome.outbound) }
                     )
                 }
                 
                 Spacer(modifier = Modifier.height(16.dp))
                 
-                Text("Status", fontWeight = FontWeight.Bold)
+                Text(chrome.statusLabel, fontWeight = FontWeight.Bold)
                 Column {
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
                         FilterChip(
                             selected = status == MessageStatus.DELIVERED,
                             onClick = { status = if (status == MessageStatus.DELIVERED) null else MessageStatus.DELIVERED },
-                            label = { Text("Delivered") }
+                            label = { Text(chrome.delivered) }
                         )
                         FilterChip(
                             selected = status == MessageStatus.RECEIVED,
                             onClick = { status = if (status == MessageStatus.RECEIVED) null else MessageStatus.RECEIVED },
-                            label = { Text("Received") }
+                            label = { Text(chrome.received) }
                         )
                     }
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
                         FilterChip(
                             selected = status == MessageStatus.QUEUED,
                             onClick = { status = if (status == MessageStatus.QUEUED) null else MessageStatus.QUEUED },
-                            label = { Text("Queued") }
+                            label = { Text(chrome.queuedLabel) }
                         )
                         FilterChip(
                             selected = status == MessageStatus.FAILED,
                             onClick = { status = if (status == MessageStatus.FAILED) null else MessageStatus.FAILED },
-                            label = { Text("Failed") }
+                            label = { Text(chrome.failedLabel) }
                         )
                     }
                 }
@@ -265,12 +273,12 @@ fun FilterDialog(
         },
         confirmButton = {
             TextButton(onClick = { onApply(direction, status) }) {
-                Text("Apply")
+                Text(chrome.apply)
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("Cancel")
+                Text(chrome.cancel)
             }
         }
     )

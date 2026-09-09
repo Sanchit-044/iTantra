@@ -1,26 +1,26 @@
 package `in`.gov.itantra.core.alert
 
 import `in`.gov.itantra.core.Language
-import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNotNull
-import org.junit.Assert.assertNull
-import org.junit.Test
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 
 class AlertCodecTest {
 
     @Test
     fun testBleEncodingDecoding_Template() {
         val originalLanguage = Language.TAMIL
-        val originalContent = AlertContent.Template(AlertTemplate.NEED_MEDICAL_HELP)
+        val originalContent = AlertContent.Template(AlertTemplate.MEDICAL_HELP)
         val originalSequence = 42L
 
         val encoded = AlertCodec.encodeBlePayload(originalLanguage, originalContent, originalSequence)
-        assertNotNull("Encoded payload should not be null for templates", encoded)
-        assertEquals("Encoded BLE payload should be exactly 3 bytes", 3, encoded!!.size)
+        assertNotNull(encoded, "Encoded payload should not be null for templates")
+        assertEquals(3, encoded.size, "Encoded BLE payload should be exactly 3 bytes")
 
         val decoded = AlertCodec.decodeBlePayload(encoded)
-        assertNotNull("Decoded alert should not be null", decoded)
-        assertEquals(originalLanguage, decoded!!.language)
+        assertNotNull(decoded, "Decoded alert should not be null")
+        assertEquals(originalLanguage, decoded.language)
         assertEquals(originalContent, decoded.content)
         assertEquals(originalSequence.toInt(), decoded.sequence)
     }
@@ -29,7 +29,7 @@ class AlertCodecTest {
     fun testBleEncoding_CustomAlert_Fails() {
         val content = AlertContent.Custom("This is a test alert that is too long for BLE")
         val encoded = AlertCodec.encodeBlePayload(Language.ENGLISH, content, 1L)
-        assertNull("Custom alerts should return null since they do not fit in BLE", encoded)
+        assertNull(encoded, "Custom alerts should return null since they do not fit in BLE")
     }
 
     @Test
@@ -44,8 +44,8 @@ class AlertCodecTest {
         assertEquals("tpl:evacuate", encoded["payload"])
 
         val decoded = AlertCodec.decodeWifiPayload(encoded)
-        assertNotNull("Decoded Wi-Fi alert should not be null", decoded)
-        assertEquals(originalLanguage, decoded!!.language)
+        assertNotNull(decoded, "Decoded Wi-Fi alert should not be null")
+        assertEquals(originalLanguage, decoded.language)
         assertEquals(originalContent, decoded.content)
         assertEquals(originalSequence.toInt(), decoded.sequence)
     }
@@ -63,7 +63,7 @@ class AlertCodecTest {
 
         val decoded = AlertCodec.decodeWifiPayload(encoded)
         assertNotNull(decoded)
-        assertEquals(originalLanguage, decoded!!.language)
+        assertEquals(originalLanguage, decoded.language)
         assertEquals(originalContent, decoded.content)
         assertEquals(originalSequence.toInt(), decoded.sequence)
     }

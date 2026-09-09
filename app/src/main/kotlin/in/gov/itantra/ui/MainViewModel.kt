@@ -20,6 +20,7 @@ import `in`.gov.itantra.core.discover.NearbyPeer
 import `in`.gov.itantra.core.alert.AlertContent
 import `in`.gov.itantra.core.alert.AlertPlayer
 import `in`.gov.itantra.core.alert.AlertTemplate
+import `in`.gov.itantra.core.chat.QuickChat
 import `in`.gov.itantra.core.alert.IncomingAlert
 import `in`.gov.itantra.core.crypto.KeyAgreementProvider
 import `in`.gov.itantra.core.lang.LanguageSettingsStore
@@ -710,10 +711,19 @@ class MainViewModel @Inject constructor(
         sendAlert(AlertContent.Custom(trimmed))
     }
 
-    fun sendQuickChat(text: String) {
+    /**
+     * Sends a canned reply in the current speech language. The text has to match the
+     * language stamped on the packet, or the receiver translates from the wrong source
+     * and feeds the result to the wrong TTS voice.
+     */
+    fun sendQuickChat(chat: QuickChat) {
+        val lang = _uiState.value.currentLanguage
+        sendQuickChat(chat.phrase(lang), lang)
+    }
+
+    private fun sendQuickChat(text: String, lang: Language) {
         val trimmed = text.trim()
         if (trimmed.isEmpty()) return
-        val lang = _uiState.value.currentLanguage
         val queuedMsg = outboundQueue.enqueue(lang, trimmed, isAlert = false)
         publishQueues()
         if (queuedMsg != null) {

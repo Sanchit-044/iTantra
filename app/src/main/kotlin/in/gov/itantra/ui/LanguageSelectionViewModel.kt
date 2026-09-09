@@ -10,6 +10,7 @@ import `in`.gov.itantra.core.lang.LanguageSettingsStore
 import `in`.gov.itantra.core.lang.UiLanguage
 import `in`.gov.itantra.core.lang.UiStrings
 import `in`.gov.itantra.core.pack.LanguagePackManager
+import `in`.gov.itantra.core.pack.PackState
 import `in`.gov.itantra.core.pack.PackProgress
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -31,6 +32,12 @@ data class LanguageSelectionUiState(
     val progress: PackProgress? = null,
     val error: String? = null,
     val finished: Boolean = false,
+    /**
+     * Selected languages whose weights are not on disk. Their selection is saved,
+     * but STT and TTS cannot run for them, and the screen says so rather than
+     * letting the first PTT press fail with a decoder error.
+     */
+    val placeholders: Set<Language> = emptySet(),
 ) {
     val appLanguageOptions: List<Language>
         get() = UiLanguage.options(selected)
@@ -150,12 +157,20 @@ class LanguageSelectionViewModel @Inject constructor(
                 } else {
                     store.completeSetup(selected, current, uiLanguage)
                 }
-                _uiState.update { it.copy(busy = false, finished = true, progress = null) }
+                _uiState.update {
+                    it.copy(
+                        busy = false,
+                        finished = true,
+                        progress = null,
+                        placeholders = placeholdersAmong(selected),
+                    )
+                }
             } catch (e: Exception) {
+                // Match whatever the screen is currently rendering in.
                 val chromeLang = if (_uiState.value.setupDone) {
                     _uiState.value.uiLanguage
                 } else {
-                    Language.ENGLISH
+                    _uiState.value.current
                 }
                 _uiState.update {
                     it.copy(
@@ -178,7 +193,12 @@ class LanguageSelectionViewModel @Inject constructor(
                 current = normalized.current,
                 uiLanguage = normalized.uiLanguage,
                 page = LanguageSetupPage.PACKS,
+                placeholders = placeholdersAmong(normalized.installed),
             )
         }
     }
+
+    /** Selected languages the pack manager reports as recorded but not usable. */
+    private fun placeholdersAmong(selected: Set<Language>): Set<Language> =
+        selected.filterTo(mutableSetOf()) { packs.packState(it) == PackState.PLACEHOLDER }
 }

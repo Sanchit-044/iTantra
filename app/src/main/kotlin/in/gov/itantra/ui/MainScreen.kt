@@ -30,6 +30,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import `in`.gov.itantra.core.chat.QuickChat
 import `in`.gov.itantra.ui.components.ProfileAvatar
 import `in`.gov.itantra.core.lang.UiStrings
 import `in`.gov.itantra.core.transport.ConnectionState
@@ -78,7 +79,7 @@ fun MainScreen(
                         Spacer(Modifier.width(12.dp))
                         Column {
                             Text(
-                                text = "Connected to",
+                                text = chrome.connectedTo,
                                 style = MaterialTheme.typography.labelMedium,
                                 color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
                             )
@@ -141,18 +142,18 @@ fun MainScreen(
                 }
             }
 
-            // Quick Chats
-            val quickChats = listOf("Yes", "No", "Okay", "Need Help", "Wait")
+            // Quick Chats. The chip is labelled and sent in the speech language, so
+            // the receiver gets text that matches the language on the packet header.
             androidx.compose.foundation.lazy.LazyRow(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(vertical = 12.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                items(quickChats) { chat ->
+                items(QuickChat.entries.toList()) { chat ->
                     SuggestionChip(
                         onClick = { viewModel.sendQuickChat(chat) },
-                        label = { Text(chat) }
+                        label = { Text(chat.phrase(uiState.currentLanguage)) }
                     )
                 }
             }
@@ -169,14 +170,14 @@ fun MainScreen(
                     if (uiState.queuedOutbound.isNotEmpty()) {
                         item {
                             Text(
-                                text = "Outbox (${uiState.outboundPending} pending, ${uiState.outboundFailed} failed)",
+                                text = chrome.outbox(uiState.outboundPending, uiState.outboundFailed),
                                 style = MaterialTheme.typography.labelLarge,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.padding(bottom = 8.dp, top = 8.dp)
                             )
                         }
                         items(uiState.queuedOutbound, key = { "out_${it.id}" }) { item ->
-                            OutboxItem(item = item, viewModel = viewModel)
+                            OutboxItem(item = item, chrome = chrome, viewModel = viewModel)
                         }
                     }
 
@@ -291,7 +292,7 @@ fun PttButton(uiState: `in`.gov.itantra.ui.UiState, chrome: UiStrings, viewModel
                 uiState.channelBusy -> Icons.Filled.MicOff
                 else -> Icons.Filled.Mic
             },
-            contentDescription = "PTT",
+            contentDescription = chrome.ptt,
             modifier = Modifier.size(48.dp),
             tint = contentColor
         )
@@ -347,7 +348,7 @@ fun InboxItem(item: `in`.gov.itantra.core.queue.InboxMessage, uiState: `in`.gov.
 }
 
 @Composable
-fun OutboxItem(item: `in`.gov.itantra.core.queue.OutboundMessage, viewModel: MainViewModel) {
+fun OutboxItem(item: `in`.gov.itantra.core.queue.OutboundMessage, chrome: UiStrings, viewModel: MainViewModel) {
     Card(
         modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
         colors = CardDefaults.cardColors(
@@ -372,7 +373,7 @@ fun OutboxItem(item: `in`.gov.itantra.core.queue.OutboundMessage, viewModel: Mai
                 )
                 Spacer(Modifier.height(4.dp))
                 Text(
-                    text = if (item.isAlert) "[ALERT] ${item.text}" else item.text,
+                    text = if (item.isAlert) chrome.alertPrefixed(item.text) else item.text,
                     style = MaterialTheme.typography.bodyMedium,
                     color = if (item.state == `in`.gov.itantra.core.queue.OutboundState.FAILED) MaterialTheme.colorScheme.onErrorContainer else MaterialTheme.colorScheme.onSurface,
                     maxLines = 2,
@@ -381,7 +382,7 @@ fun OutboxItem(item: `in`.gov.itantra.core.queue.OutboundMessage, viewModel: Mai
             }
             Spacer(Modifier.width(8.dp))
             IconButton(onClick = { viewModel.deleteQueuedMessage(item.id) }) {
-                Icon(Icons.Filled.Clear, contentDescription = "Delete", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                Icon(Icons.Filled.Clear, contentDescription = chrome.delete, tint = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
     }
@@ -393,13 +394,13 @@ fun ConnectionSettingsSheet(uiState: `in`.gov.itantra.ui.UiState, chrome: UiStri
         modifier = Modifier.fillMaxWidth().padding(16.dp)
     ) {
         Text(
-            text = "Connect to a Channel",
+            text = chrome.connectToChannel,
             style = MaterialTheme.typography.titleLarge,
             modifier = Modifier.padding(bottom = 16.dp)
         )
         
         // WiFi Direct Options
-        Text("Wi-Fi Direct", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+        Text(chrome.wifiDirect, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
         Row(modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp), horizontalArrangement = Arrangement.SpaceEvenly) {
             OutlinedButton(
                 onClick = { viewModel.setConnectionMode(ConnectionMode.WIFI_DIRECT_HOST) },
@@ -426,7 +427,7 @@ fun ConnectionSettingsSheet(uiState: `in`.gov.itantra.ui.UiState, chrome: UiStri
         Spacer(Modifier.height(16.dp))
         
         // Bluetooth Options
-        Text("Bluetooth", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+        Text(chrome.bluetooth, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
         Row(modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp), horizontalArrangement = Arrangement.SpaceEvenly) {
             OutlinedButton(
                 onClick = { viewModel.setConnectionMode(ConnectionMode.BLUETOOTH_HOST) },

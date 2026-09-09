@@ -39,11 +39,17 @@ fun LanguageSelectionScreen(
     viewModel: LanguageSelectionViewModel = hiltViewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsState()
-    val chrome = if (isSetup || !uiState.setupDone) {
-        UiStrings.forLanguage(Language.ENGLISH)
-    } else {
-        UiStrings.forLanguage(uiState.uiLanguage)
-    }
+    // Render the picker in the language being chosen, so tapping a row immediately
+    // shows what the app will look like. During setup the packs page follows the
+    // Active speech language and the app-language page follows the row being tapped;
+    // a language with no chrome translation falls back to English on its own.
+    val chrome = UiStrings.forLanguage(
+        when {
+            !isSetup && uiState.setupDone -> uiState.uiLanguage
+            uiState.page == LanguageSetupPage.APP_LANGUAGE -> uiState.uiLanguage
+            else -> uiState.current
+        }
+    )
 
     LaunchedEffect(isSetup) {
         if (!isSetup) viewModel.reloadFromStore()
@@ -136,6 +142,17 @@ fun LanguageSelectionScreen(
                 modifier = Modifier.fillMaxWidth(),
             )
             Text(text = progress.message, style = MaterialTheme.typography.bodySmall)
+        }
+
+        if (uiState.placeholders.isNotEmpty()) {
+            Text(
+                text = chrome.packsPlaceholder(
+                    uiState.placeholders.sortedBy { it.wire }.map(Language::endonym),
+                ),
+                color = MaterialTheme.colorScheme.error,
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.padding(top = 8.dp),
+            )
         }
 
         uiState.error?.let { error ->

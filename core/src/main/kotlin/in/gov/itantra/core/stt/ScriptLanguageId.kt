@@ -6,8 +6,9 @@ import `in`.gov.itantra.core.Language
  * On-device language ID from text script. Used after a first STT hypothesis and
  * in tests; does not require a neural LID model.
  *
- * Devanagari is shared by Hindi and Marathi — both candidates are scored, and
- * Hindi wins ties (it is the default language).
+ * Devanagari is shared by Hindi and Marathi, so script alone cannot separate them.
+ * When both are installed the tie is broken by [DevanagariLexicon]; Hindi still wins
+ * when the text carries no lexical evidence, because it is the default language.
  */
 class ScriptLanguageId : LanguageIdEngine {
 
@@ -32,6 +33,14 @@ class ScriptLanguageId : LanguageIdEngine {
         if (scores.isEmpty()) return null
         val best = scores.values.max()
         val winners = scores.filterValues { it == best }.keys
+
+        // Hindi and Marathi share every Devanagari codepoint, so they always tie here
+        // and the tie below would hand every Marathi utterance to Hindi. Break it on
+        // vocabulary instead; DevanagariLexicon returns null when the text carries no
+        // evidence, which falls through to the Hindi default unchanged.
+        if (Language.HINDI in winners && Language.MARATHI in winners) {
+            DevanagariLexicon.disambiguate(text)?.let { return it }
+        }
         if (Language.HINDI in winners) return Language.HINDI
         return winners.minBy { it.wire }
     }
