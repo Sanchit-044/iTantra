@@ -31,3 +31,6 @@ harness/src/androidTest/assets/roundtrip/**
 .DS_Store
 core/bin/
 *.onnx
+
+# Python bytecode from the export scripts
+__pycache__/
