@@ -51,6 +51,7 @@ fun AlertScreen(viewModel: MainViewModel) {
         // Broadcast Channel Selector
         AlertChannelSelector(
             selectedChannel = uiState.alertChannel,
+            chrome = chrome,
             onChannelSelected = { viewModel.setAlertChannel(it) }
         )
 
@@ -149,6 +150,7 @@ fun AlertScreen(viewModel: MainViewModel) {
 @Composable
 private fun AlertChannelSelector(
     selectedChannel: `in`.gov.itantra.ui.AlertChannel,
+    chrome: UiStrings,
     onChannelSelected: (`in`.gov.itantra.ui.AlertChannel) -> Unit
 ) {
     Card(
@@ -160,7 +162,7 @@ private fun AlertChannelSelector(
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             Text(
-                text = "Broadcast Channel",
+                text = chrome.broadcastChannel,
                 style = MaterialTheme.typography.titleSmall,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.primary

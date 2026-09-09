@@ -23,6 +23,7 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import `in`.gov.itantra.core.lang.UiStrings
 import `in`.gov.itantra.ui.components.ProfileAvatar
 import java.io.File
 
@@ -31,6 +32,7 @@ import java.io.File
 fun ProfileScreen(
     isSetup: Boolean,
     onFinished: () -> Unit,
+    chrome: UiStrings,
     onBack: (() -> Unit)? = null,
     viewModel: ProfileViewModel = hiltViewModel(),
 ) {
@@ -56,11 +58,11 @@ fun ProfileScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(if (isSetup) "Your profile" else "Edit profile") },
+                title = { Text(if (isSetup) chrome.yourProfileTitle else chrome.editProfileTitle) },
                 navigationIcon = {
                     if (onBack != null) {
                         IconButton(onClick = onBack) {
-                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = chrome.back)
                         }
                     }
                 }
@@ -75,7 +77,7 @@ fun ProfileScreen(
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
         Text(
-            text = "Name is required. Adding a photo is optional. The photo stays on this phone until you pair, then a small copy is sent to the other phone.",
+            text = chrome.profileHelp,
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.fillMaxWidth().padding(bottom = 32.dp)
@@ -103,7 +105,7 @@ fun ProfileScreen(
                     .border(2.dp, MaterialTheme.colorScheme.surface, CircleShape),
                 contentAlignment = Alignment.Center
             ) {
-                Icon(Icons.Filled.CameraAlt, contentDescription = "Edit Photo", tint = MaterialTheme.colorScheme.onPrimary, modifier = Modifier.size(20.dp))
+                Icon(Icons.Filled.CameraAlt, contentDescription = chrome.editPhoto, tint = MaterialTheme.colorScheme.onPrimary, modifier = Modifier.size(20.dp))
             }
         }
 
@@ -111,7 +113,7 @@ fun ProfileScreen(
             value = uiState.name,
             onValueChange = viewModel::setName,
             modifier = Modifier.fillMaxWidth(),
-            label = { Text("Name") },
+            label = { Text(chrome.nameLabel) },
             leadingIcon = { Icon(Icons.Filled.Person, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
             singleLine = true,
             enabled = !uiState.busy,
@@ -122,7 +124,7 @@ fun ProfileScreen(
             )
         )
 
-        uiState.error?.let { error ->
+        (uiState.error ?: chrome.nameRequired.takeIf { uiState.nameMissing })?.let { error ->
             Text(
                 text = error,
                 color = MaterialTheme.colorScheme.error,
@@ -142,7 +144,7 @@ fun ProfileScreen(
                 modifier = Modifier.fillMaxWidth().height(50.dp),
                 shape = RoundedCornerShape(12.dp)
             ) {
-                Text(if (isSetup) "Continue" else "Save", style = MaterialTheme.typography.titleMedium)
+                Text(if (isSetup) chrome.continueLabel else chrome.save, style = MaterialTheme.typography.titleMedium)
             }
         }
     }

@@ -98,7 +98,7 @@ fun SettingsScreen(
                                 .padding(16.dp)
                                 .selectableGroup(),
                         ) {
-                            Text("Theme", style = MaterialTheme.typography.titleMedium)
+                            Text(chrome.theme, style = MaterialTheme.typography.titleMedium)
                             Spacer(Modifier.height(8.dp))
                             ThemeMode.entries.forEach { option ->
                                 Row(
@@ -114,9 +114,9 @@ fun SettingsScreen(
                                 ) {
                                     RadioButton(selected = option == mode, onClick = null)
                                     Column(modifier = Modifier.padding(start = 12.dp)) {
-                                        Text(option.label(), style = MaterialTheme.typography.bodyLarge)
+                                        Text(chrome.themeLabel(option), style = MaterialTheme.typography.bodyLarge)
                                         Text(
-                                            text = option.help(),
+                                            text = chrome.themeHelp(option),
                                             style = MaterialTheme.typography.bodySmall,
                                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                                         )
@@ -212,14 +212,3 @@ fun SettingsScreen(
     }
 }
 
-private fun ThemeMode.label(): String = when (this) {
-    ThemeMode.SYSTEM -> "System"
-    ThemeMode.LIGHT -> "Light"
-    ThemeMode.DARK -> "Dark"
-}
-
-private fun ThemeMode.help(): String = when (this) {
-    ThemeMode.SYSTEM -> "Match the phone light or dark setting"
-    ThemeMode.LIGHT -> "Always light, even if the phone is dark"
-    ThemeMode.DARK -> "Always dark, even if the phone is light"
-}

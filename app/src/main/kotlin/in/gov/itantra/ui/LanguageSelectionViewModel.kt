@@ -166,10 +166,11 @@ class LanguageSelectionViewModel @Inject constructor(
                     )
                 }
             } catch (e: Exception) {
+                // Match whatever the screen is currently rendering in.
                 val chromeLang = if (_uiState.value.setupDone) {
                     _uiState.value.uiLanguage
                 } else {
-                    Language.ENGLISH
+                    _uiState.value.current
                 }
                 _uiState.update {
                     it.copy(

@@ -19,6 +19,11 @@ data class ProfileUiState(
     val photoPresent: Boolean = false,
     val busy: Boolean = false,
     val error: String? = null,
+    /**
+     * Set instead of putting "Name is required" in [error]: the view model has no
+     * UI language, so the screen renders this one from UiStrings.
+     */
+    val nameMissing: Boolean = false,
     val finished: Boolean = false,
 ) {
     val canContinue: Boolean
@@ -58,7 +63,7 @@ class ProfileViewModel @Inject constructor(
 
     fun importPhoto(uri: Uri) {
         viewModelScope.launch {
-            _uiState.update { it.copy(busy = true, error = null) }
+            _uiState.update { it.copy(busy = true, error = null, nameMissing = false) }
             try {
                 store.writePhotoFromUri(uri)
                 _uiState.update {
@@ -86,7 +91,7 @@ class ProfileViewModel @Inject constructor(
     fun confirm() {
         val name = ProfileRules.normalizeName(_uiState.value.name)
         if (!ProfileRules.isComplete(name, store.snapshot.photoPresent)) {
-            _uiState.update { it.copy(error = "Name is required") }
+            _uiState.update { it.copy(nameMissing = true, error = null) }
             return
         }
         viewModelScope.launch {

@@ -41,6 +41,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import `in`.gov.itantra.core.discover.NearbyPeer
+import `in`.gov.itantra.core.lang.UiStrings
 import `in`.gov.itantra.core.discover.NearbyPeerBook
 import `in`.gov.itantra.core.discover.RssiBand
 import `in`.gov.itantra.core.transport.ConnectionState
@@ -54,6 +55,7 @@ import kotlin.math.sin
 @Composable
 fun RadarScreen(
     mainViewModel: MainViewModel,
+    chrome: UiStrings,
     radarViewModel: RadarViewModel = hiltViewModel(),
 ) {
     val radar by radarViewModel.uiState.collectAsState()
@@ -70,7 +72,7 @@ fun RadarScreen(
     ) {
 
         Text(
-            text = "Discover nearby walkie-talkies. The other device must be in Host mode. Tap to connect.",
+            text = chrome.radarHelp,
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(top = 4.dp, bottom = 16.dp)
@@ -83,18 +85,18 @@ fun RadarScreen(
             FilterChip(
                 selected = radar.filter == RadarFilter.BOTH,
                 onClick = { radarViewModel.setFilter(RadarFilter.BOTH) },
-                label = { Text("Both") },
+                label = { Text(chrome.both) },
             )
             FilterChip(
                 selected = radar.filter == RadarFilter.WIFI,
                 onClick = { radarViewModel.setFilter(RadarFilter.WIFI) },
-                label = { Text("Wi-Fi") },
+                label = { Text(chrome.wifi) },
                 leadingIcon = { Icon(Icons.Filled.Wifi, contentDescription = null, modifier = Modifier.size(16.dp)) }
             )
             FilterChip(
                 selected = radar.filter == RadarFilter.BLUETOOTH,
                 onClick = { radarViewModel.setFilter(RadarFilter.BLUETOOTH) },
-                label = { Text("Bluetooth") },
+                label = { Text(chrome.bluetooth) },
                 leadingIcon = { Icon(Icons.Filled.Bluetooth, contentDescription = null, modifier = Modifier.size(16.dp)) }
             )
         }
@@ -182,7 +184,7 @@ fun RadarScreen(
                                 )
                                 Spacer(Modifier.height(8.dp))
                                 Button(onClick = { mainViewModel.disconnect() }) {
-                                    Text("Cancel")
+                                    Text(chrome.cancel)
                                 }
                             }
                         }
@@ -202,7 +204,7 @@ fun RadarScreen(
         }
         
         if (radar.peers.isNotEmpty()) {
-            Text("Discovered (${radar.peers.size})", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+            Text(chrome.discovered(radar.peers.size), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
             Spacer(Modifier.height(8.dp))
             LazyColumn(modifier = Modifier.height(140.dp).fillMaxWidth()) {
                 items(radar.peers, key = { it.id }) { peer ->
@@ -235,7 +237,9 @@ fun RadarScreen(
                             Spacer(Modifier.width(16.dp))
                             Column {
                                 Text(peer.name, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSecondaryContainer)
-                                Text("${peer.band.label} · ${peer.radiosLabel}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.7f))
+                                Text(
+                                    "${chrome.bandLabel(peer.band)} · ${chrome.radiosLabel(peer.hasWifi, peer.hasBluetooth)}",
+                                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.7f))
                             }
                         }
                     }
@@ -247,8 +251,8 @@ fun RadarScreen(
     selectedPeer?.let { peer ->
         AlertDialog(
             onDismissRequest = { selectedPeer = null },
-            title = { Text("Connect to ${peer.name}") },
-            text = { Text("Choose your role for this connection.\nThe Host should wait for the Joiner to connect.") },
+            title = { Text(chrome.connectToPeer(peer.name)) },
+            text = { Text(chrome.chooseRoleBody) },
             confirmButton = {
                 Button(onClick = {
                     selectedPeer = null
@@ -262,7 +266,7 @@ fun RadarScreen(
                         mainViewModel.connect()
                     }
                 }) {
-                    Text("Host")
+                    Text(chrome.host)
                 }
             },
             dismissButton = {
@@ -280,7 +284,7 @@ fun RadarScreen(
                         mainViewModel.connect(peerAddress = addr, peerName = peer.name)
                     }
                 }) {
-                    Text("Join")
+                    Text(chrome.join)
                 }
             }
         )

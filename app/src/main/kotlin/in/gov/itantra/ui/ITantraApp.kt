@@ -66,6 +66,7 @@ fun ITantraApp(
     mainViewModel: MainViewModel = hiltViewModel(),
 ) {
     val navController = rememberNavController()
+    val chrome by appViewModel.strings.collectAsState()
 
     NavHost(
         navController = navController,
@@ -98,6 +99,7 @@ fun ITantraApp(
         composable(AppRoutes.SETUP_PROFILE) {
             ProfileScreen(
                 isSetup = true,
+                chrome = chrome,
                 onFinished = { navController.navigate(AppRoutes.SETUP_LANGUAGES) { popUpTo(AppRoutes.SETUP_PROFILE) { inclusive = true } } },
             )
         }
@@ -122,12 +124,14 @@ fun ITantraApp(
         }
         composable(AppRoutes.HISTORY) {
             HistoryScreen(
-                onBack = { navController.popBackStack() }
+                onBack = { navController.popBackStack() },
+                chrome = chrome,
             )
         }
         composable(AppRoutes.SETTINGS_PROFILE) {
             ProfileScreen(
                 isSetup = false,
+                chrome = chrome,
                 onFinished = { navController.popBackStack() },
                 onBack = { navController.popBackStack() },
             )
@@ -211,7 +215,7 @@ fun MainContent(
                         contentColor = androidx.compose.material3.MaterialTheme.colorScheme.onError
                     )
                 ) {
-                    Text("Okay (Stop Alarm)")
+                    Text(chrome.stopAlarm)
                 }
             }
         )
@@ -243,7 +247,7 @@ fun MainContent(
                         )
                         androidx.compose.foundation.layout.Spacer(Modifier.padding(8.dp))
                         Text(
-                            text = if (local.name.isBlank()) "No name" else local.displayName,
+                            text = if (local.name.isBlank()) chrome.noName else local.displayName,
                             style = androidx.compose.material3.MaterialTheme.typography.titleMedium,
                             color = androidx.compose.material3.MaterialTheme.colorScheme.onSurface
                         )
@@ -252,14 +256,14 @@ fun MainContent(
                         coroutineScope.launch { drawerState.close() }
                         onOpenProfile()
                     }) {
-                        Icon(Icons.Filled.Edit, contentDescription = "Edit Profile", tint = androidx.compose.material3.MaterialTheme.colorScheme.primary)
+                        Icon(Icons.Filled.Edit, contentDescription = chrome.editProfile, tint = androidx.compose.material3.MaterialTheme.colorScheme.primary)
                     }
                 }
                 
                 androidx.compose.material3.HorizontalDivider(modifier = Modifier.padding(bottom = 8.dp))
 
                 androidx.compose.material3.NavigationDrawerItem(
-                    label = { Text("Profile") },
+                    label = { Text(chrome.profile) },
                     selected = false,
                     icon = { Icon(Icons.Filled.Person, contentDescription = null) },
                     onClick = {
@@ -269,7 +273,7 @@ fun MainContent(
                     modifier = Modifier.padding(horizontal = 12.dp)
                 )
                 androidx.compose.material3.NavigationDrawerItem(
-                    label = { Text("History") },
+                    label = { Text(chrome.history) },
                     selected = false,
                     icon = { Icon(Icons.Default.Info, contentDescription = null) },
                     onClick = {
@@ -309,13 +313,13 @@ fun MainContent(
                     },
                     navigationIcon = {
                         IconButton(onClick = { coroutineScope.launch { drawerState.open() } }) {
-                            Icon(Icons.Filled.Menu, contentDescription = "Menu")
+                            Icon(Icons.Filled.Menu, contentDescription = chrome.menu)
                         }
                     },
                     actions = {
                         if (tab == MainTab.TALK || tab == MainTab.ANALYSIS) {
                             IconButton(onClick = onOpenSettings) {
-                                Icon(Icons.Filled.Settings, contentDescription = "Settings")
+                                Icon(Icons.Filled.Settings, contentDescription = chrome.settings)
                             }
                         }
                     },
@@ -348,7 +352,7 @@ fun MainContent(
                         selected = tab == MainTab.RADAR,
                         onClick = { tab = MainTab.RADAR },
                         icon = { Icon(Icons.Filled.Radar, contentDescription = null) },
-                        label = { Text("Radar") },
+                        label = { Text(chrome.radar) },
                     )
                 }
             },
@@ -365,7 +369,11 @@ fun MainContent(
                         onOpenSettings = onOpenSettings,
                         uiLanguage = uiState.uiLanguage,
                     )
-                    MainTab.RADAR -> RadarScreen(mainViewModel = mainViewModel, radarViewModel = radarViewModel)
+                    MainTab.RADAR -> RadarScreen(
+                        mainViewModel = mainViewModel,
+                        radarViewModel = radarViewModel,
+                        chrome = chrome,
+                    )
                 }
             }
         }
