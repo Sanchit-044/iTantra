@@ -30,6 +30,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import `in`.gov.itantra.core.chat.QuickChat
 import `in`.gov.itantra.ui.components.ProfileAvatar
 import `in`.gov.itantra.core.lang.UiStrings
 import `in`.gov.itantra.core.transport.ConnectionState
@@ -141,18 +142,18 @@ fun MainScreen(
                 }
             }
 
-            // Quick Chats
-            val quickChats = listOf("Yes", "No", "Okay", "Need Help", "Wait")
+            // Quick Chats. The chip is labelled and sent in the speech language, so
+            // the receiver gets text that matches the language on the packet header.
             androidx.compose.foundation.lazy.LazyRow(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(vertical = 12.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                items(quickChats) { chat ->
+                items(QuickChat.entries.toList()) { chat ->
                     SuggestionChip(
                         onClick = { viewModel.sendQuickChat(chat) },
-                        label = { Text(chat) }
+                        label = { Text(chat.phrase(uiState.currentLanguage)) }
                     )
                 }
             }

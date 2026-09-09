@@ -1,6 +1,8 @@
 package `in`.gov.itantra.core.translate
 
 import `in`.gov.itantra.core.Language
+import `in`.gov.itantra.core.alert.AlertTemplate
+import `in`.gov.itantra.core.chat.QuickChat
 
 /**
  * Small offline phrase table so Hindi ↔ Tamil (and a few other pairs) can be
@@ -68,7 +70,7 @@ class DictionaryTranslationEngine(
                 Language.MARATHI to "सर्वजण सुरक्षित आहेत",
                 Language.KANNADA to "ಎಲ್ಲರೂ ಸುರಕ್ಷಿತವಾಗಿದ್ದಾರೆ",
                 Language.MALAYALAM to "എല്ലാവരും സുരക്ഷിതരാണ്",
-                Language.TELUGU to "అందరూ సురક્ષితంగా ఉన్నారు",
+                Language.TELUGU to "అందరూ సురక్షితంగా ఉన్నారు",
                 Language.ODIA to "ସମସ୍ତେ ସୁରକ୍ଷିତ ଅଛନ୍ତି",
                 Language.ENGLISH to "Everyone is safe",
             ),
@@ -139,13 +141,32 @@ class DictionaryTranslationEngine(
             ),
         )
 
+        /**
+         * Every canned string the app can put on the wire, as one concept per row.
+         *
+         * [AlertTemplate] and [QuickChat] are folded in from their own definitions
+         * rather than copied, so a phrase the UI can send is always a phrase this
+         * table can translate. `AlertPhrasesTranslatableTest` enforces that.
+         */
+        private val ALL_CONCEPTS: List<Map<Language, String>>
+            get() = AlertTemplate.entries.map { template ->
+                Language.entries.associateWith(template::phrase)
+            } +
+                QuickChat.entries.map { chat ->
+                    Language.entries.associateWith(chat::phrase)
+                } +
+                CONCEPTS
+
         val DEFAULT_PHRASES: Map<PhraseKey, String> = buildMap {
-            for (concept in CONCEPTS) {
+            for (concept in ALL_CONCEPTS) {
                 for ((srcLang, srcText) in concept) {
                     for ((tgtLang, tgtText) in concept) {
-                        if (srcLang != tgtLang) {
-                            this[PhraseKey(srcLang, tgtLang, normalize(srcText))] = tgtText
-                        }
+                        if (srcLang == tgtLang) continue
+                        // First source wins, and the canned rows come first: when a
+                        // template and a concept share a source string (both spell
+                        // "Evacuate immediately" in English), the receiver should see
+                        // the exact template wording it would have shown natively.
+                        putIfAbsent(PhraseKey(srcLang, tgtLang, normalize(srcText)), tgtText)
                     }
                 }
             }
