@@ -45,7 +45,7 @@ App flow: first launch → language picker → download selected packs → **Tal
 - Alert: `SendAlertUseCase`, `AlertPlayer`, `AlertScreen`
 - Queue: `OutboundMessageQueue`, `InboundMessageInbox`, `QueueTtl` (30 days)
 - LID: `ScriptLanguageId`, `LanguageIdEngine.resolveSpokenLanguage`
-- Translation: `TranslationEngine`, `DictionaryTranslationEngine` (demo phrases only)
+- Translation: `ChainedTranslationEngine` → `DictionaryTranslationEngine` (8 phrases, instant) → `IndicTransOnnxTranslationEngine` (IndicTrans2 320M, **Hindi↔Marathi only** -- pivots through Devanagari internally, no on-device transliteration for other scripts yet, see PROJECT.md). `BpeTokenizer` handles SentencePiece BPE tokenization.
 - Packs: `LanguagePackManager`, `android/.../pack/LocalLanguagePackManager`
 - UI: `ITantraApp` (Talk \| Alert \| Analysis \| Radar), `ProfileScreen`, `LanguageSelectionScreen`, `MainScreen`, `AlertScreen`, `DiagnosticsScreen`, `RadarScreen`, `MainViewModel`
 - Persistence: `PrefsLanguageSettingsStore` (`setupDone`, `installed`, `current`, `uiLanguage`); `FileProfileStore` (name + `filesDir/profile/avatar.jpg`); `PrefsThemeStore` (`SYSTEM` / `LIGHT` / `DARK`, default System)
@@ -66,4 +66,8 @@ App flow: first launch → language picker → download selected packs → **Tal
 
 ## Out of scope unless asked
 
-Mesh (3+ phones), lock-screen / power SOS, true GPS map of peers, continuous call mode, meaning-preserving translation beyond the offline engine, bundling real ONNX weights in git.
+Mesh (3+ phones), lock-screen / power SOS, true GPS map of peers, continuous call mode, bundling real ONNX weights in git.
+
+## Translation model setup
+
+Run `python export_translation_models.py` from the repo root to download IndicTrans2 320M, export encoder + decoder to ONNX, quantize to INT8, and save vocab JSON. Requires: `pip install transformers optimum onnxruntime sentencepiece protobuf`. Output lands in `app/src/main/assets/models/translation/`.

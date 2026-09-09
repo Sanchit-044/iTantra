@@ -45,6 +45,7 @@ import `in`.gov.itantra.core.transport.Transport
 import `in`.gov.itantra.core.transport.TransportListener
 import `in`.gov.itantra.core.usecase.FlushQueuedMessagesUseCase
 import `in`.gov.itantra.core.usecase.ReceivePttTransmissionUseCase
+import `in`.gov.itantra.core.usecase.RecordAlertMessageUseCase
 import `in`.gov.itantra.core.usecase.SendAlertUseCase
 import `in`.gov.itantra.core.usecase.StartPttTransmissionUseCase
 import `in`.gov.itantra.core.usecase.StopPttTransmissionUseCase
@@ -109,6 +110,10 @@ data class UiState(
     /** True while automatically retrying a connection that dropped unexpectedly. */
     val reconnecting: Boolean = false,
     val reconnectAttempt: Int = 0,
+    /** True while recording a spoken alert message (see [MainViewModel.startAlertRecording]). */
+    val isRecordingAlertMessage: Boolean = false,
+    /** Live, unstable STT preview of the alert message being recorded. */
+    val alertRecordingText: String = "",
 ) {
     val canSendAlert: Boolean
         get() = (connectionState == ConnectionState.CONNECTED && pairingConfirmed) || isWifiConnected
@@ -127,6 +132,7 @@ class MainViewModel @Inject constructor(
     private val startPttUseCase: StartPttTransmissionUseCase,
     private val stopPttUseCase: StopPttTransmissionUseCase,
     private val receivePttUseCase: ReceivePttTransmissionUseCase,
+    private val recordAlertMessageUseCase: RecordAlertMessageUseCase,
     private val translationEngine: TranslationEngine,
     private val languageSettings: LanguageSettingsStore,
     private val languageIdEngine: LanguageIdEngine,
@@ -543,14 +549,23 @@ class MainViewModel @Inject constructor(
                                 senderName = senderName,
                             )
                             is AlertContent.Custom -> {
-                                val translatedText = translationEngine.translateOrSame(
-                                    content.text,
-                                    packet.language,
-                                    currentLang,
-                                )
+                                val (translatedText, playLang) = try {
+                                    val translated = translationEngine.translateOrSame(
+                                        content.text,
+                                        packet.language,
+                                        currentLang,
+                                    )
+                                    translated to currentLang
+                                } catch (e: Exception) {
+                                    AppLog.w(
+                                        "MainViewModel",
+                                        "Alert translation failed (${e.message}) — playing original in ${packet.language.code}",
+                                    )
+                                    content.text to packet.language
+                                }
                                 IncomingAlert(
                                     content = AlertContent.Custom(translatedText),
-                                    language = currentLang,
+                                    language = playLang,
                                     sequence = packet.sequence,
                                     receivedAtMs = System.currentTimeMillis(),
                                     senderName = senderName,
@@ -836,6 +851,63 @@ class MainViewModel @Inject constructor(
         sendAlert(AlertContent.Custom(trimmed))
     }
 
+    /**
+     * Records a spoken alert message via STT and sends it exactly like a typed custom
+     * alert once recognized -- same delivery path, same translate-then-TTS on the
+     * receiving phone. Mirrors [startPtt]'s offline STT capture but without any floor
+     * request or transport coupling: alerts have their own delivery path.
+     */
+    fun startAlertRecording() {
+        val state = _uiState.value
+        if (state.isRecordingAlertMessage || state.isSpeaking || state.isRequestingFloor) return
+        val language = state.currentLanguage
+        _uiState.update {
+            it.copy(isRecordingAlertMessage = true, alertRecordingText = "", notice = null)
+        }
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                recordAlertMessageUseCase.start(
+                    language = language,
+                    onPartialResult = { partial ->
+                        _uiState.update { it.copy(alertRecordingText = partial) }
+                    },
+                    onFinalResult = { text ->
+                        _uiState.update { it.copy(isRecordingAlertMessage = false, alertRecordingText = "") }
+                        if (text.isNotBlank()) sendCustomAlert(text)
+                    },
+                    onError = { message ->
+                        _uiState.update {
+                            it.copy(
+                                isRecordingAlertMessage = false,
+                                alertRecordingText = "",
+                                notice = UserNotice.GenericError(message),
+                            )
+                        }
+                    },
+                )
+            } catch (e: Exception) {
+                _uiState.update {
+                    it.copy(
+                        isRecordingAlertMessage = false,
+                        alertRecordingText = "",
+                        notice = UserNotice.GenericError(e.message),
+                    )
+                }
+            }
+        }
+    }
+
+    /** Ends the recording now and sends whatever was recognized, same as releasing PTT. */
+    fun stopAlertRecording() {
+        recordAlertMessageUseCase.stop()
+    }
+
+    /** Abandons the recording; nothing is sent. */
+    fun cancelAlertRecording() {
+        recordAlertMessageUseCase.cancel()
+        _uiState.update { it.copy(isRecordingAlertMessage = false, alertRecordingText = "") }
+    }
+
     fun sendQuickChat(text: String) {
         val trimmed = text.trim()
         if (trimmed.isEmpty()) return
@@ -1011,6 +1083,9 @@ class MainViewModel @Inject constructor(
 
     fun startPtt() {
         val state = _uiState.value
+        // The STT engine holds exactly one resident model/session; an alert recording
+        // in progress must finish (or be cancelled) before PTT can claim it.
+        if (state.isRecordingAlertMessage) return
         val isConnected = state.connectionState == ConnectionState.CONNECTED
         if (isConnected) {
             if (state.channelBusy) {
@@ -1069,10 +1144,24 @@ class MainViewModel @Inject constructor(
         viewModelScope.launch(Dispatchers.IO) {
             _uiState.update { it.copy(playingInboxId = id, notice = null) }
             try {
-                receivePttUseCase.execute(
-                    Packet.text(MessageType.NORMAL, item.language, 0, item.text),
-                    _uiState.value.currentLanguage
-                )
+                val currentLang = _uiState.value.currentLanguage
+                val (playText, playLang) = if (item.language == currentLang) {
+                    item.text to currentLang
+                } else {
+                    try {
+                        val translated = translationEngine.translateOrSame(
+                            item.text, item.language, currentLang,
+                        )
+                        translated to currentLang
+                    } catch (e: Exception) {
+                        AppLog.w(
+                            "MainViewModel",
+                            "Inbox translation failed (${e.message}) — playing original in ${item.language.code}",
+                        )
+                        item.text to item.language
+                    }
+                }
+                receivePttUseCase.playText(playText, playLang)
                 inbox.markRead(id)
             } catch (e: Exception) {
                 _uiState.update { it.copy(notice = UserNotice.PlaybackError(e.message)) }

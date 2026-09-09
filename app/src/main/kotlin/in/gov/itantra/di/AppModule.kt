@@ -37,12 +37,15 @@ import `in`.gov.itantra.core.pack.LanguagePackManager
 import `in`.gov.itantra.core.stt.LanguageIdEngine
 import `in`.gov.itantra.core.stt.ScriptLanguageId
 import `in`.gov.itantra.core.stt.SttEngine
+import `in`.gov.itantra.android.translate.IndicTransOnnxTranslationEngine
+import `in`.gov.itantra.core.translate.ChainedTranslationEngine
 import `in`.gov.itantra.core.translate.DictionaryTranslationEngine
 import `in`.gov.itantra.core.translate.TranslationEngine
 import `in`.gov.itantra.core.tts.ChunkedSpeaker
 import `in`.gov.itantra.core.diag.DiagnosticsSink
 import `in`.gov.itantra.core.tts.TtsEngine
 import `in`.gov.itantra.core.usecase.ReceivePttTransmissionUseCase
+import `in`.gov.itantra.core.usecase.RecordAlertMessageUseCase
 import `in`.gov.itantra.core.usecase.SendAlertUseCase
 import `in`.gov.itantra.core.usecase.StartPttTransmissionUseCase
 import `in`.gov.itantra.core.usecase.StopPttTransmissionUseCase
@@ -145,8 +148,23 @@ object AppModule {
 
     @Provides
     @Singleton
-    fun provideTranslationEngine(): TranslationEngine {
-        return DictionaryTranslationEngine()
+    fun provideIndicTransOnnxEngine(
+        @ApplicationContext context: Context,
+    ): IndicTransOnnxTranslationEngine {
+        return IndicTransOnnxTranslationEngine(context)
+    }
+
+    @Provides
+    @Singleton
+    fun provideTranslationEngine(
+        onnxEngine: IndicTransOnnxTranslationEngine,
+    ): TranslationEngine {
+        return ChainedTranslationEngine(
+            listOf(
+                DictionaryTranslationEngine(),
+                onnxEngine,
+            )
+        )
     }
 
     @Provides
@@ -170,6 +188,13 @@ object AppModule {
         sequence: AtomicInteger,
     ): StartPttTransmissionUseCase {
         return StartPttTransmissionUseCase(sttEngine, diagnostics, outboundQueue, sequence)
+    }
+
+    @Provides
+    fun provideRecordAlertMessageUseCase(
+        sttEngine: SttEngine,
+    ): RecordAlertMessageUseCase {
+        return RecordAlertMessageUseCase(sttEngine)
     }
 
     @Provides

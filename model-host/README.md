@@ -24,6 +24,24 @@ present in a fresh clone; they are produced locally by `export_models.py` (STT) 
 `export_tts_models.py` (TTS) at the repo root. The `-vocab.json` files here are
 committed, same as the ones still bundled for Hindi.
 
+## Translation pack
+
+`indictrans2-encoder-int8.onnx`, `indictrans2-decoder-int8.onnx`, and
+`indictrans2-vocab.json` -- IndicTrans2 320M (distilled), produced by
+`export_translation_models.py`. Same hosting rules as the language packs above
+(flat layout, `.onnx` gitignored, `.json` committed). **Currently Hindi ↔ Marathi
+only** -- IndicTrans2 pivots every Indic sentence through Devanagari internally,
+and that transliteration layer isn't implemented on-device yet, so
+`IndicTransOnnxTranslationEngine` refuses every other language pair rather than
+returning the right words in the wrong script. See the "Known limitation" section
+of that class's doc comment and `.cursor/PROJECT.md` for the full story.
+
+`export_translation_models.py` needs a HuggingFace access token to download the
+gated `ai4bharat/indictrans2-indic-indic-dist-320M` checkpoint -- request access
+at https://huggingface.co/ai4bharat/indictrans2-indic-indic-dist-320M (usually
+auto-approved), create a token at https://huggingface.co/settings/tokens, then
+run with `HF_TOKEN=<token> python export_translation_models.py`.
+
 ## Recommended: host on a GitHub Release
 
 A release's assets are stored separately from the git history (they don't bloat

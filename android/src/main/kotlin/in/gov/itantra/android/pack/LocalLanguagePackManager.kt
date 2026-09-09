@@ -37,7 +37,7 @@ class LocalLanguagePackManager(
 
     override fun isTranslationReady(): Boolean =
         LanguagePackPaths.translationMarker(context).exists() ||
-            LanguagePackPaths.translationModel(context).exists()
+            LanguagePackPaths.translationEncoder(context).exists()
 
     override suspend fun install(
         languages: Set<Language>,
@@ -61,7 +61,7 @@ class LocalLanguagePackManager(
             }
             if (!ok) failed += language
         }
-        // Translation is a known placeholder -- no host serves indictrans2.onnx yet,
+        // Translation is a known placeholder -- no host serves the indictrans2 files yet,
         // by design, not by failure -- so it stays best-effort and never blocks setup.
         if (includeTranslation) {
             onProgress(PackProgress(null, list.size.toFloat() / totalSteps, "Installing translation pack"))
@@ -133,10 +133,22 @@ class LocalLanguagePackManager(
 
     private fun installTranslation() {
         LanguagePackPaths.translationDir(context).mkdirs()
+        // Flat remote names, same reasoning as installLanguage(): the GitHub Release
+        // host serves every asset with no subpaths.
         copyAssetOrDownload(
-            assetPath = "models/translation/indictrans2.onnx",
-            dest = LanguagePackPaths.translationModel(context),
-            remoteName = "indictrans2.onnx",
+            assetPath = "models/translation/indictrans2-encoder-int8.onnx",
+            dest = LanguagePackPaths.translationEncoder(context),
+            remoteName = "indictrans2-encoder-int8.onnx",
+        )
+        copyAssetOrDownload(
+            assetPath = "models/translation/indictrans2-decoder-int8.onnx",
+            dest = LanguagePackPaths.translationDecoder(context),
+            remoteName = "indictrans2-decoder-int8.onnx",
+        )
+        copyAssetOrDownload(
+            assetPath = "models/translation/indictrans2-vocab.json",
+            dest = LanguagePackPaths.translationVocab(context),
+            remoteName = "indictrans2-vocab.json",
         )
         LanguagePackPaths.translationMarker(context).writeText("ok")
     }
