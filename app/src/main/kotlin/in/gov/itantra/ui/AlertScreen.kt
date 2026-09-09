@@ -11,6 +11,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -136,6 +137,61 @@ fun AlertScreen(viewModel: MainViewModel) {
                     Text(if (uiState.alertSending) chrome.sending else chrome.sendTyped)
                     Spacer(Modifier.width(8.dp))
                     Icon(Icons.Filled.Send, contentDescription = null, modifier = Modifier.size(18.dp))
+                }
+            }
+        }
+
+        Spacer(Modifier.height(20.dp))
+
+        // Voice Alert: record, transcribe, and send exactly like a typed alert --
+        // translated and spoken in the receiver's configured language, same as PTT.
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+            shape = RoundedCornerShape(16.dp)
+        ) {
+            Column(modifier = Modifier.padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                Text(
+                    chrome.recordVoiceAlert,
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.align(Alignment.Start),
+                )
+                Spacer(Modifier.height(12.dp))
+
+                if (uiState.isRecordingAlertMessage) {
+                    Text(
+                        text = uiState.alertRecordingText.ifBlank { chrome.recordingAlert },
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    Spacer(Modifier.height(12.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        OutlinedButton(onClick = { viewModel.cancelAlertRecording() }) {
+                            Text(chrome.pairingCancel)
+                        }
+                        Button(
+                            onClick = { viewModel.stopAlertRecording() },
+                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+                        ) {
+                            Text(chrome.sendTyped)
+                            Spacer(Modifier.width(8.dp))
+                            Icon(Icons.Filled.Send, contentDescription = null, modifier = Modifier.size(18.dp))
+                        }
+                    }
+                } else {
+                    FilledIconButton(
+                        onClick = { viewModel.startAlertRecording() },
+                        enabled = !uiState.alertSending,
+                        modifier = Modifier.size(64.dp),
+                        colors = IconButtonDefaults.filledIconButtonColors(
+                            containerColor = MaterialTheme.colorScheme.error,
+                            contentColor = MaterialTheme.colorScheme.onError,
+                        ),
+                    ) {
+                        Icon(Icons.Filled.Mic, contentDescription = chrome.recordVoiceAlert, modifier = Modifier.size(28.dp))
+                    }
                 }
             }
         }
