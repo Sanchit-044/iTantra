@@ -23,6 +23,8 @@ import `in`.gov.itantra.core.alert.AlertTemplate
 import `in`.gov.itantra.core.alert.IncomingAlert
 import `in`.gov.itantra.core.crypto.KeyAgreementProvider
 import `in`.gov.itantra.core.lang.LanguageSettingsStore
+import `in`.gov.itantra.core.pack.LanguagePackInstallCoordinator
+import `in`.gov.itantra.core.pack.PackProgress
 import `in`.gov.itantra.core.profile.OperatorProfile
 import `in`.gov.itantra.core.profile.ProfileCodec
 import `in`.gov.itantra.profile.FileProfileStore
@@ -114,6 +116,10 @@ data class UiState(
     val isRecordingAlertMessage: Boolean = false,
     /** Live, unstable STT preview of the alert message being recorded. */
     val alertRecordingText: String = "",
+    /** True while a language pack download is running in the background (see LanguagePackInstallCoordinator). */
+    val packDownloadBusy: Boolean = false,
+    val packDownloadProgress: PackProgress? = null,
+    val packDownloadError: String? = null,
 ) {
     val canSendAlert: Boolean
         get() = (connectionState == ConnectionState.CONNECTED && pairingConfirmed) || isWifiConnected
@@ -135,6 +141,7 @@ class MainViewModel @Inject constructor(
     private val recordAlertMessageUseCase: RecordAlertMessageUseCase,
     private val translationEngine: TranslationEngine,
     private val languageSettings: LanguageSettingsStore,
+    private val languagePackInstallCoordinator: LanguagePackInstallCoordinator,
     private val languageIdEngine: LanguageIdEngine,
     private val sendAlertUseCase: SendAlertUseCase,
     private val alertPlayer: AlertPlayer,
@@ -265,6 +272,17 @@ class MainViewModel @Inject constructor(
                 }
                 if (snap.uiLanguage != previousUi && inbox.unreadCount() > 0) {
                     publishQueues(notifyIfUnread = true)
+                }
+            }
+        }
+        viewModelScope.launch {
+            languagePackInstallCoordinator.state.collect { install ->
+                _uiState.update {
+                    it.copy(
+                        packDownloadBusy = install.busy,
+                        packDownloadProgress = install.progress,
+                        packDownloadError = install.error,
+                    )
                 }
             }
         }
@@ -1079,6 +1097,10 @@ class MainViewModel @Inject constructor(
 
     fun clearError() {
         _uiState.update { it.copy(notice = null) }
+    }
+
+    fun dismissPackDownloadError() {
+        languagePackInstallCoordinator.clearError()
     }
 
     fun startPtt() {

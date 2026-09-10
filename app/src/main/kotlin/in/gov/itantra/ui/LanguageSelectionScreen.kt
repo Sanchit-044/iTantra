@@ -19,11 +19,14 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.outlined.CloudDownload
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.RadioButton
@@ -75,6 +78,24 @@ fun LanguageSelectionScreen(
         viewModel.backToPacks()
     }
 
+    uiState.pendingDelete?.let { language ->
+        AlertDialog(
+            onDismissRequest = { viewModel.cancelDelete() },
+            title = { Text(chrome.deleteLanguageTitle) },
+            text = { Text(chrome.deleteLanguageBody(language.englishName)) },
+            confirmButton = {
+                TextButton(onClick = { viewModel.confirmDelete() }) {
+                    Text(chrome.deleteConfirm, color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { viewModel.cancelDelete() }) {
+                    Text(chrome.pairingCancel)
+                }
+            },
+        )
+    }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -109,6 +130,7 @@ fun LanguageSelectionScreen(
                         chrome = chrome,
                         onToggle = { viewModel.toggle(language) },
                         onCurrent = { viewModel.setCurrent(language) },
+                        onDelete = { viewModel.requestDelete(language) },
                     )
                 }
             }
@@ -230,6 +252,7 @@ fun PackRow(
     chrome: UiStrings,
     onToggle: () -> Unit,
     onCurrent: () -> Unit,
+    onDelete: () -> Unit,
 ) {
     Row(
         modifier = Modifier
@@ -251,6 +274,15 @@ fun PackRow(
                 selected = selected,
                 chrome = chrome,
             )
+        }
+        if (downloaded && !downloadingNow) {
+            IconButton(onClick = onDelete, enabled = !busy) {
+                Icon(
+                    imageVector = Icons.Filled.DeleteOutline,
+                    contentDescription = chrome.deleteLanguageAction,
+                    tint = MaterialTheme.colorScheme.error,
+                )
+            }
         }
         if (selected) {
             Row(

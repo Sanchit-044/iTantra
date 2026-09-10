@@ -22,6 +22,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -33,6 +34,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -82,6 +84,24 @@ fun SettingsScreen(
     // stacked in a single LazyColumn, so reaching Save meant scrolling past
     // everything regardless of which section the operator actually came here for.
     val tabs = listOf(chrome.themeTab, chrome.languagesTitle, chrome.displayTab)
+
+    uiState.pendingDelete?.let { language ->
+        AlertDialog(
+            onDismissRequest = { languageViewModel.cancelDelete() },
+            title = { Text(chrome.deleteLanguageTitle) },
+            text = { Text(chrome.deleteLanguageBody(language.englishName)) },
+            confirmButton = {
+                TextButton(onClick = { languageViewModel.confirmDelete() }) {
+                    Text(chrome.deleteConfirm, color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { languageViewModel.cancelDelete() }) {
+                    Text(chrome.pairingCancel)
+                }
+            },
+        )
+    }
 
     Scaffold(
         topBar = {
@@ -236,6 +256,7 @@ private fun LanguagePacksTab(
                 chrome = chrome,
                 onToggle = { viewModel.toggle(language) },
                 onCurrent = { viewModel.setCurrent(language) },
+                onDelete = { viewModel.requestDelete(language) },
             )
         }
         item(key = "packs-bottom-space") { Spacer(Modifier.height(16.dp)) }

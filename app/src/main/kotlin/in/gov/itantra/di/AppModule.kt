@@ -33,6 +33,7 @@ import `in`.gov.itantra.core.profile.ProfileStore
 import `in`.gov.itantra.profile.FileProfileStore
 import `in`.gov.itantra.core.theme.ThemeStore
 import `in`.gov.itantra.theme.PrefsThemeStore
+import `in`.gov.itantra.core.pack.LanguagePackInstallCoordinator
 import `in`.gov.itantra.core.pack.LanguagePackManager
 import `in`.gov.itantra.core.stt.LanguageIdEngine
 import `in`.gov.itantra.core.stt.ScriptLanguageId
@@ -132,6 +133,14 @@ object AppModule {
     @Singleton
     fun provideLanguagePackManager(@ApplicationContext context: Context): LanguagePackManager {
         return LocalLanguagePackManager(context, baseUrl = `in`.gov.itantra.BuildConfig.MODEL_PACK_BASE_URL)
+    }
+
+    @Provides
+    @Singleton
+    fun provideLanguagePackInstallCoordinator(
+        packs: LanguagePackManager,
+    ): LanguagePackInstallCoordinator {
+        return LanguagePackInstallCoordinator(packs)
     }
 
     @Provides

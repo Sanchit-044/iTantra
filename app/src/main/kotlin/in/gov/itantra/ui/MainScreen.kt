@@ -31,9 +31,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import `in`.gov.itantra.ui.components.ProfileAvatar
+import `in`.gov.itantra.core.chat.QuickChat
 import `in`.gov.itantra.core.lang.UiStrings
 import `in`.gov.itantra.core.transport.ConnectionState
-import perfetto.protos.UiState
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -162,15 +162,11 @@ fun MainScreen(
             // Quick Chats -- phrased in the active *speaking* language (not the menu
             // language `chrome` uses), since sendQuickChat() tags the message with
             // currentLanguage: the visible chip text must match what's actually sent
-            // and what the receiver's TTS will be asked to speak.
-            val activeChrome = UiStrings.forLanguage(uiState.currentLanguage)
-            val quickChats = listOf(
-                activeChrome.quickChatYes,
-                activeChrome.quickChatNo,
-                activeChrome.quickChatOkay,
-                activeChrome.quickChatNeedHelp,
-                activeChrome.quickChatWait,
-            )
+            // and what the receiver's TTS will be asked to speak. Uses QuickChat
+            // (all 10 languages) rather than UiStrings (only 4 languages, English
+            // fallback for the rest) -- unlike menu chrome, a fallback here would
+            // send the literal English word tagged as the wrong language.
+            val quickChats = QuickChat.entries.map { it.phrase(uiState.currentLanguage) }
             androidx.compose.foundation.lazy.LazyRow(
                 modifier = Modifier
                     .fillMaxWidth()

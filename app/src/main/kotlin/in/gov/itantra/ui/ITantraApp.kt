@@ -45,6 +45,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.size
@@ -56,7 +57,17 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import `in`.gov.itantra.core.lang.UiStrings
+import `in`.gov.itantra.core.pack.PackProgress
 import `in`.gov.itantra.ui.components.ProfileAvatar
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.ui.draw.clip
+import kotlin.math.roundToInt
 
 private enum class MainTab { TALK, ALERT, ANALYSIS, RADAR }
 
@@ -223,7 +234,12 @@ fun MainContent(
     ModalNavigationDrawer(
         drawerState = drawerState,
         drawerContent = {
-            ModalDrawerSheet {
+            // Explicit width: ModalDrawerSheet with no modifier fills the screen
+            // rather than the usual "overlay covering most, not all, of the
+            // width" pattern -- capped at 320dp so the underlying screen stays
+            // visibly peeking out at the right edge on phones, and the drawer
+            // doesn't stretch edge-to-edge on tablets either.
+            ModalDrawerSheet(modifier = Modifier.fillMaxWidth(0.8f).widthIn(max = 320.dp)) {
                 androidx.compose.foundation.layout.Spacer(Modifier.padding(12.dp))
                 
                 // Drawer Header with Profile
@@ -353,19 +369,99 @@ fun MainContent(
                 }
             },
         ) { padding ->
-            Box(
+            androidx.compose.foundation.layout.Column(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(padding)
             ) {
-                when (tab) {
-                    MainTab.TALK -> MainScreen(viewModel = mainViewModel, onOpenSettings = onOpenSettings)
-                    MainTab.ALERT -> AlertScreen(viewModel = mainViewModel)
-                    MainTab.ANALYSIS -> DiagnosticsScreen(
-                        onOpenSettings = onOpenSettings,
-                        uiLanguage = uiState.uiLanguage,
-                    )
-                    MainTab.RADAR -> RadarScreen(mainViewModel = mainViewModel, radarViewModel = radarViewModel)
+                PackDownloadBanner(
+                    busy = uiState.packDownloadBusy,
+                    progress = uiState.packDownloadProgress,
+                    error = uiState.packDownloadError,
+                    chrome = chrome,
+                    onDismissError = mainViewModel::dismissPackDownloadError,
+                )
+                Box(modifier = Modifier.weight(1f).fillMaxSize()) {
+                    when (tab) {
+                        MainTab.TALK -> MainScreen(viewModel = mainViewModel, onOpenSettings = onOpenSettings)
+                        MainTab.ALERT -> AlertScreen(viewModel = mainViewModel)
+                        MainTab.ANALYSIS -> DiagnosticsScreen(
+                            onOpenSettings = onOpenSettings,
+                            uiLanguage = uiState.uiLanguage,
+                        )
+                        MainTab.RADAR -> RadarScreen(mainViewModel = mainViewModel, radarViewModel = radarViewModel)
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Persistent strip shown while LanguagePackInstallCoordinator is downloading packs in the
+ * background -- the operator picked languages and moved on into the app, so this never blocks
+ * navigation, it just keeps them aware a download is still running (or failed).
+ */
+@Composable
+private fun PackDownloadBanner(
+    busy: Boolean,
+    progress: PackProgress?,
+    error: String?,
+    chrome: UiStrings,
+    onDismissError: () -> Unit,
+) {
+    if (!busy && error == null) return
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 8.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .background(MaterialTheme.colorScheme.surfaceVariant)
+            .padding(12.dp),
+    ) {
+        if (busy) {
+            val fraction = (progress?.fraction ?: 0f).coerceIn(0f, 1f)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = progress?.message ?: chrome.downloadingPacksLabel,
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.weight(1f),
+                )
+                androidx.compose.foundation.layout.Spacer(Modifier.width(8.dp))
+                Text(
+                    text = "${(fraction * 100).roundToInt()}%",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+            }
+            androidx.compose.foundation.layout.Spacer(Modifier.height(8.dp))
+            LinearProgressIndicator(
+                progress = { fraction },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(8.dp)
+                    .clip(RoundedCornerShape(4.dp)),
+            )
+        }
+        if (error != null) {
+            if (busy) androidx.compose.foundation.layout.Spacer(Modifier.height(8.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = error,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.weight(1f),
+                )
+                TextButton(onClick = onDismissError) {
+                    Text(chrome.pairingCancel)
                 }
             }
         }
