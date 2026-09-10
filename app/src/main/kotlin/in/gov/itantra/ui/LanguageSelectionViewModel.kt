@@ -1,8 +1,10 @@
 package `in`.gov.itantra.ui
 
+import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
 import `in`.gov.itantra.core.Language
 import `in`.gov.itantra.core.lang.LanguageSelection
 import `in`.gov.itantra.core.lang.LanguageSettings
@@ -46,6 +48,7 @@ data class LanguageSelectionUiState(
 
 @HiltViewModel
 class LanguageSelectionViewModel @Inject constructor(
+    @ApplicationContext private val context: Context,
     private val store: LanguageSettingsStore,
     private val packs: LanguagePackManager,
     private val installCoordinator: LanguagePackInstallCoordinator,
@@ -186,6 +189,7 @@ class LanguageSelectionViewModel @Inject constructor(
                     store.completeSetup(selected, current, uiLanguage)
                 }
                 installCoordinator.install(selected, removed, includeTranslation = true)
+                `in`.gov.itantra.service.LanguagePackDownloadService.start(context)
                 _uiState.update { it.copy(finished = true) }
             } catch (e: Exception) {
                 val chromeLang = if (_uiState.value.setupDone) {

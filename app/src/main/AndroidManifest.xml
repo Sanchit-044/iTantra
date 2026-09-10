@@ -7,6 +7,7 @@
 
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
 
     <!-- Keeps the CPU and Wi-Fi radio from sleeping while a PTT session is CONNECTED,
          so the transport's socket and reader thread survive Doze/screen-off. Held only
@@ -26,6 +27,11 @@
         <service
             android:name=".service.ConnectionService"
             android:foregroundServiceType="connectedDevice"
+            android:exported="false" />
+
+        <service
+            android:name=".service.LanguagePackDownloadService"
+            android:foregroundServiceType="dataSync"
             android:exported="false" />
 
         <receiver

@@ -57,17 +57,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import `in`.gov.itantra.core.lang.UiStrings
-import `in`.gov.itantra.core.pack.PackProgress
 import `in`.gov.itantra.ui.components.ProfileAvatar
-import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.LinearProgressIndicator
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.ui.draw.clip
-import kotlin.math.roundToInt
 
 private enum class MainTab { TALK, ALERT, ANALYSIS, RADAR }
 
@@ -374,13 +364,6 @@ fun MainContent(
                     .fillMaxSize()
                     .padding(padding)
             ) {
-                PackDownloadBanner(
-                    busy = uiState.packDownloadBusy,
-                    progress = uiState.packDownloadProgress,
-                    error = uiState.packDownloadError,
-                    chrome = chrome,
-                    onDismissError = mainViewModel::dismissPackDownloadError,
-                )
                 Box(modifier = Modifier.weight(1f).fillMaxSize()) {
                     when (tab) {
                         MainTab.TALK -> MainScreen(viewModel = mainViewModel, onOpenSettings = onOpenSettings)
@@ -391,77 +374,6 @@ fun MainContent(
                         )
                         MainTab.RADAR -> RadarScreen(mainViewModel = mainViewModel, radarViewModel = radarViewModel)
                     }
-                }
-            }
-        }
-    }
-}
-
-/**
- * Persistent strip shown while LanguagePackInstallCoordinator is downloading packs in the
- * background -- the operator picked languages and moved on into the app, so this never blocks
- * navigation, it just keeps them aware a download is still running (or failed).
- */
-@Composable
-private fun PackDownloadBanner(
-    busy: Boolean,
-    progress: PackProgress?,
-    error: String?,
-    chrome: UiStrings,
-    onDismissError: () -> Unit,
-) {
-    if (!busy && error == null) return
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 8.dp)
-            .clip(RoundedCornerShape(12.dp))
-            .background(MaterialTheme.colorScheme.surfaceVariant)
-            .padding(12.dp),
-    ) {
-        if (busy) {
-            val fraction = (progress?.fraction ?: 0f).coerceIn(0f, 1f)
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(
-                    text = progress?.message ?: chrome.downloadingPacksLabel,
-                    style = MaterialTheme.typography.bodySmall,
-                    modifier = Modifier.weight(1f),
-                )
-                androidx.compose.foundation.layout.Spacer(Modifier.width(8.dp))
-                Text(
-                    text = "${(fraction * 100).roundToInt()}%",
-                    style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.primary,
-                )
-            }
-            androidx.compose.foundation.layout.Spacer(Modifier.height(8.dp))
-            LinearProgressIndicator(
-                progress = { fraction },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(8.dp)
-                    .clip(RoundedCornerShape(4.dp)),
-            )
-        }
-        if (error != null) {
-            if (busy) androidx.compose.foundation.layout.Spacer(Modifier.height(8.dp))
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(
-                    text = error,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.error,
-                    modifier = Modifier.weight(1f),
-                )
-                TextButton(onClick = onDismissError) {
-                    Text(chrome.pairingCancel)
                 }
             }
         }
