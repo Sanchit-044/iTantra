@@ -161,6 +161,14 @@ class MainViewModel @Inject constructor(
     private val deferredNormals = ArrayDeque<Packet>()
     private val pttWanted = AtomicBoolean(false)
 
+    /**
+     * Quick-chat texts waiting for [transport] to grant the floor so they can go out live,
+     * exactly like a PTT utterance -- see [sendQuickChat]/[onFloorGranted]. Drained one at a
+     * time: each text gets its own request/grant/release round, same as a single PTT press.
+     */
+    private val pendingQuickChats = ArrayDeque<String>()
+    private val quickChatSequence = AtomicInteger(0)
+
     /** What [connect] was last asked for, so an unexpected drop can retry the same target. */
     private data class ConnectRequest(
         val mode: ConnectionMode,
@@ -391,6 +399,11 @@ class MainViewModel @Inject constructor(
     }
 
     override fun onFloorGranted() {
+        val quickChatText = synchronized(pendingQuickChats) { pendingQuickChats.pollFirst() }
+        if (quickChatText != null) {
+            viewModelScope.launch(Dispatchers.Main) { sendQuickChatLive(quickChatText) }
+            return
+        }
         AppLog.d("MainViewModel", "Floor granted, starting PTT")
         viewModelScope.launch(Dispatchers.Main) {
             val currentTransport = transport ?: return@launch
@@ -480,6 +493,14 @@ class MainViewModel @Inject constructor(
     override fun onFloorDenied(reason: String) {
         AppLog.w("MainViewModel", "Floor denied: $reason")
         pttWanted.set(false)
+        // A quick chat waiting on this same request/grant round did not get to send live --
+        // fall back to the offline queue rather than lose it (mirrors StartPttTransmissionUseCase
+        // queuing a PTT utterance it could not send live).
+        val strandedQuickChats = synchronized(pendingQuickChats) {
+            val all = pendingQuickChats.toList()
+            pendingQuickChats.clear()
+            all
+        }
         // FloorController's callback runs on whichever thread produced the denial --
         // the transport's read thread for a remote FLOOR_DENY, the scheduler thread
         // for a local grant-timeout. Hop to Main so this can never interleave with
@@ -498,6 +519,7 @@ class MainViewModel @Inject constructor(
                     notice = null,
                 )
             }
+            strandedQuickChats.forEach { queueQuickChat(it) }
         }
     }
 
@@ -908,18 +930,92 @@ class MainViewModel @Inject constructor(
         _uiState.update { it.copy(isRecordingAlertMessage = false, alertRecordingText = "") }
     }
 
+    /**
+     * Sends a canned quick-chat text the same way PTT sends a recognized utterance: while the
+     * link is live, it requests the floor and -- once [onFloorGranted] fires -- puts the text on
+     * the air tagged MessageType.NORMAL, so the receiver plays/shows it immediately instead of
+     * filing it into the offline inbox the way a reconciled MessageType.QUEUED backlog message
+     * does. Only falls back to the offline queue when there is no live link (or the floor
+     * request is denied, or the send itself fails e.g. unpaired), exactly like PTT falls back
+     * when `sendLive` can't be honored -- see [startPtt]'s identical `isConnected` gate.
+     */
     fun sendQuickChat(text: String) {
         val trimmed = text.trim()
         if (trimmed.isEmpty()) return
+        val state = _uiState.value
+        val isConnected = state.connectionState == ConnectionState.CONNECTED
+        if (!isConnected || state.isSpeaking || state.isRequestingFloor || state.isRecordingAlertMessage) {
+            queueQuickChat(trimmed)
+            return
+        }
+        val shouldRequestFloor = synchronized(pendingQuickChats) {
+            val wasEmpty = pendingQuickChats.isEmpty()
+            pendingQuickChats.addLast(trimmed)
+            wasEmpty
+        }
+        if (shouldRequestFloor) transport?.requestFloor()
+    }
+
+    /** The actual live send once the floor is held for [text]; always releases the floor on the way out. */
+    private fun sendQuickChatLive(text: String) {
+        val currentTransport = transport
+        if (currentTransport == null) {
+            queueQuickChat(text)
+            drainNextQuickChat()
+            return
+        }
+        try {
+            val lang = _uiState.value.currentLanguage
+            val packet = Packet.text(
+                type = MessageType.NORMAL,
+                language = lang,
+                sequence = quickChatSequence.incrementAndGet(),
+                text = text,
+            )
+            currentTransport.send(packet)
+            AppLog.d("MainViewModel", "Sent quick chat live: sq=${packet.sequence}")
+            viewModelScope.launch(Dispatchers.IO) {
+                historyDao.insertMessage(
+                    HistoryMessage(
+                        id = UUID.randomUUID().toString(),
+                        text = text,
+                        language = lang,
+                        timestampMs = packet.timestampMs,
+                        direction = MessageDirection.OUTBOUND,
+                        status = MessageStatus.DELIVERED,
+                        peerName = _uiState.value.talkingToName,
+                        isAlert = false,
+                    )
+                )
+            }
+        } catch (e: Exception) {
+            AppLog.w("MainViewModel", "Failed to send quick chat live: ${e.message}, queuing it instead")
+            queueQuickChat(text)
+        } finally {
+            // Always release, even on failure -- see StartPttTransmissionUseCase's identical
+            // comment: skipping this leaves the sender HOLDING and the receiver PEER_HOLDING.
+            currentTransport.releaseFloor()
+            drainNextQuickChat()
+        }
+    }
+
+    /** Requests the floor for the next queued quick chat, if any -- one request/grant round per text. */
+    private fun drainNextQuickChat() {
+        val hasMore = synchronized(pendingQuickChats) { pendingQuickChats.isNotEmpty() }
+        if (hasMore) transport?.requestFloor()
+    }
+
+    /** Offline (or floor-denied) fallback: stored and delivered on reconnect, same as a queued PTT utterance. */
+    private fun queueQuickChat(text: String) {
         val lang = _uiState.value.currentLanguage
-        val queuedMsg = outboundQueue.enqueue(lang, trimmed, isAlert = false)
+        val queuedMsg = outboundQueue.enqueue(lang, text, isAlert = false)
         publishQueues()
         if (queuedMsg != null) {
             viewModelScope.launch(Dispatchers.IO) {
                 historyDao.insertMessage(
                     HistoryMessage(
                         id = queuedMsg.id,
-                        text = trimmed,
+                        text = text,
                         language = lang,
                         timestampMs = queuedMsg.createdAtMs,
                         direction = MessageDirection.OUTBOUND,
