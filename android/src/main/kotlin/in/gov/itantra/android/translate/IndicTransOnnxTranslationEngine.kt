@@ -440,9 +440,11 @@ class IndicTransOnnxTranslationEngine(
     }
 
     private fun extractLogits(result: OrtSession.Result): Any? {
-        for (name in result.map.keys) {
-            if (name.contains("logits") || name.contains("output") || name.contains("lm_head")) {
-                return result[name].get().value
+        // OrtSession.Result's own `map` field is private; the public surface is
+        // Iterable<Map.Entry<String, OnnxValue>> (or indexed get(int)/get(String)).
+        for (entry in result) {
+            if (entry.key.contains("logits") || entry.key.contains("output") || entry.key.contains("lm_head")) {
+                return entry.value.value
             }
         }
         return result[0]?.value

@@ -59,7 +59,8 @@ fun MainScreen(
                 .padding(horizontal = 16.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            
+            Spacer(Modifier.height(8.dp))
+
             if (uiState.pairingConfirmed || uiState.peerProfile != null) {
                 Card(
                     modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp),
@@ -78,7 +79,7 @@ fun MainScreen(
                         Spacer(Modifier.width(12.dp))
                         Column {
                             Text(
-                                text = "Connected to",
+                                text = chrome.connectedToLabel,
                                 style = MaterialTheme.typography.labelMedium,
                                 color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
                             )
@@ -95,6 +96,8 @@ fun MainScreen(
             // Connection Status Card
             val canReconnectManually = !uiState.reconnecting &&
                 (uiState.connectionState == ConnectionState.DISCONNECTED || uiState.connectionState == ConnectionState.FAILED)
+            val isWifiChannel = uiState.connectionMode == ConnectionMode.WIFI_DIRECT_HOST ||
+                uiState.connectionMode == ConnectionMode.WIFI_DIRECT_CLIENT
             Card(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -118,14 +121,23 @@ fun MainScreen(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Column {
-                        Text(
-                            text = chrome.statusPrefix,
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = if (isWifiChannel) Icons.Filled.Wifi else Icons.Filled.Bluetooth,
+                                contentDescription = if (isWifiChannel) chrome.channelWifiLabel else chrome.channelBluetoothLabel,
+                                modifier = Modifier.size(14.dp),
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                            Spacer(Modifier.width(4.dp))
+                            Text(
+                                text = chrome.statusPrefix,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
                         Text(
                             text = if (uiState.reconnecting) {
-                                "RECONNECTING (${uiState.reconnectAttempt})"
+                                chrome.reconnecting(uiState.reconnectAttempt)
                             } else {
                                 uiState.connectionState.name
                             },
@@ -141,14 +153,24 @@ fun MainScreen(
                         }
                     } else {
                         OutlinedButton(onClick = { viewModel.disconnect() }) {
-                            Text(if (uiState.reconnecting) "Cancel" else chrome.disconnect)
+                            Text(if (uiState.reconnecting) chrome.pairingCancel else chrome.disconnect)
                         }
                     }
                 }
             }
 
-            // Quick Chats
-            val quickChats = listOf("Yes", "No", "Okay", "Need Help", "Wait")
+            // Quick Chats -- phrased in the active *speaking* language (not the menu
+            // language `chrome` uses), since sendQuickChat() tags the message with
+            // currentLanguage: the visible chip text must match what's actually sent
+            // and what the receiver's TTS will be asked to speak.
+            val activeChrome = UiStrings.forLanguage(uiState.currentLanguage)
+            val quickChats = listOf(
+                activeChrome.quickChatYes,
+                activeChrome.quickChatNo,
+                activeChrome.quickChatOkay,
+                activeChrome.quickChatNeedHelp,
+                activeChrome.quickChatWait,
+            )
             androidx.compose.foundation.lazy.LazyRow(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -297,7 +319,7 @@ fun PttButton(uiState: `in`.gov.itantra.ui.UiState, chrome: UiStrings, viewModel
                 uiState.channelBusy -> Icons.Filled.MicOff
                 else -> Icons.Filled.Mic
             },
-            contentDescription = "PTT",
+            contentDescription = chrome.ptt,
             modifier = Modifier.size(48.dp),
             tint = contentColor
         )
