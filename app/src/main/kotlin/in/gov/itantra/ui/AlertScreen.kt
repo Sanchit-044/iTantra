@@ -336,26 +336,15 @@ private fun TypeComposer(
     chrome: UiStrings,
 ) {
     Column {
-        OutlinedTextField(
+        `in`.gov.itantra.ui.components.LabeledBasicTextField(
             value = customText,
             onValueChange = onCustomTextChange,
-            modifier = Modifier.fillMaxWidth(),
+            label = chrome.customMessageTitle,
+            hint = chrome.freeText,
             singleLine = false,
             minLines = 3,
-            placeholder = { Text(chrome.freeText) },
-            supportingText = {
-                Text(
-                    text = "${customText.length} / 200",
-                    modifier = Modifier.fillMaxWidth(),
-                    textAlign = TextAlign.End,
-                )
-            },
-            shape = MaterialTheme.shapes.small,
-            colors = OutlinedTextFieldDefaults.colors(
-                focusedContainerColor = MaterialTheme.colorScheme.surface,
-                unfocusedContainerColor = MaterialTheme.colorScheme.surface,
-                unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant,
-            ),
+            supportingText = "${customText.length} / 200",
+            enabled = !sending,
         )
         Spacer(Modifier.height(8.dp))
         Button(

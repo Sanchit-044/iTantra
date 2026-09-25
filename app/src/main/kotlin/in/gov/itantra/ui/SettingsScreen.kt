@@ -386,14 +386,13 @@ fun LanguageSettingsScreen(
                 LanguageSettingsPage.SPEECH -> items(Language.entries.toList(), key = { "pack-${it.code}" }) { language ->
                     PackRow(
                         language = language,
-                        selected = language in uiState.selected,
                         current = uiState.current == language,
                         busy = uiState.busy,
                         downloaded = language in uiState.downloaded,
                         downloadingNow = uiState.progress?.language == language,
                         chrome = chrome,
-                        onToggle = { viewModel.toggle(language) },
-                        onCurrent = { viewModel.setCurrent(language) },
+                        onSelectCurrent = { viewModel.setCurrent(language) },
+                        onDownload = { viewModel.downloadLanguage(language) },
                         onDelete = { viewModel.requestDelete(language) },
                     )
                 }

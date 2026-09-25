@@ -162,15 +162,13 @@ fun ProfileScreen(
 
             Spacer(Modifier.height(16.dp))
 
-            OutlinedTextField(
+            `in`.gov.itantra.ui.components.LabeledBasicTextField(
                 value = uiState.name,
                 onValueChange = viewModel::setName,
-                modifier = Modifier.fillMaxWidth(),
-                label = { Text(chrome.nameLabel) },
-                leadingIcon = { Icon(Icons.Filled.Person, contentDescription = null) },
+                label = chrome.nameLabel,
+                leadingIcon = Icons.Filled.Person,
                 singleLine = true,
                 enabled = !uiState.busy,
-                shape = MaterialTheme.shapes.small,
             )
 
             uiState.error?.let { error ->

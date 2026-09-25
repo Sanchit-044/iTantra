@@ -98,32 +98,51 @@ class LanguageSelectionViewModel @Inject constructor(
         _uiState.update { it.copy(downloaded = ready) }
     }
 
-    fun toggle(language: Language) {
-        _uiState.update { state ->
-            val next = state.selected.toMutableSet()
-            if (language in next) {
-                if (next.size == 1) return@update state
-                next.remove(language)
-            } else {
-                next.add(language)
+    fun setCurrent(language: Language) {
+        viewModelScope.launch {
+            val wasDownloaded = language in _uiState.value.downloaded
+            _uiState.update { state ->
+                val nextSelected = state.selected + language
+                val installed = LanguageSelection.normalizeInstalled(nextSelected)
+                state.copy(
+                    selected = installed,
+                    current = language,
+                    uiLanguage = UiLanguage.normalize(state.uiLanguage, installed),
+                    error = null,
+                )
             }
-            val installed = LanguageSelection.normalizeInstalled(next)
-            state.copy(
-                selected = installed,
-                current = LanguageSelection.normalizeCurrent(state.current, installed),
-                uiLanguage = UiLanguage.normalize(state.uiLanguage, installed),
-                error = null,
-            )
+            val snap = _uiState.value
+            if (snap.setupDone) {
+                store.updateSelection(snap.selected, snap.current, snap.uiLanguage)
+            }
+            if (!wasDownloaded) {
+                downloadLanguage(language)
+            }
         }
     }
 
-    fun setCurrent(language: Language) {
-        if (language !in _uiState.value.selected) return
-        _uiState.update { state ->
-            state.copy(
-                current = LanguageSelection.normalizeCurrent(language, state.selected),
-                error = null,
-            )
+    fun downloadLanguage(language: Language) {
+        viewModelScope.launch {
+            _uiState.update { state ->
+                val nextSelected = state.selected + language
+                val installed = LanguageSelection.normalizeInstalled(nextSelected)
+                state.copy(
+                    selected = installed,
+                    current = LanguageSelection.normalizeCurrent(state.current, installed),
+                    uiLanguage = UiLanguage.normalize(state.uiLanguage, installed),
+                    error = null,
+                )
+            }
+            val snap = _uiState.value
+            try {
+                if (snap.setupDone) {
+                    store.updateSelection(snap.selected, snap.current, snap.uiLanguage)
+                }
+                installCoordinator.install(setOf(language), emptySet(), includeTranslation = true)
+                `in`.gov.itantra.service.LanguagePackDownloadService.start(context)
+            } catch (e: Exception) {
+                _uiState.update { it.copy(error = e.message ?: "Failed to download pack") }
+            }
         }
     }
 

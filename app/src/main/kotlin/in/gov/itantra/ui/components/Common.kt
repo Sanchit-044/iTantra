@@ -6,6 +6,7 @@ import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -20,6 +21,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
@@ -28,13 +32,19 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -321,6 +331,117 @@ fun SetupHeader(
                 style = MaterialTheme.typography.bodyLarge,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+        }
+    }
+}
+
+/** Clean, modern text input with a top label, built on [BasicTextField]. */
+@Composable
+fun LabeledBasicTextField(
+    value: String,
+    onValueChange: (String) -> Unit,
+    label: String,
+    modifier: Modifier = Modifier,
+    hint: String? = null,
+    leadingIcon: ImageVector? = null,
+    singleLine: Boolean = true,
+    minLines: Int = 1,
+    maxLines: Int = Int.MAX_VALUE,
+    enabled: Boolean = true,
+    error: String? = null,
+    supportingText: String? = null,
+    keyboardOptions: KeyboardOptions = KeyboardOptions.Default,
+    keyboardActions: KeyboardActions = KeyboardActions.Default,
+) {
+    var isFocused by remember { mutableStateOf(false) }
+    val borderColor = when {
+        error != null -> MaterialTheme.colorScheme.error
+        isFocused -> MaterialTheme.colorScheme.primary
+        else -> MaterialTheme.colorScheme.outlineVariant
+    }
+
+    Column(modifier = modifier.fillMaxWidth()) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelLarge,
+            fontWeight = FontWeight.SemiBold,
+            color = if (isFocused) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(start = 2.dp, bottom = 6.dp),
+        )
+
+        Surface(
+            color = MaterialTheme.colorScheme.surfaceContainerLow,
+            shape = MaterialTheme.shapes.small,
+            border = BorderStroke(if (isFocused) 1.5.dp else 1.dp, borderColor),
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Row(
+                modifier = Modifier.padding(horizontal = 14.dp, vertical = if (singleLine) 14.dp else 12.dp),
+                verticalAlignment = if (singleLine) Alignment.CenterVertically else Alignment.Top,
+            ) {
+                if (leadingIcon != null) {
+                    Icon(
+                        leadingIcon,
+                        contentDescription = null,
+                        tint = if (isFocused) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier
+                            .size(20.dp)
+                            .padding(top = if (singleLine) 0.dp else 2.dp),
+                    )
+                    Spacer(Modifier.width(10.dp))
+                }
+
+                Box(modifier = Modifier.weight(1f)) {
+                    if (value.isEmpty() && hint != null) {
+                        Text(
+                            text = hint,
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                        )
+                    }
+
+                    BasicTextField(
+                        value = value,
+                        onValueChange = onValueChange,
+                        enabled = enabled,
+                        singleLine = singleLine,
+                        minLines = minLines,
+                        maxLines = maxLines,
+                        keyboardOptions = keyboardOptions,
+                        keyboardActions = keyboardActions,
+                        textStyle = MaterialTheme.typography.bodyLarge.copy(
+                            color = MaterialTheme.colorScheme.onSurface,
+                        ),
+                        cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .onFocusChanged { isFocused = it.isFocused },
+                    )
+                }
+            }
+        }
+
+        if (supportingText != null || error != null) {
+            Spacer(Modifier.height(4.dp))
+            Row(modifier = Modifier.fillMaxWidth()) {
+                if (error != null) {
+                    Text(
+                        text = error,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+                if (supportingText != null) {
+                    Text(
+                        text = supportingText,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = TextAlign.End,
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+            }
         }
     }
 }

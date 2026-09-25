@@ -359,23 +359,42 @@ private fun NavIcon(dest: NavDestination, selected: Boolean) {
 @Composable
 private fun MainNavBar(tab: MainTab, onSelect: (MainTab) -> Unit, chrome: UiStrings, unread: Int) {
     val items = destinations(chrome, unread)
-    NavigationBar(containerColor = MaterialTheme.colorScheme.surfaceContainer) {
-        items.take(2).forEach { NavBarItem(it, tab, onSelect) }
-        Box(
-            modifier = Modifier
-                .weight(1f)
-                .height(80.dp)
-                .align(Alignment.CenterVertically),
-            contentAlignment = Alignment.Center,
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(98.dp),
+        contentAlignment = Alignment.BottomCenter,
+    ) {
+        NavigationBar(
+            containerColor = MaterialTheme.colorScheme.surfaceContainer,
+            modifier = Modifier.fillMaxWidth(),
         ) {
-            AlertFab(
-                selected = tab == MainTab.ALERT,
-                contentDescription = chrome.alert,
-                onClick = { onSelect(MainTab.ALERT) },
-                modifier = Modifier.offset(y = (-12).dp),
-            )
+            items.take(2).forEach { NavBarItem(it, tab, onSelect) }
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxHeight(),
+                contentAlignment = Alignment.BottomCenter,
+            ) {
+                Text(
+                    text = chrome.alert,
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = if (tab == MainTab.ALERT) FontWeight.Bold else FontWeight.Medium,
+                    color = if (tab == MainTab.ALERT) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(bottom = 12.dp),
+                )
+            }
+            items.drop(2).forEach { NavBarItem(it, tab, onSelect) }
         }
-        items.drop(2).forEach { NavBarItem(it, tab, onSelect) }
+
+        AlertFab(
+            selected = tab == MainTab.ALERT,
+            contentDescription = chrome.alert,
+            onClick = { onSelect(MainTab.ALERT) },
+            modifier = Modifier.align(Alignment.TopCenter),
+        )
     }
 }
 

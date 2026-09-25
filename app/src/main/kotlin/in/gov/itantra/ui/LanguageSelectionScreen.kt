@@ -31,11 +31,11 @@ import androidx.compose.material.icons.filled.RecordVoiceOver
 import androidx.compose.material.icons.outlined.CloudDownload
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
-import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Surface
@@ -47,7 +47,9 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -58,6 +60,7 @@ import `in`.gov.itantra.ui.components.DownloadProgressCard
 import `in`.gov.itantra.ui.components.MaxContentWidth
 import `in`.gov.itantra.ui.components.InlineMessage
 import `in`.gov.itantra.ui.components.SetupHeader
+import `in`.gov.itantra.ui.components.StatusPill
 
 @Composable
 fun LanguageSelectionScreen(
@@ -140,14 +143,13 @@ fun LanguageSelectionScreen(
                 items(Language.entries.toList(), key = { "pack-${it.code}" }) { language ->
                     PackRow(
                         language = language,
-                        selected = language in uiState.selected,
                         current = uiState.current == language,
                         busy = uiState.busy,
                         downloaded = language in uiState.downloaded,
                         downloadingNow = uiState.progress?.language == language,
                         chrome = chrome,
-                        onToggle = { viewModel.toggle(language) },
-                        onCurrent = { viewModel.setCurrent(language) },
+                        onSelectCurrent = { viewModel.setCurrent(language) },
+                        onDownload = { viewModel.downloadLanguage(language) },
                         onDelete = { viewModel.requestDelete(language) },
                     )
                 }
@@ -324,89 +326,148 @@ internal fun UiLanguageRow(
 @Composable
 fun PackRow(
     language: Language,
-    selected: Boolean,
     current: Boolean,
     busy: Boolean,
     downloaded: Boolean,
     downloadingNow: Boolean,
     chrome: UiStrings,
-    onToggle: () -> Unit,
-    onCurrent: () -> Unit,
+    onSelectCurrent: () -> Unit,
+    onDownload: () -> Unit,
     onDelete: () -> Unit,
 ) {
+    val isDull = !downloaded && !downloadingNow
+
     Surface(
-        onClick = onToggle,
+        onClick = {
+            if (!downloaded && !downloadingNow) {
+                onDownload()
+            } else {
+                onSelectCurrent()
+            }
+        },
         enabled = !busy,
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .alpha(if (isDull) 0.65f else 1.0f),
         shape = MaterialTheme.shapes.medium,
-        color = if (selected) MaterialTheme.colorScheme.surfaceContainerHigh else MaterialTheme.colorScheme.surfaceContainerLow,
+        color = when {
+            current -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f)
+            downloaded -> MaterialTheme.colorScheme.surfaceContainerLow
+            else -> MaterialTheme.colorScheme.surfaceContainerLowest
+        },
         border = when {
             current -> BorderStroke(2.dp, MaterialTheme.colorScheme.primary)
-            selected -> BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
-            else -> null
+            downloaded -> BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+            else -> BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f))
         },
     ) {
-        Column(modifier = Modifier.padding(start = 14.dp, end = 4.dp, top = 12.dp, bottom = 12.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                LanguageGlyph(language, highlighted = current)
-                Spacer(Modifier.width(14.dp))
-                Column(modifier = Modifier.weight(1f)) {
+        Row(
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            RadioButton(
+                selected = current,
+                onClick = onSelectCurrent,
+                enabled = !busy,
+            )
+
+            Spacer(Modifier.width(10.dp))
+
+            LanguageGlyph(language = language, highlighted = current && downloaded)
+
+            Spacer(Modifier.width(12.dp))
+
+            Column(modifier = Modifier.weight(1f)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
                         text = language.endonym,
                         style = MaterialTheme.typography.titleMedium,
+                        fontWeight = if (current) FontWeight.Bold else FontWeight.Normal,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
-                    Text(
-                        text = language.englishName + if (language == Language.DEFAULT) "  ·  ${chrome.defaultHint}" else "",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                    Spacer(Modifier.height(4.dp))
-                    PackStatus(
-                        downloaded = downloaded,
-                        downloadingNow = downloadingNow,
-                        selected = selected,
-                        chrome = chrome,
-                    )
+                    if (current) {
+                        Spacer(Modifier.width(8.dp))
+                        StatusPill(
+                            text = chrome.active,
+                            containerColor = MaterialTheme.colorScheme.primary,
+                            contentColor = MaterialTheme.colorScheme.onPrimary,
+                        )
+                    }
                 }
-                Checkbox(checked = selected, onCheckedChange = { onToggle() }, enabled = !busy)
+
+                Text(
+                    text = language.englishName + if (language == Language.DEFAULT) "  ·  ${chrome.defaultHint}" else "",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+
+                Spacer(Modifier.height(2.dp))
+
+                PackStatus(
+                    downloaded = downloaded,
+                    downloadingNow = downloadingNow,
+                    chrome = chrome,
+                )
             }
 
-            AnimatedVisibility(visible = selected) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(start = 58.dp, top = 6.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    FilterChip(
-                        selected = current,
-                        onClick = onCurrent,
-                        enabled = !busy,
-                        label = { Text(chrome.active) },
-                        leadingIcon = {
-                            Icon(
-                                if (current) Icons.Filled.Check else Icons.Filled.RecordVoiceOver,
-                                contentDescription = null,
-                                modifier = Modifier.size(FilterChipDefaults.IconSize),
-                            )
-                        },
-                        shape = CircleShape,
+            Spacer(Modifier.width(8.dp))
+
+            when {
+                downloadingNow -> {
+                    CircularProgressIndicator(
+                        modifier = Modifier
+                            .size(24.dp)
+                            .padding(2.dp),
+                        strokeWidth = 2.5.dp,
                     )
-                    Spacer(Modifier.weight(1f))
-                    if (downloaded && !downloadingNow) {
-                        TextButton(onClick = onDelete, enabled = !busy) {
+                }
+                !downloaded -> {
+                    Surface(
+                        onClick = onDownload,
+                        enabled = !busy,
+                        shape = CircleShape,
+                        color = MaterialTheme.colorScheme.primaryContainer,
+                        contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
                             Icon(
-                                imageVector = Icons.Filled.DeleteOutline,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.error,
+                                imageVector = Icons.Outlined.CloudDownload,
+                                contentDescription = chrome.downloadingLabel,
                                 modifier = Modifier.size(18.dp),
                             )
                             Spacer(Modifier.width(4.dp))
-                            Text(chrome.deleteLanguageAction, color = MaterialTheme.colorScheme.error)
+                            Text(
+                                text = "Download",
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.SemiBold,
+                            )
+                        }
+                    }
+                }
+                downloaded -> {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Filled.CheckCircle,
+                            contentDescription = chrome.downloaded,
+                            tint = ITantraTheme.extended.success,
+                            modifier = Modifier.size(20.dp),
+                        )
+                        if (!current && language != Language.DEFAULT) {
+                            Spacer(Modifier.width(4.dp))
+                            IconButton(onClick = onDelete, enabled = !busy, modifier = Modifier.size(32.dp)) {
+                                Icon(
+                                    imageVector = Icons.Filled.DeleteOutline,
+                                    contentDescription = chrome.deleteLanguageAction,
+                                    tint = MaterialTheme.colorScheme.error.copy(alpha = 0.8f),
+                                    modifier = Modifier.size(18.dp),
+                                )
+                            }
                         }
                     }
                 }
@@ -420,42 +481,29 @@ fun PackRow(
 private fun PackStatus(
     downloaded: Boolean,
     downloadingNow: Boolean,
-    selected: Boolean,
     chrome: UiStrings,
 ) {
     val success = ITantraTheme.extended.success
     when {
         downloadingNow -> Row(verticalAlignment = Alignment.CenterVertically) {
-            CircularProgressIndicator(modifier = Modifier.size(12.dp), strokeWidth = 1.5.dp)
-            Spacer(modifier = Modifier.width(6.dp))
             Text(
                 text = chrome.downloadingLabel,
-                style = MaterialTheme.typography.labelMedium,
+                style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.primary,
             )
         }
         downloaded -> Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(
-                imageVector = Icons.Filled.CheckCircle,
-                contentDescription = null,
-                tint = success,
-                modifier = Modifier.size(14.dp),
+            Text(
+                text = chrome.downloaded,
+                style = MaterialTheme.typography.labelSmall,
+                color = success,
             )
-            Spacer(modifier = Modifier.width(4.dp))
-            Text(text = chrome.downloaded, style = MaterialTheme.typography.labelMedium, color = success)
         }
-        selected -> Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(
-                imageVector = Icons.Outlined.CloudDownload,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(14.dp),
-            )
-            Spacer(modifier = Modifier.width(4.dp))
+        else -> Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
                 text = chrome.notDownloaded,
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
             )
         }
     }
