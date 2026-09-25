@@ -68,6 +68,13 @@ class LanguagePackInstallCoordinator(
         }
     }
 
+    /** Pauses/cancels any ongoing download. */
+    fun pause() {
+        job?.cancel()
+        job = null
+        _state.value = LanguageInstallState(busy = false)
+    }
+
     /** Dismisses a past failure without starting a new install. */
     fun clearError() {
         _state.update { it.copy(error = null) }

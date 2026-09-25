@@ -273,13 +273,7 @@ fun LanguageSettingsScreen(
         onBack = onBack,
         backDescription = chrome.back,
         snackbarHost = { `in`.gov.itantra.ui.components.AppSnackbarHost(snackbarHostState) },
-        bottomBar = {
-            uiState.progress?.let { progress ->
-                BottomActionBar {
-                    DownloadProgressCard(message = progress.message, fraction = progress.fraction)
-                }
-            }
-        },
+        bottomBar = {},
     ) {
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
@@ -299,6 +293,7 @@ fun LanguageSettingsScreen(
                         onSelectCurrent = { viewModel.setCurrent(language) },
                         onDownload = { viewModel.downloadLanguage(language) },
                         onDelete = { viewModel.requestDelete(language) },
+                        onPause = { viewModel.pauseDownload() },
                     )
                 }
                 LanguageSettingsPage.DISPLAY -> items(uiState.appLanguageOptions, key = { "ui-${it.code}" }) { language ->

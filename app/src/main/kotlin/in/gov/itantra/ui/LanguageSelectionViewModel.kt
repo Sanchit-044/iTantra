@@ -146,6 +146,10 @@ class LanguageSelectionViewModel @Inject constructor(
         }
     }
 
+    fun pauseDownload() {
+        installCoordinator.pause()
+    }
+
     fun setUiLanguage(language: Language) {
         _uiState.update { state ->
             if (language !in state.appLanguageOptions) return@update state

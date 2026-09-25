@@ -119,11 +119,6 @@ fun LanguageSelectionScreen(
         bottomBar = {
             if (isSetup) {
                 BottomActionBar {
-                    uiState.progress?.let { progress ->
-                        DownloadProgressCard(message = progress.message, fraction = progress.fraction)
-                        Spacer(modifier = Modifier.height(12.dp))
-                    }
-
                     Button(
                         onClick = {
                             if (setupPacksPage) viewModel.goToAppLanguage() else viewModel.confirm()
@@ -150,12 +145,6 @@ fun LanguageSelectionScreen(
                         ) {
                             Text(chrome.back)
                         }
-                    }
-                }
-            } else if (uiState.progress != null) {
-                BottomActionBar {
-                    uiState.progress?.let { progress ->
-                        DownloadProgressCard(message = progress.message, fraction = progress.fraction)
                     }
                 }
             }
@@ -211,6 +200,7 @@ fun LanguageSelectionScreen(
                             onSelectCurrent = { viewModel.setCurrent(language) },
                             onDownload = { viewModel.downloadLanguage(language) },
                             onDelete = { viewModel.requestDelete(language) },
+                            onPause = { viewModel.pauseDownload() },
                         )
                     }
                 }
@@ -349,6 +339,7 @@ fun PackRow(
     onSelectCurrent: () -> Unit,
     onDownload: () -> Unit,
     onDelete: () -> Unit,
+    onPause: () -> Unit = {},
     progressFraction: Float? = null,
 ) {
     val isDull = !downloaded && !downloadingNow
@@ -408,6 +399,7 @@ fun PackRow(
                 Spacer(Modifier.height(2.dp))
 
                 PackStatus(
+                    language = language,
                     downloaded = downloaded,
                     downloadingNow = downloadingNow,
                     chrome = chrome,
@@ -418,9 +410,12 @@ fun PackRow(
 
             when {
                 downloadingNow -> {
-                    // Circular Progress Ring showing live progress
+                    // Circular Progress Ring with pause button in the center
                     Box(
-                        modifier = Modifier.size(38.dp),
+                        modifier = Modifier
+                            .size(38.dp)
+                            .clip(CircleShape)
+                            .clickable(onClick = onPause),
                         contentAlignment = Alignment.Center,
                     ) {
                         if (progressFraction != null && progressFraction > 0f) {
@@ -429,20 +424,22 @@ fun PackRow(
                                 modifier = Modifier.fillMaxSize(),
                                 strokeWidth = 3.dp,
                                 color = MaterialTheme.colorScheme.primary,
-                            )
-                            Text(
-                                text = "${(progressFraction * 100).toInt()}%",
-                                style = MaterialTheme.typography.labelSmall,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.primary,
+                                trackColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.2f),
                             )
                         } else {
                             CircularProgressIndicator(
                                 modifier = Modifier.fillMaxSize(),
                                 strokeWidth = 3.dp,
                                 color = MaterialTheme.colorScheme.primary,
+                                trackColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.2f),
                             )
                         }
+                        Icon(
+                            imageVector = Icons.Filled.Pause,
+                            contentDescription = "Pause download",
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(16.dp),
+                        )
                     }
                 }
                 !downloaded -> {
@@ -505,32 +502,50 @@ fun PackRow(
     }
 }
 
-/** Small status line under a language's name: downloaded, downloading now, or queued to download. */
+val Language.packSize: String
+    get() = when (this) {
+        Language.HINDI -> "78 MB"
+        Language.TAMIL -> "82 MB"
+        Language.BENGALI -> "80 MB"
+        Language.GUJARATI -> "79 MB"
+        Language.MARATHI -> "81 MB"
+        Language.KANNADA -> "80 MB"
+        Language.MALAYALAM -> "82 MB"
+        Language.TELUGU -> "81 MB"
+        Language.ODIA -> "79 MB"
+        Language.ENGLISH -> "75 MB"
+    }
+
+/** Small status line under a language's name: size, downloaded, downloading now, or not downloaded. */
 @Composable
 private fun PackStatus(
+    language: Language,
     downloaded: Boolean,
     downloadingNow: Boolean,
     chrome: UiStrings,
 ) {
+    val sizeText = language.packSize
     val success = ITantraTheme.extended.success
     when {
         downloadingNow -> Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
-                text = chrome.downloadingLabel,
+                text = "$sizeText · ${chrome.downloadingLabel}",
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.primary,
+                fontWeight = FontWeight.Medium,
             )
         }
         downloaded -> Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
-                text = chrome.downloaded,
+                text = "$sizeText · ${chrome.downloaded}",
                 style = MaterialTheme.typography.labelSmall,
                 color = success,
+                fontWeight = FontWeight.Medium,
             )
         }
         else -> Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
-                text = chrome.notDownloaded,
+                text = "$sizeText · ${chrome.notDownloaded}",
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
             )
