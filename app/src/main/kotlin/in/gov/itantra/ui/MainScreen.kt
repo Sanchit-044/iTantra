@@ -10,6 +10,8 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -187,9 +189,12 @@ fun MainScreen(
         PttDock(uiState = uiState, chrome = chrome, viewModel = viewModel)
     }
 
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+
     if (showConnectionSheet) {
         ModalBottomSheet(
             onDismissRequest = { showConnectionSheet = false },
+            sheetState = sheetState,
             containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
         ) {
             ConnectionSettingsSheet(uiState = uiState, chrome = chrome, viewModel = viewModel) {
@@ -639,8 +644,10 @@ fun ConnectionSettingsSheet(uiState: `in`.gov.itantra.ui.UiState, chrome: UiStri
     Column(
         modifier = Modifier
             .fillMaxWidth()
+            .verticalScroll(rememberScrollState())
             .padding(horizontal = 24.dp)
-            .padding(bottom = 16.dp)
+            .padding(bottom = 32.dp)
+            .navigationBarsPadding(),
     ) {
         Text(
             text = chrome.connectSheetTitle,

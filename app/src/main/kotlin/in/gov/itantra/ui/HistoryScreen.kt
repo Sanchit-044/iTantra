@@ -126,21 +126,14 @@ fun HistoryMessageItem(msg: HistoryMessage, chrome: UiStrings) {
     val timeStr = formatter.format(Date(msg.timestampMs))
     val outbound = msg.direction == MessageDirection.OUTBOUND
     val ext = ITantraTheme.extended
-
-    val bgColor = if (outbound) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceContainerHigh
-    val contentColor = if (outbound) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurface
+    val contentColor = MaterialTheme.colorScheme.onSurface
 
     Surface(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(start = if (outbound) 32.dp else 0.dp, end = if (outbound) 0.dp else 32.dp),
-        shape = if (outbound) {
-            RoundedCornerShape(topStart = 8.dp, topEnd = 2.dp, bottomEnd = 8.dp, bottomStart = 8.dp)
-        } else {
-            RoundedCornerShape(topStart = 2.dp, topEnd = 8.dp, bottomEnd = 8.dp, bottomStart = 8.dp)
-        },
-        color = bgColor,
+        modifier = Modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.medium,
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
         contentColor = contentColor,
+        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
     ) {
         Column(
             modifier = Modifier

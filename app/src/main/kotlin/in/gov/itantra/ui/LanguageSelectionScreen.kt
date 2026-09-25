@@ -4,6 +4,7 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -27,6 +28,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.DeleteOutline
+import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.RecordVoiceOver
 import androidx.compose.material.icons.outlined.CloudDownload
 import androidx.compose.material3.AlertDialog
@@ -189,18 +191,21 @@ fun LanguageSelectionScreen(
                         Spacer(modifier = Modifier.height(12.dp))
                     }
                     items(Language.entries.toList(), key = { "pack-${it.code}" }) { language ->
+                        val isDownloading = language in uiState.activeDownloads || uiState.progress?.language == language
+                        val isCurrentProgress = uiState.progress?.language == language
+                        val fraction = if (isCurrentProgress) uiState.progress?.fraction else null
                         PackRow(
                             language = language,
                             current = uiState.current == language,
-                            busy = uiState.busy,
+                            busy = false,
                             downloaded = language in uiState.downloaded,
-                            downloadingNow = uiState.progress?.language == language,
-                            progressFraction = if (uiState.progress?.language == language) uiState.progress?.fraction else null,
+                            downloadingNow = isDownloading,
+                            progressFraction = fraction,
                             chrome = chrome,
                             onSelectCurrent = { viewModel.setCurrent(language) },
                             onDownload = { viewModel.downloadLanguage(language) },
                             onDelete = { viewModel.requestDelete(language) },
-                            onPause = { viewModel.pauseDownload() },
+                            onPause = { viewModel.pauseDownload(language) },
                         )
                     }
                 }
@@ -346,10 +351,10 @@ fun PackRow(
 
     Surface(
         onClick = {
-            if (!downloaded && !downloadingNow) {
-                onDownload()
-            } else {
+            if (downloaded) {
                 onSelectCurrent()
+            } else if (!downloadingNow) {
+                onDownload()
             }
         },
         enabled = !busy,
@@ -412,10 +417,7 @@ fun PackRow(
                 downloadingNow -> {
                     // Circular Progress Ring with pause button in the center
                     Box(
-                        modifier = Modifier
-                            .size(38.dp)
-                            .clip(CircleShape)
-                            .clickable(onClick = onPause),
+                        modifier = Modifier.size(38.dp),
                         contentAlignment = Alignment.Center,
                     ) {
                         if (progressFraction != null && progressFraction > 0f) {
@@ -434,12 +436,17 @@ fun PackRow(
                                 trackColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.2f),
                             )
                         }
-                        Icon(
-                            imageVector = Icons.Filled.Pause,
-                            contentDescription = "Pause download",
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(16.dp),
-                        )
+                        IconButton(
+                            onClick = onPause,
+                            modifier = Modifier.size(38.dp),
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.Pause,
+                                contentDescription = "Pause download",
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(16.dp),
+                            )
+                        }
                     }
                 }
                 !downloaded -> {
@@ -461,7 +468,10 @@ fun PackRow(
                     }
                 }
                 downloaded -> {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
                         if (current) {
                             StatusPill(
                                 text = chrome.active,
@@ -483,17 +493,21 @@ fun PackRow(
                                     fontWeight = FontWeight.SemiBold,
                                 )
                             }
-                            if (language != Language.DEFAULT) {
-                                Spacer(Modifier.width(4.dp))
-                                IconButton(onClick = onDelete, enabled = !busy, modifier = Modifier.size(32.dp)) {
-                                    Icon(
-                                        imageVector = Icons.Filled.DeleteOutline,
-                                        contentDescription = chrome.deleteLanguageAction,
-                                        tint = MaterialTheme.colorScheme.error.copy(alpha = 0.8f),
-                                        modifier = Modifier.size(18.dp),
-                                    )
-                                }
-                            }
+                        }
+                        IconButton(
+                            onClick = onDelete,
+                            enabled = !busy,
+                            modifier = Modifier
+                                .size(34.dp)
+                                .clip(CircleShape)
+                                .background(MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.5f)),
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.DeleteOutline,
+                                contentDescription = chrome.deleteLanguageAction,
+                                tint = MaterialTheme.colorScheme.error,
+                                modifier = Modifier.size(18.dp),
+                            )
                         }
                     }
                 }

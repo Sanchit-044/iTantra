@@ -282,18 +282,21 @@ fun LanguageSettingsScreen(
         ) {
             when (page) {
                 LanguageSettingsPage.SPEECH -> items(Language.entries.toList(), key = { "pack-${it.code}" }) { language ->
+                    val isDownloading = language in uiState.activeDownloads || uiState.progress?.language == language
+                    val isCurrentProgress = uiState.progress?.language == language
+                    val fraction = if (isCurrentProgress) uiState.progress?.fraction else null
                     PackRow(
                         language = language,
                         current = uiState.current == language,
-                        busy = uiState.busy,
+                        busy = false,
                         downloaded = language in uiState.downloaded,
-                        downloadingNow = uiState.progress?.language == language,
-                        progressFraction = if (uiState.progress?.language == language) uiState.progress?.fraction else null,
+                        downloadingNow = isDownloading,
+                        progressFraction = fraction,
                         chrome = chrome,
                         onSelectCurrent = { viewModel.setCurrent(language) },
                         onDownload = { viewModel.downloadLanguage(language) },
                         onDelete = { viewModel.requestDelete(language) },
-                        onPause = { viewModel.pauseDownload() },
+                        onPause = { viewModel.pauseDownload(language) },
                     )
                 }
                 LanguageSettingsPage.DISPLAY -> items(uiState.appLanguageOptions, key = { "ui-${it.code}" }) { language ->

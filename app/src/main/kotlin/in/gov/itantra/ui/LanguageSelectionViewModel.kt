@@ -35,6 +35,7 @@ data class LanguageSelectionUiState(
     val page: LanguageSetupPage = LanguageSetupPage.PACKS,
     val busy: Boolean = false,
     val progress: PackProgress? = null,
+    val activeDownloads: Set<Language> = emptySet(),
     val error: String? = null,
     val finished: Boolean = false,
     /** Languages whose files are actually present on disk right now, per [LanguagePackManager.isLanguagePackReady]. */
@@ -83,9 +84,14 @@ class LanguageSelectionViewModel @Inject constructor(
         viewModelScope.launch {
             installCoordinator.state.collect { install ->
                 _uiState.update {
-                    it.copy(busy = install.busy, progress = install.progress, error = install.error ?: it.error)
+                    it.copy(
+                        busy = install.busy,
+                        progress = install.progress,
+                        activeDownloads = install.activeLanguages,
+                        error = install.error ?: it.error,
+                    )
                 }
-                if (!install.busy) refreshDownloaded()
+                refreshDownloaded()
             }
         }
     }
@@ -146,8 +152,8 @@ class LanguageSelectionViewModel @Inject constructor(
         }
     }
 
-    fun pauseDownload() {
-        installCoordinator.pause()
+    fun pauseDownload(language: Language? = null) {
+        installCoordinator.pause(language)
     }
 
     fun setUiLanguage(language: Language) {

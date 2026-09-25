@@ -5,6 +5,7 @@ import `in`.gov.itantra.core.Language
 import `in`.gov.itantra.core.pack.LanguagePackManager
 import `in`.gov.itantra.core.pack.PackProgress
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.net.HttpURLConnection
@@ -48,6 +49,7 @@ class LocalLanguagePackManager(
         val totalSteps = (list.size + if (includeTranslation) 1 else 0).coerceAtLeast(1)
         val failed = mutableListOf<Language>()
         list.forEachIndexed { index, language ->
+            if (!isActive) return@withContext
             val base = index.toFloat() / totalSteps
             val step = 1f / totalSteps
             val ok = installLanguage(language) { fileFraction, fileLabel ->
@@ -203,6 +205,10 @@ class LocalLanguagePackManager(
                     val buffer = ByteArray(COPY_BUFFER_BYTES)
                     var downloaded = 0L
                     while (true) {
+                        if (Thread.currentThread().isInterrupted) {
+                            temp.delete()
+                            return false
+                        }
                         val read = input.read(buffer)
                         if (read < 0) break
                         output.write(buffer, 0, read)
