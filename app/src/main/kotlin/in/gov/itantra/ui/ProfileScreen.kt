@@ -181,12 +181,6 @@ fun ProfileScreen(
                 singleLine = true,
                 enabled = !uiState.busy,
             )
-
-            uiState.error?.let { error ->
-                Spacer(Modifier.height(8.dp))
-                InlineMessage(text = error, isError = true)
-            }
-
         }
     }
 }

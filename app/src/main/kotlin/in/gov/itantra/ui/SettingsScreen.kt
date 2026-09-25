@@ -79,6 +79,7 @@ fun SettingsScreen(
     onOpenLanguages: () -> Unit,
     onOpenDisplay: () -> Unit,
     onOpenAnalysis: () -> Unit,
+    onOpenAbout: () -> Unit,
     themeViewModel: ThemeSettingsViewModel = hiltViewModel(),
 ) {
     val mode by themeViewModel.mode.collectAsState()
@@ -159,7 +160,13 @@ fun SettingsScreen(
 
         // Section 4: About & System Info Card
         SettingsGroup(chrome.sectionAbout) {
-            AboutCardContent(chrome)
+            SettingsRow(
+                icon = Icons.Outlined.Info,
+                title = chrome.appTitle,
+                subtitle = "${chrome.version(`in`.gov.itantra.BuildConfig.VERSION_NAME)} · ISRO SIH PS 26173",
+                onClick = onOpenAbout,
+                showDivider = false,
+            )
         }
     }
 }
@@ -224,61 +231,6 @@ private fun ProfileHeroCard(state: UiState, chrome: UiStrings, onClick: () -> Un
     }
 }
 
-@OptIn(ExperimentalLayoutApi::class)
-@Composable
-private fun AboutCardContent(chrome: UiStrings) {
-    Column(modifier = Modifier.padding(16.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(
-                imageVector = Icons.Outlined.Info,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(22.dp),
-            )
-            Spacer(Modifier.width(16.dp))
-            Column {
-                Text(
-                    text = chrome.appTitle,
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold,
-                )
-                Text(
-                    text = chrome.version(`in`.gov.itantra.BuildConfig.VERSION_NAME) + " · ISRO SIH PS 26173",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-        }
-        Spacer(Modifier.height(12.dp))
-        Text(
-            text = chrome.aboutOffline,
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        Spacer(Modifier.height(12.dp))
-        FlowRow(
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp),
-        ) {
-            StatusPill(
-                text = "100% Offline",
-                containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
-                contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            StatusPill(
-                text = "AES-256-GCM",
-                containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
-                contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            StatusPill(
-                text = "ONNX AI STT/TTS",
-                containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
-                contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-    }
-}
-
 enum class LanguageSettingsPage { SPEECH, DISPLAY }
 
 /** Pushed from Settings: speech language packs, or the app display language. */
@@ -311,6 +263,16 @@ fun LanguageSettingsScreen(
         )
     }
 
+    val snackbarHostState = androidx.compose.runtime.remember { androidx.compose.material3.SnackbarHostState() }
+
+    LaunchedEffect(uiState.error) {
+        uiState.error?.let { error ->
+            if (error.isNotBlank()) {
+                snackbarHostState.showSnackbar(error)
+            }
+        }
+    }
+
     SubScreenScaffold(
         title = when (page) {
             LanguageSettingsPage.SPEECH -> chrome.languagesTitle
@@ -318,16 +280,11 @@ fun LanguageSettingsScreen(
         },
         onBack = onBack,
         backDescription = chrome.back,
+        snackbarHost = { `in`.gov.itantra.ui.components.AppSnackbarHost(snackbarHostState) },
         bottomBar = {
-            if (uiState.progress != null || uiState.error != null) {
+            uiState.progress?.let { progress ->
                 BottomActionBar {
-                    uiState.progress?.let { progress ->
-                        DownloadProgressCard(message = progress.message, fraction = progress.fraction)
-                        Spacer(modifier = Modifier.height(8.dp))
-                    }
-                    uiState.error?.let { error ->
-                        InlineMessage(text = error, isError = true)
-                    }
+                    DownloadProgressCard(message = progress.message, fraction = progress.fraction)
                 }
             }
         },

@@ -138,6 +138,7 @@ fun ITantraApp(
                 onOpenLanguages = { navController.navigate(AppRoutes.SETTINGS_LANGUAGES) },
                 onOpenDisplay = { navController.navigate(AppRoutes.SETTINGS_DISPLAY) },
                 onOpenAnalysis = { navController.navigate(AppRoutes.SETTINGS_ANALYSIS) },
+                onOpenAbout = { navController.navigate(AppRoutes.SETTINGS_ABOUT) },
             )
         }
         composable(AppRoutes.SETTINGS_PROFILE) {
@@ -172,6 +173,13 @@ fun ITantraApp(
                 DiagnosticsScreen(uiLanguage = main.uiLanguage)
             }
         }
+        composable(AppRoutes.SETTINGS_ABOUT) {
+            val main by mainViewModel.uiState.collectAsState()
+            AboutScreen(
+                uiLanguage = main.uiLanguage,
+                onBack = { navController.popBackStack() },
+            )
+        }
     }
 }
 
@@ -183,6 +191,7 @@ fun MainContent(
     onOpenLanguages: () -> Unit,
     onOpenDisplay: () -> Unit,
     onOpenAnalysis: () -> Unit,
+    onOpenAbout: () -> Unit,
 ) {
     val uiState by mainViewModel.uiState.collectAsState()
     val chrome = UiStrings.forLanguage(uiState.uiLanguage)
@@ -334,6 +343,7 @@ fun MainContent(
                             onOpenLanguages = onOpenLanguages,
                             onOpenDisplay = onOpenDisplay,
                             onOpenAnalysis = onOpenAnalysis,
+                            onOpenAbout = onOpenAbout,
                         )
                     }
                 }

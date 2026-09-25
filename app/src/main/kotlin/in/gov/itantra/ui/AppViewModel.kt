@@ -15,6 +15,7 @@ object AppRoutes {
     const val SETTINGS_LANGUAGES = "settings_languages"
     const val SETTINGS_DISPLAY = "settings_display"
     const val SETTINGS_ANALYSIS = "settings_analysis"
+    const val SETTINGS_ABOUT = "settings_about"
 }
 
 @HiltViewModel

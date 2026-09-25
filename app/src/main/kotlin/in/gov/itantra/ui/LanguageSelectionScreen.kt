@@ -103,140 +103,148 @@ fun LanguageSelectionScreen(
         )
     }
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .statusBarsPadding(),
-    ) {
-        LazyColumn(
-            modifier = Modifier
-                .weight(1f)
-                .align(Alignment.CenterHorizontally)
-                .widthIn(max = MaxContentWidth)
-                .fillMaxWidth(),
-            contentPadding = PaddingValues(horizontal = 20.dp, vertical = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
-        ) {
-            if (!isSetup || setupPacksPage) {
-                item(key = "packs-title") {
-                    if (isSetup) {
-                        SetupHeader(
-                            step = 2,
-                            totalSteps = 3,
-                            stepLabel = chrome.step(2, 3),
-                            title = chrome.chooseLanguages,
-                            body = chrome.chooseLanguagesBody,
-                        )
-                    } else {
-                        Column {
-                            Text(chrome.languagesTitle, style = MaterialTheme.typography.headlineSmall)
-                            Spacer(Modifier.height(6.dp))
-                            Text(
-                                chrome.speechHelp,
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                    }
-                    Spacer(modifier = Modifier.height(12.dp))
-                }
-                items(Language.entries.toList(), key = { "pack-${it.code}" }) { language ->
-                    PackRow(
-                        language = language,
-                        current = uiState.current == language,
-                        busy = uiState.busy,
-                        downloaded = language in uiState.downloaded,
-                        downloadingNow = uiState.progress?.language == language,
-                        progressFraction = if (uiState.progress?.language == language) uiState.progress?.fraction else null,
-                        chrome = chrome,
-                        onSelectCurrent = { viewModel.setCurrent(language) },
-                        onDownload = { viewModel.downloadLanguage(language) },
-                        onDelete = { viewModel.requestDelete(language) },
-                    )
-                }
-            }
+    val snackbarHostState = androidx.compose.runtime.remember { androidx.compose.material3.SnackbarHostState() }
 
-            if (!isSetup || setupAppPage) {
-                item(key = "ui-title") {
-                    if (isSetup) {
-                        SetupHeader(
-                            step = 3,
-                            totalSteps = 3,
-                            stepLabel = chrome.step(3, 3),
-                            title = chrome.appLanguageTitle,
-                            body = chrome.appLanguageBody,
-                        )
-                    } else {
-                        Column {
-                            Spacer(modifier = Modifier.height(16.dp))
-                            Text(chrome.appLanguageTitle, style = MaterialTheme.typography.headlineSmall)
-                            Spacer(Modifier.height(6.dp))
-                            Text(
-                                chrome.appLanguageBody,
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                    }
-                    Spacer(modifier = Modifier.height(12.dp))
-                }
-                items(uiState.appLanguageOptions, key = { "ui-${it.code}" }) { language ->
-                    UiLanguageRow(
-                        language = language,
-                        selected = uiState.uiLanguage == language,
-                        enabled = !uiState.busy,
-                        onSelect = { viewModel.setUiLanguage(language) },
-                    )
-                }
+    LaunchedEffect(uiState.error) {
+        uiState.error?.let { error ->
+            if (error.isNotBlank()) {
+                snackbarHostState.showSnackbar(error)
             }
         }
+    }
 
-        if (isSetup) {
-            BottomActionBar {
-                uiState.progress?.let { progress ->
-                    DownloadProgressCard(message = progress.message, fraction = progress.fraction)
-                    Spacer(modifier = Modifier.height(12.dp))
-                }
+    androidx.compose.material3.Scaffold(
+        containerColor = MaterialTheme.colorScheme.surface,
+        snackbarHost = { `in`.gov.itantra.ui.components.AppSnackbarHost(snackbarHostState) },
+        bottomBar = {
+            if (isSetup) {
+                BottomActionBar {
+                    uiState.progress?.let { progress ->
+                        DownloadProgressCard(message = progress.message, fraction = progress.fraction)
+                        Spacer(modifier = Modifier.height(12.dp))
+                    }
 
-                uiState.error?.let { error ->
-                    InlineMessage(text = error, isError = true)
-                    Spacer(modifier = Modifier.height(12.dp))
-                }
-
-                Button(
-                    onClick = {
-                        if (setupPacksPage) viewModel.goToAppLanguage() else viewModel.confirm()
-                    },
-                    enabled = !uiState.busy && uiState.selected.isNotEmpty(),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(56.dp),
-                ) {
-                    Text(
-                        chrome.continueLabel,
-                        style = MaterialTheme.typography.titleMedium,
-                    )
-                    Spacer(Modifier.width(8.dp))
-                    Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = null, modifier = Modifier.size(20.dp))
-                }
-                if (setupAppPage) {
-                    TextButton(
-                        onClick = { viewModel.backToPacks() },
-                        enabled = !uiState.busy,
-                        modifier = Modifier.fillMaxWidth(),
+                    Button(
+                        onClick = {
+                            if (setupPacksPage) viewModel.goToAppLanguage() else viewModel.confirm()
+                        },
+                        enabled = !uiState.busy && uiState.selected.isNotEmpty(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(56.dp),
                     ) {
-                        Text(chrome.back)
+                        Text(
+                            chrome.continueLabel,
+                            style = MaterialTheme.typography.titleMedium,
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = null, modifier = Modifier.size(20.dp))
+                    }
+                    if (setupAppPage) {
+                        TextButton(
+                            onClick = { viewModel.backToPacks() },
+                            enabled = !uiState.busy,
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Text(chrome.back)
+                        }
+                    }
+                }
+            } else if (uiState.progress != null) {
+                BottomActionBar {
+                    uiState.progress?.let { progress ->
+                        DownloadProgressCard(message = progress.message, fraction = progress.fraction)
                     }
                 }
             }
-        } else if (uiState.progress != null || uiState.error != null) {
-            BottomActionBar {
-                uiState.progress?.let { progress ->
-                    DownloadProgressCard(message = progress.message, fraction = progress.fraction)
-                    Spacer(modifier = Modifier.height(8.dp))
+        },
+    ) { padding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+                .statusBarsPadding(),
+        ) {
+            LazyColumn(
+                modifier = Modifier
+                    .weight(1f)
+                    .align(Alignment.CenterHorizontally)
+                    .widthIn(max = MaxContentWidth)
+                    .fillMaxWidth(),
+                contentPadding = PaddingValues(horizontal = 20.dp, vertical = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                if (!isSetup || setupPacksPage) {
+                    item(key = "packs-title") {
+                        if (isSetup) {
+                            SetupHeader(
+                                step = 2,
+                                totalSteps = 3,
+                                stepLabel = chrome.step(2, 3),
+                                title = chrome.chooseLanguages,
+                                body = chrome.chooseLanguagesBody,
+                            )
+                        } else {
+                            Column {
+                                Text(chrome.languagesTitle, style = MaterialTheme.typography.headlineSmall)
+                                Spacer(Modifier.height(6.dp))
+                                Text(
+                                    chrome.speechHelp,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        }
+                        Spacer(modifier = Modifier.height(12.dp))
+                    }
+                    items(Language.entries.toList(), key = { "pack-${it.code}" }) { language ->
+                        PackRow(
+                            language = language,
+                            current = uiState.current == language,
+                            busy = uiState.busy,
+                            downloaded = language in uiState.downloaded,
+                            downloadingNow = uiState.progress?.language == language,
+                            progressFraction = if (uiState.progress?.language == language) uiState.progress?.fraction else null,
+                            chrome = chrome,
+                            onSelectCurrent = { viewModel.setCurrent(language) },
+                            onDownload = { viewModel.downloadLanguage(language) },
+                            onDelete = { viewModel.requestDelete(language) },
+                        )
+                    }
                 }
-                uiState.error?.let { error ->
-                    InlineMessage(text = error, isError = true)
+
+                if (!isSetup || setupAppPage) {
+                    item(key = "ui-title") {
+                        if (isSetup) {
+                            SetupHeader(
+                                step = 3,
+                                totalSteps = 3,
+                                stepLabel = chrome.step(3, 3),
+                                title = chrome.appLanguageTitle,
+                                body = chrome.appLanguageBody,
+                            )
+                        } else {
+                            Column {
+                                Spacer(modifier = Modifier.height(16.dp))
+                                Text(chrome.appLanguageTitle, style = MaterialTheme.typography.headlineSmall)
+                                Spacer(Modifier.height(6.dp))
+                                Text(
+                                    chrome.appLanguageBody,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        }
+                        Spacer(modifier = Modifier.height(12.dp))
+                    }
+                    items(uiState.appLanguageOptions, key = { "ui-${it.code}" }) { language ->
+                        UiLanguageRow(
+                            language = language,
+                            selected = uiState.uiLanguage == language,
+                            enabled = !uiState.busy,
+                            onSelect = { viewModel.setUiLanguage(language) },
+                        )
+                    }
                 }
             }
         }
