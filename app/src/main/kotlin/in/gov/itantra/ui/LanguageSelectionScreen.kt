@@ -191,50 +191,52 @@ fun LanguageSelectionScreen(
             }
         }
 
-        BottomActionBar {
-            uiState.progress?.let { progress ->
-                DownloadProgressCard(message = progress.message, fraction = progress.fraction)
-                Spacer(modifier = Modifier.height(12.dp))
-            }
+        if (isSetup) {
+            BottomActionBar {
+                uiState.progress?.let { progress ->
+                    DownloadProgressCard(message = progress.message, fraction = progress.fraction)
+                    Spacer(modifier = Modifier.height(12.dp))
+                }
 
-            uiState.error?.let { error ->
-                InlineMessage(text = error, isError = true)
-                Spacer(modifier = Modifier.height(12.dp))
-            }
+                uiState.error?.let { error ->
+                    InlineMessage(text = error, isError = true)
+                    Spacer(modifier = Modifier.height(12.dp))
+                }
 
-            Button(
-                onClick = {
-                    if (setupPacksPage) viewModel.goToAppLanguage() else viewModel.confirm()
-                },
-                enabled = !uiState.busy && uiState.selected.isNotEmpty(),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(56.dp),
-            ) {
-                Text(
-                    if (isSetup) chrome.continueLabel else chrome.save,
-                    style = MaterialTheme.typography.titleMedium,
-                )
-                if (isSetup) {
+                Button(
+                    onClick = {
+                        if (setupPacksPage) viewModel.goToAppLanguage() else viewModel.confirm()
+                    },
+                    enabled = !uiState.busy && uiState.selected.isNotEmpty(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(56.dp),
+                ) {
+                    Text(
+                        chrome.continueLabel,
+                        style = MaterialTheme.typography.titleMedium,
+                    )
                     Spacer(Modifier.width(8.dp))
                     Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = null, modifier = Modifier.size(20.dp))
                 }
-            }
-            if (setupAppPage) {
-                TextButton(
-                    onClick = { viewModel.backToPacks() },
-                    enabled = !uiState.busy,
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Text(chrome.back)
+                if (setupAppPage) {
+                    TextButton(
+                        onClick = { viewModel.backToPacks() },
+                        enabled = !uiState.busy,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text(chrome.back)
+                    }
                 }
-            } else if (onBack != null) {
-                TextButton(
-                    onClick = onBack,
-                    enabled = !uiState.busy,
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Text(chrome.back)
+            }
+        } else if (uiState.progress != null || uiState.error != null) {
+            BottomActionBar {
+                uiState.progress?.let { progress ->
+                    DownloadProgressCard(message = progress.message, fraction = progress.fraction)
+                    Spacer(modifier = Modifier.height(8.dp))
+                }
+                uiState.error?.let { error ->
+                    InlineMessage(text = error, isError = true)
                 }
             }
         }

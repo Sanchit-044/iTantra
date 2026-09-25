@@ -151,6 +151,12 @@ class LanguageSelectionViewModel @Inject constructor(
             if (language !in state.appLanguageOptions) return@update state
             state.copy(uiLanguage = language, error = null)
         }
+        val snap = _uiState.value
+        if (snap.setupDone) {
+            viewModelScope.launch {
+                store.updateSelection(snap.selected, snap.current, snap.uiLanguage)
+            }
+        }
     }
 
     fun goToAppLanguage() {

@@ -62,8 +62,19 @@ fun ProfileScreen(
         if (uri != null) viewModel.importPhoto(uri)
     }
 
+    val snackbarHostState = androidx.compose.runtime.remember { androidx.compose.material3.SnackbarHostState() }
+
+    LaunchedEffect(uiState.error) {
+        uiState.error?.let { error ->
+            if (error.isNotBlank()) {
+                snackbarHostState.showSnackbar(error)
+            }
+        }
+    }
+
     Scaffold(
         containerColor = MaterialTheme.colorScheme.surface,
+        snackbarHost = { `in`.gov.itantra.ui.components.AppSnackbarHost(snackbarHostState) },
         topBar = {
             if (!isSetup) {
                 AppTopBar(

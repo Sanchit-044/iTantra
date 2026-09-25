@@ -118,6 +118,7 @@ fun SubScreenScaffold(
     backDescription: String,
     actions: @Composable RowScope.() -> Unit = {},
     bottomBar: @Composable () -> Unit = {},
+    snackbarHost: @Composable () -> Unit = {},
     content: @Composable () -> Unit,
 ) {
     val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior()
@@ -126,6 +127,7 @@ fun SubScreenScaffold(
             .fillMaxSize()
             .nestedScroll(scrollBehavior.nestedScrollConnection),
         containerColor = MaterialTheme.colorScheme.surface,
+        snackbarHost = snackbarHost,
         topBar = {
             AppTopBar(
                 title = { AppBarTitle(title) },
@@ -144,6 +146,63 @@ fun SubScreenScaffold(
     ) { padding ->
         MaxWidthBox(modifier = Modifier.padding(padding)) {
             content()
+        }
+    }
+}
+
+/** Unified, themed snackbar host matching the app's clean 2-tone aesthetic. */
+@Composable
+fun AppSnackbarHost(
+    hostState: androidx.compose.material3.SnackbarHostState,
+    modifier: Modifier = Modifier,
+) {
+    androidx.compose.material3.SnackbarHost(
+        hostState = hostState,
+        modifier = modifier,
+    ) { data ->
+        Surface(
+            modifier = Modifier
+                .padding(horizontal = 16.dp, vertical = 8.dp)
+                .fillMaxWidth(),
+            shape = MaterialTheme.shapes.medium,
+            color = MaterialTheme.colorScheme.surfaceContainerHighest,
+            contentColor = MaterialTheme.colorScheme.onSurface,
+            shadowElevation = 6.dp,
+            border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)),
+        ) {
+            Row(
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(
+                    imageVector = Icons.Filled.Warning,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.size(20.dp),
+                )
+                Spacer(Modifier.width(12.dp))
+                Text(
+                    text = data.visuals.message,
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.Medium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.weight(1f),
+                )
+                if (data.visuals.actionLabel != null) {
+                    Spacer(Modifier.width(8.dp))
+                    androidx.compose.material3.TextButton(
+                        onClick = { data.performAction() },
+                        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                    ) {
+                        Text(
+                            text = data.visuals.actionLabel!!,
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+                    }
+                }
+            }
         }
     }
 }
@@ -273,7 +332,7 @@ fun AlertFab(
     contentDescription: String,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
-    size: Dp = 58.dp,
+    size: Dp = 52.dp,
 ) {
     Surface(
         onClick = onClick,
@@ -288,15 +347,16 @@ fun AlertFab(
                 .padding(4.dp)
                 .size(size)
                 .clip(CircleShape)
-                .background(if (selected) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.error),
+                .background(MaterialTheme.colorScheme.error),
             contentAlignment = Alignment.Center,
         ) {
             Icon(
                 Icons.Filled.Warning,
                 contentDescription = contentDescription,
                 tint = MaterialTheme.colorScheme.onError,
-                modifier = Modifier.size(size * 0.54f),
+                modifier = Modifier.size(size * 0.52f),
             )
         }
     }
 }
+

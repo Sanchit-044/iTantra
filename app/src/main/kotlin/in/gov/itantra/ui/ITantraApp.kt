@@ -81,6 +81,7 @@ import `in`.gov.itantra.core.alert.AlertContent
 import `in`.gov.itantra.core.lang.UiStrings
 import `in`.gov.itantra.ui.components.AlertFab
 import `in`.gov.itantra.ui.components.AppBarTitle
+import `in`.gov.itantra.ui.components.AppSnackbarHost
 import `in`.gov.itantra.ui.components.AppTopBar
 import `in`.gov.itantra.ui.components.MaxWidthBox
 import `in`.gov.itantra.ui.components.ProfileAvatar
@@ -201,6 +202,16 @@ fun MainContent(
         }
     }
 
+    LaunchedEffect(uiState.notice) {
+        uiState.notice?.let { notice ->
+            val text = notice.format(chrome)
+            if (text.isNotBlank()) {
+                snackbarHostState.showSnackbar(text)
+                mainViewModel.clearError()
+            }
+        }
+    }
+
     DisposableEffect(tab) {
         if (tab == MainTab.RADAR) radarViewModel.start() else radarViewModel.stop()
         onDispose { radarViewModel.stop() }
@@ -261,7 +272,7 @@ fun MainContent(
                 .fillMaxHeight()
                 .nestedScroll(scrollBehavior.nestedScrollConnection),
             containerColor = MaterialTheme.colorScheme.surface,
-            snackbarHost = { SnackbarHost(snackbarHostState) },
+            snackbarHost = { AppSnackbarHost(snackbarHostState) },
             topBar = {
                 AppTopBar(
                     title = {
@@ -362,7 +373,7 @@ private fun MainNavBar(tab: MainTab, onSelect: (MainTab) -> Unit, chrome: UiStri
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .height(98.dp),
+            .height(106.dp),
         contentAlignment = Alignment.BottomCenter,
     ) {
         NavigationBar(
@@ -383,7 +394,7 @@ private fun MainNavBar(tab: MainTab, onSelect: (MainTab) -> Unit, chrome: UiStri
                     color = if (tab == MainTab.ALERT) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.padding(bottom = 12.dp),
+                    modifier = Modifier.padding(bottom = 10.dp),
                 )
             }
             items.drop(2).forEach { NavBarItem(it, tab, onSelect) }
@@ -393,7 +404,10 @@ private fun MainNavBar(tab: MainTab, onSelect: (MainTab) -> Unit, chrome: UiStri
             selected = tab == MainTab.ALERT,
             contentDescription = chrome.alert,
             onClick = { onSelect(MainTab.ALERT) },
-            modifier = Modifier.align(Alignment.TopCenter),
+            size = 52.dp,
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .padding(top = 4.dp),
         )
     }
 }

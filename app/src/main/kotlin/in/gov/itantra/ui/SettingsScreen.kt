@@ -319,23 +319,15 @@ fun LanguageSettingsScreen(
         onBack = onBack,
         backDescription = chrome.back,
         bottomBar = {
-            BottomActionBar {
-                uiState.progress?.let { progress ->
-                    DownloadProgressCard(message = progress.message, fraction = progress.fraction)
-                    Spacer(modifier = Modifier.height(12.dp))
-                }
-                uiState.error?.let { error ->
-                    InlineMessage(text = error, isError = true)
-                    Spacer(modifier = Modifier.height(12.dp))
-                }
-                Button(
-                    onClick = { viewModel.confirm() },
-                    enabled = !uiState.busy && uiState.selected.isNotEmpty(),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(56.dp),
-                ) {
-                    Text(chrome.save, style = MaterialTheme.typography.titleMedium)
+            if (uiState.progress != null || uiState.error != null) {
+                BottomActionBar {
+                    uiState.progress?.let { progress ->
+                        DownloadProgressCard(message = progress.message, fraction = progress.fraction)
+                        Spacer(modifier = Modifier.height(8.dp))
+                    }
+                    uiState.error?.let { error ->
+                        InlineMessage(text = error, isError = true)
+                    }
                 }
             }
         },
