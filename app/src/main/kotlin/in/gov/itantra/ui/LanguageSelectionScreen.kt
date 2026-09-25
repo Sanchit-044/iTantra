@@ -129,6 +129,7 @@ fun LanguageSelectionScreen(
                             if (setupPacksPage) viewModel.goToAppLanguage() else viewModel.confirm()
                         },
                         enabled = !uiState.busy && uiState.selected.isNotEmpty(),
+                        shape = MaterialTheme.shapes.medium,
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(56.dp),
@@ -144,6 +145,7 @@ fun LanguageSelectionScreen(
                         TextButton(
                             onClick = { viewModel.backToPacks() },
                             enabled = !uiState.busy,
+                            shape = MaterialTheme.shapes.medium,
                             modifier = Modifier.fillMaxWidth(),
                         ) {
                             Text(chrome.back)
@@ -474,7 +476,7 @@ fun PackRow(
                             Button(
                                 onClick = onSelectCurrent,
                                 enabled = !busy,
-                                shape = MaterialTheme.shapes.small,
+                                shape = MaterialTheme.shapes.medium,
                                 contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
                                 modifier = Modifier.height(34.dp),
                             ) {

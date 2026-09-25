@@ -74,10 +74,8 @@ fun MainScreen(
             modifier = Modifier
                 .weight(1f)
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp),
+                .padding(start = 16.dp, end = 16.dp, top = 12.dp),
         ) {
-            Spacer(Modifier.height(4.dp))
-
             ConnectionCard(
                 uiState = uiState,
                 chrome = chrome,
@@ -291,10 +289,11 @@ private fun ConnectionCard(
                 }
                 Spacer(Modifier.width(8.dp))
                 if (canReconnectManually) {
-                    Button(onClick = onConnect) { Text(chrome.connect) }
+                    Button(onClick = onConnect, shape = MaterialTheme.shapes.medium) { Text(chrome.connect) }
                 } else {
                     OutlinedButton(
                         onClick = onDisconnect,
+                        shape = MaterialTheme.shapes.medium,
                         colors = ButtonDefaults.outlinedButtonColors(contentColor = content),
                         border = androidx.compose.foundation.BorderStroke(1.dp, content.copy(alpha = 0.4f)),
                     ) {
@@ -761,6 +760,7 @@ fun ConnectionSettingsSheet(uiState: `in`.gov.itantra.ui.UiState, chrome: UiStri
                 viewModel.connect(uiState.selectedDeviceAddress)
                 onDismiss()
             },
+            shape = MaterialTheme.shapes.medium,
             modifier = Modifier
                 .fillMaxWidth()
                 .height(56.dp),

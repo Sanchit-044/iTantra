@@ -2,6 +2,7 @@ package `in`.gov.itantra.ui
 
 import android.os.SystemClock
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.*
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -11,6 +12,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Bluetooth
 import androidx.compose.material.icons.filled.Check
@@ -26,6 +28,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.nativeCanvas
@@ -63,7 +66,7 @@ fun RadarScreen(
     val canJoin = (main.connectionState == ConnectionState.DISCONNECTED ||
         main.connectionState == ConnectionState.FAILED) && !main.reconnecting
 
-    var displayMode by remember { mutableStateOf(RadarDisplayMode.MAP) }
+    var displayMode by remember { mutableStateOf(RadarDisplayMode.RADAR) }
     var selectedPeer by remember { mutableStateOf<NearbyPeer?>(null) }
     var activeLocationPeer by remember { mutableStateOf<NearbyPeer?>(null) }
 
@@ -71,10 +74,31 @@ fun RadarScreen(
     val chrome = UiStrings.forLanguage(main.uiLanguage)
     val isDark = MaterialTheme.colorScheme.background.toArgb() < -0x800000
 
+    val infiniteTransition = rememberInfiniteTransition(label = "radarAnimation")
+    val sweepAngle by infiniteTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = 360f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 3500, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart,
+        ),
+        label = "sweepAngle",
+    )
+    val pulseScale by infiniteTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 2000, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart,
+        ),
+        label = "pulseScale",
+    )
+
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(16.dp),
+            .verticalScroll(rememberScrollState())
+            .padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 32.dp),
     ) {
         // Live GPS Telemetry Status Pill
         Surface(
@@ -150,12 +174,12 @@ fun RadarScreen(
 
             SingleChoiceSegmentedButtonRow {
                 SegmentedButton(
-                    selected = displayMode == RadarDisplayMode.MAP,
-                    onClick = { displayMode = RadarDisplayMode.MAP },
+                    selected = displayMode == RadarDisplayMode.RADAR,
+                    onClick = { displayMode = RadarDisplayMode.RADAR },
                     shape = SegmentedButtonDefaults.itemShape(index = 0, count = 3),
-                    icon = { Icon(Icons.Filled.Map, contentDescription = null, modifier = Modifier.size(16.dp)) },
+                    icon = { Icon(Icons.Filled.Radar, contentDescription = null, modifier = Modifier.size(16.dp)) },
                 ) {
-                    Text("Map")
+                    Text("Radar")
                 }
                 SegmentedButton(
                     selected = displayMode == RadarDisplayMode.HYBRID,
@@ -166,12 +190,12 @@ fun RadarScreen(
                     Text("Hybrid")
                 }
                 SegmentedButton(
-                    selected = displayMode == RadarDisplayMode.RADAR,
-                    onClick = { displayMode = RadarDisplayMode.RADAR },
+                    selected = displayMode == RadarDisplayMode.MAP,
+                    onClick = { displayMode = RadarDisplayMode.MAP },
                     shape = SegmentedButtonDefaults.itemShape(index = 2, count = 3),
-                    icon = { Icon(Icons.Filled.Radar, contentDescription = null, modifier = Modifier.size(16.dp)) },
+                    icon = { Icon(Icons.Filled.Map, contentDescription = null, modifier = Modifier.size(16.dp)) },
                 ) {
-                    Text("Radar")
+                    Text("Map")
                 }
             }
         }
@@ -182,15 +206,15 @@ fun RadarScreen(
         Surface(
             modifier = Modifier
                 .fillMaxWidth()
-                .weight(1f)
+                .aspectRatio(1f)
                 .padding(bottom = 12.dp),
             color = MaterialTheme.colorScheme.surfaceContainerLow,
             shape = MaterialTheme.shapes.large,
             border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)),
         ) {
             Box(modifier = Modifier.fillMaxSize()) {
+                // Layer 1: Real Geolocation Map (rendered in MAP and HYBRID modes)
                 if (displayMode == RadarDisplayMode.MAP || displayMode == RadarDisplayMode.HYBRID) {
-                    // Real Interactive Google Maps / OpenStreetMap Live Geolocation View
                     RealMapView(
                         myLocation = myLoc,
                         peers = radar.peers,
@@ -199,12 +223,14 @@ fun RadarScreen(
                             selectedPeer = peer
                         },
                         isDark = isDark,
-                        showRadarOverlay = displayMode == RadarDisplayMode.HYBRID,
+                        showRadarOverlay = false,
                         modifier = Modifier.fillMaxSize(),
                     )
-                } else {
-                    // Tactical Military Sweep Radar Canvas
-                    val ringColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.18f)
+                }
+
+                // Layer 2: Tactical Military Radar Sweep Canvas (rendered on top of map)
+                if (displayMode != RadarDisplayMode.MAP || true) {
+                    val ringColor = MaterialTheme.colorScheme.primary.copy(alpha = if (displayMode == RadarDisplayMode.MAP) 0.12f else 0.25f)
                     val youColor = MaterialTheme.colorScheme.primary
                     val peerColor = MaterialTheme.colorScheme.secondary
                     val labelColor = MaterialTheme.colorScheme.onSurface
@@ -235,46 +261,177 @@ fun RadarScreen(
                         val center = Offset(size.width / 2f, size.height / 2f)
                         val maxR = min(size.width, size.height) / 2f * 0.9f
 
-                        listOf(0.33f, 0.66f, 1f).forEach { frac ->
+                        // 1. Background tactical glow for RADAR mode
+                        if (displayMode == RadarDisplayMode.RADAR) {
                             drawCircle(
-                                color = ringColor,
-                                radius = maxR * frac,
+                                brush = Brush.radialGradient(
+                                    colors = listOf(
+                                        ringColor.copy(alpha = 0.2f),
+                                        Color.Transparent,
+                                    ),
+                                    center = center,
+                                    radius = maxR,
+                                ),
+                                radius = maxR,
                                 center = center,
-                                style = Stroke(width = 2.5f),
                             )
                         }
 
-                        // Center User Dot
-                        drawCircle(color = youColor.copy(alpha = 0.25f), radius = 36f, center = center)
-                        drawCircle(color = youColor, radius = 16f, center = center)
-                        drawCircle(color = Color.White, radius = 6f, center = center)
+                        // 2. Rotating Radar Sweep Beam
+                        if (displayMode != RadarDisplayMode.MAP) {
+                            drawArc(
+                                brush = Brush.sweepGradient(
+                                    0.0f to youColor.copy(alpha = 0f),
+                                    0.85f to youColor.copy(alpha = 0.02f),
+                                    1.0f to youColor.copy(alpha = 0.35f),
+                                    center = center,
+                                ),
+                                startAngle = sweepAngle - 45f,
+                                sweepAngle = 45f,
+                                useCenter = true,
+                                size = androidx.compose.ui.geometry.Size(maxR * 2, maxR * 2),
+                                topLeft = Offset(center.x - maxR, center.y - maxR),
+                            )
 
+                            // Leading sweep line
+                            val rad = (sweepAngle * PI / 180.0).toFloat()
+                            val lineEnd = Offset(
+                                center.x + maxR * cos(rad),
+                                center.y + maxR * sin(rad),
+                            )
+                            drawLine(
+                                color = youColor.copy(alpha = 0.7f),
+                                start = center,
+                                end = lineEnd,
+                                strokeWidth = 2f,
+                            )
+                        }
+
+                        // 3. Concentric Range Rings with distance markers
+                        val ringSteps = listOf(
+                            0.25f to "50m",
+                            0.50f to "100m",
+                            0.75f to "150m",
+                            1.00f to "200m",
+                        )
+                        val ringTextPaint = android.graphics.Paint().apply {
+                            color = labelColor.copy(alpha = 0.45f).toArgb()
+                            textSize = 22f
+                            textAlign = android.graphics.Paint.Align.LEFT
+                            isAntiAlias = true
+                        }
+
+                        ringSteps.forEach { (frac, label) ->
+                            val r = maxR * frac
+                            drawCircle(
+                                color = ringColor,
+                                radius = r,
+                                center = center,
+                                style = Stroke(width = 1.5f),
+                            )
+                            if (displayMode != RadarDisplayMode.MAP) {
+                                drawContext.canvas.nativeCanvas.drawText(
+                                    label,
+                                    center.x + 6f,
+                                    center.y - r + 20f,
+                                    ringTextPaint,
+                                )
+                            }
+                        }
+
+                        // 4. Crosshairs and Cardinal Directions
+                        if (displayMode != RadarDisplayMode.MAP) {
+                            // Horizontal & Vertical crosshairs
+                            drawLine(
+                                color = ringColor.copy(alpha = 0.4f),
+                                start = Offset(center.x - maxR, center.y),
+                                end = Offset(center.x + maxR, center.y),
+                                strokeWidth = 1f,
+                            )
+                            drawLine(
+                                color = ringColor.copy(alpha = 0.4f),
+                                start = Offset(center.x, center.y - maxR),
+                                end = Offset(center.x, center.y + maxR),
+                                strokeWidth = 1f,
+                            )
+
+                            val cardinalPaint = android.graphics.Paint().apply {
+                                color = youColor.toArgb()
+                                textSize = 26f
+                                textAlign = android.graphics.Paint.Align.CENTER
+                                isFakeBoldText = true
+                                isAntiAlias = true
+                            }
+                            drawContext.canvas.nativeCanvas.drawText("N", center.x, center.y - maxR - 10f, cardinalPaint)
+                            drawContext.canvas.nativeCanvas.drawText("S", center.x, center.y + maxR + 24f, cardinalPaint)
+                            drawContext.canvas.nativeCanvas.drawText("E", center.x + maxR + 18f, center.y + 8f, cardinalPaint)
+                            drawContext.canvas.nativeCanvas.drawText("W", center.x - maxR - 18f, center.y + 8f, cardinalPaint)
+                        }
+
+                        // 5. Center User Dot with Pulsing Ripple
+                        drawCircle(
+                            color = youColor.copy(alpha = (1f - pulseScale) * 0.35f),
+                            radius = 16f + (36f * pulseScale),
+                            center = center,
+                        )
+                        drawCircle(color = youColor.copy(alpha = 0.25f), radius = 28f, center = center)
+                        drawCircle(color = youColor, radius = 14f, center = center)
+                        drawCircle(color = Color.White, radius = 5f, center = center)
+
+                        // 6. Peers
                         val liveNow = SystemClock.elapsedRealtime()
                         val layout = peerLayout(radar.peers, liveNow)
 
                         val labelPaint = android.graphics.Paint().apply {
                             color = labelColor.toArgb()
-                            textSize = 28f
+                            textSize = 26f
                             textAlign = android.graphics.Paint.Align.CENTER
                             isAntiAlias = true
                             isFakeBoldText = true
+                        }
+                        val badgeBgPaint = android.graphics.Paint().apply {
+                            color = if (isDark) android.graphics.Color.parseColor("#1E293B") else android.graphics.Color.WHITE
+                            isAntiAlias = true
                         }
 
                         layout.forEach { placed ->
                             val pos = polar(center, maxR, placed)
                             val alpha = if (placed.fading) 0.4f else 1f
 
+                            // Outer pulse for peer
+                            drawCircle(
+                                color = peerColor.copy(alpha = alpha * 0.25f),
+                                radius = 28f,
+                                center = pos,
+                            )
+                            // Solid peer dot
                             drawCircle(
                                 color = peerColor.copy(alpha = alpha),
-                                radius = 22f,
+                                radius = 16f,
+                                center = pos,
+                            )
+                            drawCircle(
+                                color = Color.White.copy(alpha = alpha),
+                                radius = 5f,
                                 center = pos,
                             )
 
                             val distMeters = placed.peer.estimatedDistanceMeters()
+                            val text = "${placed.peer.name} (${distMeters}m)"
+
+                            // Draw small badge background pill for readability
+                            val textWidth = labelPaint.measureText(text)
+                            val badgeRect = android.graphics.RectF(
+                                pos.x - textWidth / 2f - 12f,
+                                pos.y + 24f,
+                                pos.x + textWidth / 2f + 12f,
+                                pos.y + 56f,
+                            )
+                            drawContext.canvas.nativeCanvas.drawRoundRect(badgeRect, 12f, 12f, badgeBgPaint)
                             drawContext.canvas.nativeCanvas.drawText(
-                                "${placed.peer.name} (${distMeters}m)",
+                                text,
                                 pos.x,
-                                pos.y + 36f,
+                                pos.y + 46f,
                                 labelPaint,
                             )
                         }
@@ -326,6 +483,7 @@ fun RadarScreen(
                             selectedPeer = peer
                             activeLocationPeer = null
                         },
+                        shape = MaterialTheme.shapes.medium,
                         enabled = canJoin,
                     ) {
                         Text(chrome.connect)
@@ -344,11 +502,11 @@ fun RadarScreen(
                 )
             }
             Spacer(Modifier.height(8.dp))
-            LazyColumn(
-                modifier = Modifier.heightIn(max = 160.dp).fillMaxWidth(),
+            Column(
+                modifier = Modifier.fillMaxWidth(),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                items(radar.peers, key = { it.id }) { peer ->
+                radar.peers.forEach { peer ->
                     Surface(
                         onClick = {
                             activeLocationPeer = peer
@@ -406,36 +564,42 @@ fun RadarScreen(
             title = { Text(chrome.connectTo(peer.name)) },
             text = { Text(chrome.chooseRoleBody) },
             confirmButton = {
-                Button(onClick = {
-                    selectedPeer = null
-                    radarViewModel.stop()
-                    val useWifi = peer.hasWifi && (radar.filter == RadarFilter.BOTH || radar.filter == RadarFilter.WIFI)
-                    if (useWifi) {
-                        mainViewModel.setConnectionMode(`in`.gov.itantra.ui.ConnectionMode.WIFI_DIRECT_HOST)
-                        mainViewModel.connect()
-                    } else {
-                        mainViewModel.setConnectionMode(`in`.gov.itantra.ui.ConnectionMode.BLUETOOTH_HOST)
-                        mainViewModel.connect()
-                    }
-                }) {
+                Button(
+                    onClick = {
+                        selectedPeer = null
+                        radarViewModel.stop()
+                        val useWifi = peer.hasWifi && (radar.filter == RadarFilter.BOTH || radar.filter == RadarFilter.WIFI)
+                        if (useWifi) {
+                            mainViewModel.setConnectionMode(`in`.gov.itantra.ui.ConnectionMode.WIFI_DIRECT_HOST)
+                            mainViewModel.connect()
+                        } else {
+                            mainViewModel.setConnectionMode(`in`.gov.itantra.ui.ConnectionMode.BLUETOOTH_HOST)
+                            mainViewModel.connect()
+                        }
+                    },
+                    shape = MaterialTheme.shapes.medium,
+                ) {
                     Text(chrome.hostRole)
                 }
             },
             dismissButton = {
-                Button(onClick = {
-                    selectedPeer = null
-                    radarViewModel.stop()
-                    val useWifi = peer.hasWifi && (radar.filter == RadarFilter.BOTH || radar.filter == RadarFilter.WIFI)
-                    if (useWifi) {
-                        mainViewModel.setConnectionMode(`in`.gov.itantra.ui.ConnectionMode.WIFI_DIRECT_CLIENT)
-                        mainViewModel.connect(peerAddress = peer.wifiAddress, preferredWifiAddress = peer.wifiAddress)
-                    } else {
-                        val addr = peer.bluetoothAddress ?: ""
-                        mainViewModel.setConnectionMode(`in`.gov.itantra.ui.ConnectionMode.BLUETOOTH_CLIENT)
-                        mainViewModel.selectDevice(addr)
-                        mainViewModel.connect(peerAddress = addr, peerName = peer.name)
-                    }
-                }) {
+                Button(
+                    onClick = {
+                        selectedPeer = null
+                        radarViewModel.stop()
+                        val useWifi = peer.hasWifi && (radar.filter == RadarFilter.BOTH || radar.filter == RadarFilter.WIFI)
+                        if (useWifi) {
+                            mainViewModel.setConnectionMode(`in`.gov.itantra.ui.ConnectionMode.WIFI_DIRECT_CLIENT)
+                            mainViewModel.connect(peerAddress = peer.wifiAddress, preferredWifiAddress = peer.wifiAddress)
+                        } else {
+                            val addr = peer.bluetoothAddress ?: ""
+                            mainViewModel.setConnectionMode(`in`.gov.itantra.ui.ConnectionMode.BLUETOOTH_CLIENT)
+                            mainViewModel.selectDevice(addr)
+                            mainViewModel.connect(peerAddress = addr, peerName = peer.name)
+                        }
+                    },
+                    shape = MaterialTheme.shapes.medium,
+                ) {
                     Text(chrome.joinRole)
                 }
             }

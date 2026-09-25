@@ -79,17 +79,12 @@ fun AlertScreen(viewModel: MainViewModel) {
         modifier = Modifier
             .fillMaxWidth()
             .verticalScroll(rememberScrollState())
-            .padding(horizontal = 16.dp)
-            .padding(bottom = 32.dp),
+            .padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 32.dp),
     ) {
-        Spacer(Modifier.height(4.dp))
-
         // Only surface a banner when something needs attention (not paired / sending).
         if (!ready || uiState.alertSending) {
             AlertHeader(ready = ready, sending = uiState.alertSending, chrome = chrome)
             Spacer(Modifier.height(24.dp))
-        } else {
-            Spacer(Modifier.height(8.dp))
         }
 
         ChannelSelector(
@@ -353,6 +348,7 @@ private fun TypeComposer(
         Button(
             onClick = onSend,
             enabled = customText.trim().isNotEmpty() && !sending,
+            shape = MaterialTheme.shapes.medium,
             modifier = Modifier
                 .fillMaxWidth()
                 .height(52.dp),
@@ -397,11 +393,16 @@ private fun SpeakComposer(
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
                 modifier = Modifier.fillMaxWidth(),
             ) {
-                OutlinedButton(onClick = onCancel, modifier = Modifier.weight(1f).height(48.dp)) {
+                OutlinedButton(
+                    onClick = onCancel,
+                    shape = MaterialTheme.shapes.medium,
+                    modifier = Modifier.weight(1f).height(48.dp),
+                ) {
                     Text(chrome.pairingCancel)
                 }
                 Button(
                     onClick = onStop,
+                    shape = MaterialTheme.shapes.medium,
                     modifier = Modifier.weight(1f).height(48.dp),
                     colors = ButtonDefaults.buttonColors(
                         containerColor = MaterialTheme.colorScheme.error,

@@ -258,15 +258,21 @@ fun MainContent(
             title = { Text(chrome.clearHistoryTitle) },
             text = { Text(chrome.clearHistoryBody) },
             confirmButton = {
-                TextButton(onClick = {
-                    historyViewModel.clearHistory()
-                    confirmClearHistory = false
-                }) {
+                TextButton(
+                    onClick = {
+                        historyViewModel.clearHistory()
+                        confirmClearHistory = false
+                    },
+                    shape = MaterialTheme.shapes.medium,
+                ) {
                     Text(chrome.clearConfirm, color = MaterialTheme.colorScheme.error)
                 }
             },
             dismissButton = {
-                TextButton(onClick = { confirmClearHistory = false }) { Text(chrome.pairingCancel) }
+                TextButton(
+                    onClick = { confirmClearHistory = false },
+                    shape = MaterialTheme.shapes.medium,
+                ) { Text(chrome.pairingCancel) }
             },
         )
     }
@@ -524,8 +530,8 @@ private fun PairingDialog(
                 )
             }
         },
-        confirmButton = { Button(onClick = onConfirm) { Text(chrome.pairingYes) } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text(chrome.pairingCancel) } },
+        confirmButton = { Button(onClick = onConfirm, shape = MaterialTheme.shapes.medium) { Text(chrome.pairingYes) } },
+        dismissButton = { TextButton(onClick = onDismiss, shape = MaterialTheme.shapes.medium) { Text(chrome.pairingCancel) } },
     )
 }
 
@@ -556,6 +562,7 @@ private fun IncomingAlertDialog(senderName: String?, chrome: UiStrings, text: St
         confirmButton = {
             Button(
                 onClick = onDismiss,
+                shape = MaterialTheme.shapes.medium,
                 modifier = Modifier.fillMaxWidth(),
                 colors = ButtonDefaults.buttonColors(
                     containerColor = MaterialTheme.colorScheme.error,

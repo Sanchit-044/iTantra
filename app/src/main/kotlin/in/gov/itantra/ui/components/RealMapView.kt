@@ -2,6 +2,7 @@ package `in`.gov.itantra.ui.components
 
 import android.annotation.SuppressLint
 import android.content.Context
+import android.graphics.Color
 import android.webkit.JavascriptInterface
 import android.webkit.WebSettings
 import android.webkit.WebView
@@ -17,7 +18,7 @@ import org.json.JSONObject
 
 /**
  * Real interactive Google Maps / Radar style live map.
- * 100% offline capable: uses a self-contained vector & canvas map engine with live OSM tile caching,
+ * 100% offline capable: uses a self-contained vector & canvas map engine,
  * pulsing blue GPS location beacon, heading cone, red peer location pins with interactive connect popups,
  * and radar distance range overlays.
  */
@@ -85,6 +86,7 @@ fun RealMapView(
         modifier = modifier.fillMaxSize(),
         factory = { context ->
             WebView(context).apply {
+                setBackgroundColor(Color.TRANSPARENT)
                 settings.apply {
                     javaScriptEnabled = true
                     domStorageEnabled = true
@@ -113,8 +115,8 @@ fun RealMapView(
                 }, "AndroidBridge")
 
                 loadDataWithBaseURL(
-                    null,
-                    getMapHtml(isDark, showRadarOverlay),
+                    "https://app.local/",
+                    getMapHtml(myLocation.latitude, myLocation.longitude, isDark, showRadarOverlay),
                     "text/html",
                     "UTF-8",
                     null,
@@ -142,11 +144,8 @@ private fun NearbyPeer.estimatedDistanceMeters(): Int = when (band) {
     `in`.gov.itantra.core.discover.RssiBand.FAR -> 120
 }
 
-private fun getMapHtml(isDark: Boolean, showRadarOverlay: Boolean): String {
-    val bgColor = if (isDark) "#0B1120" else "#F1F5F9"
-    val gridLineColor = if (isDark) "#1E293B" else "#E2E8F0"
-    val roadColor = if (isDark) "#1E293B" else "#CBD5E1"
-    val textColor = if (isDark) "#94A3B8" else "#64748B"
+private fun getMapHtml(initialLat: Double, initialLng: Double, isDark: Boolean, showRadarOverlay: Boolean): String {
+    val bgColor = if (isDark) "#0F172A" else "#F8FAFC"
     val cardBg = if (isDark) "#1E293B" else "#FFFFFF"
     val cardText = if (isDark) "#F8FAFC" else "#0F172A"
 
@@ -196,7 +195,7 @@ private fun getMapHtml(isDark: Boolean, showRadarOverlay: Boolean): String {
         .popup-title { font-weight: 700; font-size: 14px; margin-bottom: 4px; display: flex; align-items: center; gap: 6px; }
         .popup-sub { font-size: 11px; color: #64748B; margin-bottom: 8px; }
         .popup-btn {
-            background: #407BFF;
+            background: #2563EB;
             color: #FFFFFF;
             border: none;
             padding: 7px 12px;
@@ -268,7 +267,7 @@ private fun getMapHtml(isDark: Boolean, showRadarOverlay: Boolean): String {
         <div class="controls">
             <div class="ctrl-btn" onclick="zoomIn()">+</div>
             <div class="ctrl-btn" onclick="zoomOut()">−</div>
-            <div class="ctrl-btn" onclick="recenter()" style="color: #407BFF;">🎯</div>
+            <div class="ctrl-btn" onclick="recenter()" style="color: #2563EB;">🎯</div>
         </div>
     </div>
 
@@ -280,8 +279,8 @@ private fun getMapHtml(isDark: Boolean, showRadarOverlay: Boolean): String {
         var popDetail = document.getElementById('popDetail');
         var popConnect = document.getElementById('popConnect');
 
-        var userLat = 28.6139, userLng = 77.2090, userAcc = 15, userBearing = 0;
-        var centerLat = 28.6139, centerLng = 77.2090;
+        var userLat = $initialLat, userLng = $initialLng, userAcc = 15, userBearing = 0;
+        var centerLat = $initialLat, centerLng = $initialLng;
         var zoomScale = 1.8; // Pixels per meter
         var isDarkTheme = $isDark;
         var isRadarMode = $showRadarOverlay;
@@ -292,20 +291,35 @@ private fun getMapHtml(isDark: Boolean, showRadarOverlay: Boolean): String {
         var isDragging = false, dragStart = { x: 0, y: 0 }, panOffset = { x: 0, y: 0 };
         var pulseRadius = 0;
 
+        function drawRoundedRect(c, x, y, w, h, r) {
+            if (w < 2 * r) r = w / 2;
+            if (h < 2 * r) r = h / 2;
+            c.beginPath();
+            c.moveTo(x + r, y);
+            c.arcTo(x + w, y, x + w, y + h, r);
+            c.arcTo(x + w, y + h, x, y + h, r);
+            c.arcTo(x, y + h, x, y, r);
+            c.arcTo(x, y, x + w, y, r);
+            c.closePath();
+        }
+
         function resize() {
-            width = canvas.width = window.innerWidth;
-            height = canvas.height = window.innerHeight;
+            width = canvas.width = window.innerWidth || document.documentElement.clientWidth || 400;
+            height = canvas.height = window.innerHeight || document.documentElement.clientHeight || 400;
             render();
         }
         window.addEventListener('resize', resize);
-
-        function initMap(lat, lng, dark, showRadar) {
-            userLat = centerLat = lat;
-            userLng = centerLng = lng;
-            isDarkTheme = dark;
-            isRadarMode = showRadar;
+        window.addEventListener('load', function() {
             resize();
             requestAnimationFrame(animate);
+        });
+
+        function initMap(lat, lng, dark, showRadar) {
+            if (lat !== undefined && lat !== 0) { userLat = centerLat = lat; }
+            if (lng !== undefined && lng !== 0) { userLng = centerLng = lng; }
+            if (dark !== undefined) { isDarkTheme = dark; }
+            if (showRadar !== undefined) { isRadarMode = showRadar; }
+            resize();
         }
 
         function updateLocation(lat, lng, accuracy, bearing) {
@@ -313,7 +327,10 @@ private fun getMapHtml(isDark: Boolean, showRadarOverlay: Boolean): String {
             userLng = lng;
             userAcc = accuracy || 15;
             userBearing = bearing || 0;
-            document.getElementById('compassBadge').innerText = '📍 ' + lat.toFixed(4) + '°, ' + lng.toFixed(4) + '°';
+            var badge = document.getElementById('compassBadge');
+            if (badge) {
+                badge.innerText = '📍 ' + lat.toFixed(4) + '°, ' + lng.toFixed(4) + '°';
+            }
             render();
         }
 
@@ -331,7 +348,7 @@ private fun getMapHtml(isDark: Boolean, showRadarOverlay: Boolean): String {
             panOffset = { x: 0, y: 0 };
             centerLat = userLat;
             centerLng = userLng;
-            popup.style.display = 'none';
+            if (popup) popup.style.display = 'none';
             render();
         }
 
@@ -354,24 +371,16 @@ private fun getMapHtml(isDark: Boolean, showRadarOverlay: Boolean): String {
             return { x: sx, y: sy };
         }
 
-        // Screen (x, y) -> Lat/Lng
-        function screenToLatLng(x, y) {
-            var metersX = (x - (width / 2 + panOffset.x)) / zoomScale;
-            var metersY = -(y - (height / 2 + panOffset.y)) / zoomScale;
-            var lat = centerLat + (metersY / 111000);
-            var lng = centerLng + (metersX / (111000 * Math.cos(centerLat * Math.PI / 180)));
-            return { lat: lat, lng: lng };
-        }
-
         function drawMapGrid() {
-            ctx.fillStyle = isDarkTheme ? '#0B1120' : '#F1F5F9';
+            ctx.fillStyle = isDarkTheme ? '#0F172A' : '#F8FAFC';
             ctx.fillRect(0, 0, width, height);
 
             var gridStep = 50 * zoomScale; // 50m grid lines
-            ctx.strokeStyle = isDarkTheme ? 'rgba(30, 41, 59, 0.8)' : 'rgba(226, 232, 240, 0.9)';
+            ctx.strokeStyle = isDarkTheme ? 'rgba(30, 41, 59, 0.9)' : 'rgba(226, 232, 240, 0.95)';
             ctx.lineWidth = 1;
 
             var startX = (width / 2 + panOffset.x) % gridStep;
+            if (startX < 0) startX += gridStep;
             for (var x = startX; x < width; x += gridStep) {
                 ctx.beginPath();
                 ctx.moveTo(x, 0);
@@ -380,6 +389,7 @@ private fun getMapHtml(isDark: Boolean, showRadarOverlay: Boolean): String {
             }
 
             var startY = (height / 2 + panOffset.y) % gridStep;
+            if (startY < 0) startY += gridStep;
             for (var y = startY; y < height; y += gridStep) {
                 ctx.beginPath();
                 ctx.moveTo(0, y);
@@ -388,8 +398,8 @@ private fun getMapHtml(isDark: Boolean, showRadarOverlay: Boolean): String {
             }
 
             // Stylized vector road lines
-            ctx.strokeStyle = isDarkTheme ? 'rgba(51, 65, 85, 0.5)' : 'rgba(203, 213, 225, 0.7)';
-            ctx.lineWidth = 6 * Math.min(zoomScale, 2.0);
+            ctx.strokeStyle = isDarkTheme ? 'rgba(51, 65, 85, 0.6)' : 'rgba(203, 213, 225, 0.8)';
+            ctx.lineWidth = Math.max(4 * Math.min(zoomScale, 2.0), 3);
             ctx.beginPath();
             var cx = width / 2 + panOffset.x;
             var cy = height / 2 + panOffset.y;
@@ -408,14 +418,14 @@ private fun getMapHtml(isDark: Boolean, showRadarOverlay: Boolean): String {
                 var pxRadius = r * zoomScale;
                 ctx.beginPath();
                 ctx.arc(userPos.x, userPos.y, pxRadius, 0, Math.PI * 2);
-                ctx.strokeStyle = isDarkTheme ? 'rgba(64, 123, 255, 0.25)' : 'rgba(64, 123, 255, 0.3)';
+                ctx.strokeStyle = isDarkTheme ? 'rgba(59, 130, 246, 0.3)' : 'rgba(37, 99, 235, 0.35)';
                 ctx.lineWidth = 1.5;
                 ctx.setLineDash([4, 4]);
                 ctx.stroke();
                 ctx.setLineDash([]);
 
                 // Distance label
-                ctx.fillStyle = isDarkTheme ? 'rgba(148, 163, 184, 0.7)' : 'rgba(100, 116, 139, 0.8)';
+                ctx.fillStyle = isDarkTheme ? 'rgba(148, 163, 184, 0.8)' : 'rgba(100, 116, 139, 0.9)';
                 ctx.font = '10px sans-serif';
                 ctx.fillText(r + 'm', userPos.x + pxRadius + 4, userPos.y + 3);
             });
@@ -425,12 +435,12 @@ private fun getMapHtml(isDark: Boolean, showRadarOverlay: Boolean): String {
             var pos = latLngToScreen(userLat, userLng);
 
             // Accuracy Halo Circle
-            var accRadius = Math.max(userAcc * zoomScale, 12);
+            var accRadius = Math.max(userAcc * zoomScale, 14);
             ctx.beginPath();
             ctx.arc(pos.x, pos.y, accRadius, 0, Math.PI * 2);
-            ctx.fillStyle = 'rgba(64, 123, 255, 0.12)';
+            ctx.fillStyle = 'rgba(37, 99, 235, 0.12)';
             ctx.fill();
-            ctx.strokeStyle = 'rgba(64, 123, 255, 0.35)';
+            ctx.strokeStyle = 'rgba(37, 99, 235, 0.35)';
             ctx.lineWidth = 1;
             ctx.stroke();
 
@@ -438,7 +448,7 @@ private fun getMapHtml(isDark: Boolean, showRadarOverlay: Boolean): String {
             ctx.beginPath();
             ctx.arc(pos.x, pos.y, 14 + pulseRadius, 0, Math.PI * 2);
             var alpha = Math.max(0, 1 - (pulseRadius / 25));
-            ctx.strokeStyle = 'rgba(64, 123, 255, ' + (alpha * 0.7) + ')';
+            ctx.strokeStyle = 'rgba(37, 99, 235, ' + (alpha * 0.7) + ')';
             ctx.lineWidth = 2;
             ctx.stroke();
 
@@ -451,8 +461,8 @@ private fun getMapHtml(isDark: Boolean, showRadarOverlay: Boolean): String {
                 ctx.arc(pos.x, pos.y, coneLength, rad - 0.35, rad + 0.35);
                 ctx.closePath();
                 var grad = ctx.createRadialGradient(pos.x, pos.y, 4, pos.x, pos.y, coneLength);
-                grad.addColorStop(0, 'rgba(64, 123, 255, 0.5)');
-                grad.addColorStop(1, 'rgba(64, 123, 255, 0.0)');
+                grad.addColorStop(0, 'rgba(37, 99, 235, 0.5)');
+                grad.addColorStop(1, 'rgba(37, 99, 235, 0.0)');
                 ctx.fillStyle = grad;
                 ctx.fill();
             }
@@ -462,14 +472,11 @@ private fun getMapHtml(isDark: Boolean, showRadarOverlay: Boolean): String {
             ctx.arc(pos.x, pos.y, 10, 0, Math.PI * 2);
             ctx.fillStyle = '#FFFFFF';
             ctx.fill();
-            ctx.shadowColor = 'rgba(0,0,0,0.25)';
-            ctx.shadowBlur = 6;
 
             ctx.beginPath();
             ctx.arc(pos.x, pos.y, 7.5, 0, Math.PI * 2);
-            ctx.fillStyle = '#407BFF';
+            ctx.fillStyle = '#2563EB';
             ctx.fill();
-            ctx.shadowBlur = 0;
         }
 
         function drawPeers() {
@@ -501,8 +508,7 @@ private fun getMapHtml(isDark: Boolean, showRadarOverlay: Boolean): String {
                 var by = pos.y + 18;
 
                 ctx.fillStyle = isDarkTheme ? '#1E293B' : '#FFFFFF';
-                ctx.beginPath();
-                ctx.roundRect(bx, by, textWidth + 16, 20, 10);
+                drawRoundedRect(ctx, bx, by, textWidth + 16, 20, 8);
                 ctx.fill();
                 ctx.strokeStyle = isDarkTheme ? '#334155' : '#E2E8F0';
                 ctx.lineWidth = 1;
@@ -549,7 +555,7 @@ private fun getMapHtml(isDark: Boolean, showRadarOverlay: Boolean): String {
             if (isDragging && e.touches.length === 1) {
                 panOffset.x = e.touches[0].clientX - dragStart.x;
                 panOffset.y = e.touches[0].clientY - dragStart.y;
-                popup.style.display = 'none';
+                if (popup) popup.style.display = 'none';
                 render();
             } else if (e.touches.length === 2) {
                 var dist = Math.hypot(
@@ -587,19 +593,23 @@ private fun getMapHtml(isDark: Boolean, showRadarOverlay: Boolean): String {
                 popName.innerText = '📍 ' + clicked.name;
                 popDetail.innerText = 'Distance: ' + clicked.distance + 'm · ' + clicked.radios;
                 popConnect.onclick = function() {
-                    AndroidBridge.onPeerSelected(clicked.id);
+                    if (window.AndroidBridge && window.AndroidBridge.onPeerSelected) {
+                        window.AndroidBridge.onPeerSelected(clicked.id);
+                    }
                 };
                 popup.style.left = clicked.screenX + 'px';
                 popup.style.top = (clicked.screenY - 14) + 'px';
                 popup.style.display = 'block';
             } else {
-                popup.style.display = 'none';
+                if (popup) popup.style.display = 'none';
             }
         });
 
         resize();
+        requestAnimationFrame(animate);
     </script>
 </body>
 </html>
     """.trimIndent()
 }
+

@@ -94,6 +94,7 @@ fun ProfileScreen(
                 Button(
                     onClick = { viewModel.confirm() },
                     enabled = uiState.canContinue,
+                    shape = MaterialTheme.shapes.medium,
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(56.dp),
@@ -120,7 +121,7 @@ fun ProfileScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = 24.dp, vertical = 16.dp),
+                .padding(start = 24.dp, end = 24.dp, top = if (isSetup) 16.dp else 12.dp, bottom = if (isSetup) 16.dp else 32.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             if (isSetup) {
@@ -131,8 +132,6 @@ fun ProfileScreen(
                     title = chrome.profileTitle,
                 )
                 Spacer(Modifier.height(32.dp))
-            } else {
-                Spacer(Modifier.height(8.dp))
             }
 
             // Avatar Picker with Edit Badge
