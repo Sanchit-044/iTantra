@@ -123,12 +123,6 @@ fun MainScreen(
                 }
             }
 
-            UserNoticeBanner(
-                notice = uiState.notice,
-                strings = chrome,
-                modifier = Modifier.padding(top = 8.dp),
-            )
-
             if (uiState.inbox.isNotEmpty() || uiState.queuedOutbound.isNotEmpty()) {
                 LazyColumn(
                     modifier = Modifier
@@ -533,9 +527,7 @@ fun OutboxItem(item: OutboundMessage, chrome: UiStrings, viewModel: MainViewMode
     val delivered = item.state == OutboundState.DELIVERED
     val ext = ITantraTheme.extended
     Surface(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(start = 24.dp),
+        modifier = Modifier.fillMaxWidth(),
         shape = MaterialTheme.shapes.medium,
         color = if (failed) MaterialTheme.colorScheme.errorContainer else MaterialTheme.colorScheme.surfaceContainerLow,
         contentColor = if (failed) MaterialTheme.colorScheme.onErrorContainer else MaterialTheme.colorScheme.onSurface,

@@ -144,7 +144,7 @@ class LanguageSelectionViewModel @Inject constructor(
                 if (snap.setupDone) {
                     store.updateSelection(snap.selected, snap.current, snap.uiLanguage)
                 }
-                installCoordinator.install(setOf(language), emptySet(), includeTranslation = true)
+                installCoordinator.install(setOf(language), emptySet(), includeTranslation = false)
                 `in`.gov.itantra.service.LanguagePackDownloadService.start(context)
             } catch (e: Exception) {
                 _uiState.update { it.copy(error = e.message ?: "Failed to download pack") }
@@ -223,8 +223,11 @@ class LanguageSelectionViewModel @Inject constructor(
                 } else {
                     store.completeSetup(selected, current, uiLanguage)
                 }
-                installCoordinator.install(selected, removed, includeTranslation = true)
-                `in`.gov.itantra.service.LanguagePackDownloadService.start(context)
+                val toDownload = selected.filter { !packs.isLanguagePackReady(it) }.toSet()
+                if (toDownload.isNotEmpty() || removed.isNotEmpty()) {
+                    installCoordinator.install(toDownload, removed, includeTranslation = false)
+                    `in`.gov.itantra.service.LanguagePackDownloadService.start(context)
+                }
                 _uiState.update { it.copy(finished = true) }
             } catch (e: Exception) {
                 val chromeLang = if (_uiState.value.setupDone) {

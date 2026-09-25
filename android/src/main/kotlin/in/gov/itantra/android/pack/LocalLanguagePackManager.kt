@@ -33,7 +33,31 @@ class LocalLanguagePackManager(
     override fun isLanguagePackReady(language: Language): Boolean {
         val marker = LanguagePackPaths.languageMarker(context, language)
         val model = LanguagePackPaths.sttModel(context, language)
-        return marker.exists() || model.exists()
+        if (marker.exists() || (model.exists() && model.length() > 0L)) return true
+        if (language == Language.HINDI && isHindiAssetPresent()) {
+            try {
+                LanguagePackPaths.sttDir(context, language).mkdirs()
+                marker.writeText(language.code)
+            } catch (_: Exception) {}
+            return true
+        }
+        return false
+    }
+
+    private fun isHindiAssetPresent(): Boolean {
+        return try {
+            context.assets.open("models/stt/onnx/indicwav2vec-hi-vocab.json").use { true }
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    private fun isTranslationAvailable(): Boolean {
+        return try {
+            context.assets.open("models/translation/indictrans2-vocab.json").use { true }
+        } catch (_: Exception) {
+            false
+        }
     }
 
     override fun isTranslationReady(): Boolean =
@@ -46,12 +70,15 @@ class LocalLanguagePackManager(
         onProgress: (PackProgress) -> Unit,
     ) = withContext(Dispatchers.IO) {
         val list = languages.toList()
-        val totalSteps = (list.size + if (includeTranslation) 1 else 0).coerceAtLeast(1)
+        if (list.isEmpty()) {
+            onProgress(PackProgress(null, 1f, "Done"))
+            return@withContext
+        }
         val failed = mutableListOf<Language>()
         list.forEachIndexed { index, language ->
             if (!isActive) return@withContext
-            val base = index.toFloat() / totalSteps
-            val step = 1f / totalSteps
+            val base = index.toFloat() / list.size
+            val step = 1f / list.size
             val ok = installLanguage(language) { fileFraction, fileLabel ->
                 onProgress(
                     PackProgress(
@@ -63,16 +90,13 @@ class LocalLanguagePackManager(
             }
             if (!ok) failed += language
         }
-        // Translation is a known placeholder -- no host serves the indictrans2 files yet,
-        // by design, not by failure -- so it stays best-effort and never blocks setup.
-        if (includeTranslation) {
-            onProgress(PackProgress(null, list.size.toFloat() / totalSteps, "Installing translation pack"))
+        if (includeTranslation && isTranslationAvailable()) {
             installTranslation()
         }
         if (failed.isNotEmpty()) {
             throw IllegalStateException(
                 "Could not download: ${failed.joinToString { it.englishName }}. " +
-                    "Check your connection to the model pack host and try again.",
+                    "Check your internet connection and try again.",
             )
         }
         onProgress(PackProgress(null, 1f, "Done"))
@@ -90,11 +114,6 @@ class LocalLanguagePackManager(
         LanguagePackPaths.sttDir(context, language).mkdirs()
         LanguagePackPaths.ttsDir(context, language).mkdirs()
 
-        // Flat remote names, not "stt/..."/"tts/..." -- a GitHub Release (the
-        // recommended host, see model-host/README.md) serves every asset at
-        // .../releases/download/<tag>/<filename> with no subpaths, and the two
-        // families never collide (indicwav2vec-* vs vits-*), so there is no reason
-        // for the two hosting schemes to disagree.
         val files = listOf(
             Triple(
                 "models/stt/onnx/indicwav2vec-${language.code}-int8.onnx",
@@ -135,8 +154,6 @@ class LocalLanguagePackManager(
 
     private fun installTranslation() {
         LanguagePackPaths.translationDir(context).mkdirs()
-        // Flat remote names, same reasoning as installLanguage(): the GitHub Release
-        // host serves every asset with no subpaths.
         copyAssetOrDownload(
             assetPath = "models/translation/indictrans2-encoder-int8.onnx",
             dest = LanguagePackPaths.translationEncoder(context),
@@ -155,14 +172,6 @@ class LocalLanguagePackManager(
         LanguagePackPaths.translationMarker(context).writeText("ok")
     }
 
-    /**
-     * Tries the bundled asset first (only ever present for Hindi today), then an
-     * optional HTTP pack host. Writes to a `.part` sibling and only renames it onto
-     * [dest] once the transfer completes fully -- writing straight to [dest] would let
-     * a download killed mid-transfer (process death, not just a caught exception) leave
-     * a truncated file that the next `dest.exists() && dest.length() > 0` check would
-     * mistake for a complete, valid install and never retry.
-     */
     private fun copyAssetOrDownload(
         assetPath: String,
         dest: File,
@@ -186,19 +195,18 @@ class LocalLanguagePackManager(
             }
             temp.delete()
         } catch (_: Exception) {
-            // Asset missing (every language but Hindi, by design) or unreadable --
-            // try an optional HTTP pack host next.
             temp.delete()
         }
 
         if (baseUrl.isBlank()) return false
-        val url = URL("${baseUrl.trimEnd('/')}/$remoteName")
-        val connection = (url.openConnection() as HttpURLConnection).apply {
-            connectTimeout = 8_000
-            readTimeout = 30_000
-        }
+        val initialUrl = "${baseUrl.trimEnd('/')}/$remoteName"
+        var connection: HttpURLConnection? = null
         return try {
-            if (connection.responseCode != HttpURLConnection.HTTP_OK) return false
+            connection = openConnectionWithRedirects(initialUrl)
+            if (connection.responseCode != HttpURLConnection.HTTP_OK) {
+                temp.delete()
+                return false
+            }
             val total = connection.contentLengthLong
             connection.inputStream.use { input ->
                 temp.outputStream().use { output ->
@@ -227,11 +235,42 @@ class LocalLanguagePackManager(
             temp.delete()
             false
         } finally {
-            connection.disconnect()
+            connection?.disconnect()
         }
+    }
+
+    private fun openConnectionWithRedirects(initialUrl: String): HttpURLConnection {
+        var currentUrl = initialUrl
+        var redirects = 0
+        while (redirects < 5) {
+            val url = URL(currentUrl)
+            val connection = (url.openConnection() as HttpURLConnection).apply {
+                connectTimeout = 15_000
+                readTimeout = 60_000
+                instanceFollowRedirects = true
+                setRequestProperty("User-Agent", "Mozilla/5.0 (Android; iTantra)")
+            }
+            val status = connection.responseCode
+            if (status == HttpURLConnection.HTTP_MOVED_TEMP ||
+                status == HttpURLConnection.HTTP_MOVED_PERM ||
+                status == HttpURLConnection.HTTP_SEE_OTHER ||
+                status == 307 || status == 308
+            ) {
+                val newUrl = connection.getHeaderField("Location")
+                connection.disconnect()
+                if (newUrl != null) {
+                    currentUrl = newUrl
+                    redirects++
+                    continue
+                }
+            }
+            return connection
+        }
+        throw java.io.IOException("Too many redirects for $initialUrl")
     }
 
     private companion object {
         const val COPY_BUFFER_BYTES = 64 * 1024
     }
 }
+

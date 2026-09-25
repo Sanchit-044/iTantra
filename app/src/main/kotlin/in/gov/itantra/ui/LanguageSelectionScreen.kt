@@ -408,6 +408,7 @@ fun PackRow(
                     downloaded = downloaded,
                     downloadingNow = downloadingNow,
                     chrome = chrome,
+                    progressFraction = progressFraction,
                 )
             }
 
@@ -518,35 +519,41 @@ fun PackRow(
 
 val Language.packSize: String
     get() = when (this) {
-        Language.HINDI -> "78 MB"
-        Language.TAMIL -> "82 MB"
-        Language.BENGALI -> "80 MB"
-        Language.GUJARATI -> "79 MB"
-        Language.MARATHI -> "81 MB"
-        Language.KANNADA -> "80 MB"
-        Language.MALAYALAM -> "82 MB"
-        Language.TELUGU -> "81 MB"
-        Language.ODIA -> "79 MB"
-        Language.ENGLISH -> "75 MB"
+        Language.HINDI -> "395 MB"
+        Language.TAMIL -> "395 MB"
+        Language.BENGALI -> "395 MB"
+        Language.GUJARATI -> "395 MB"
+        Language.MARATHI -> "395 MB"
+        Language.KANNADA -> "395 MB"
+        Language.MALAYALAM -> "395 MB"
+        Language.TELUGU -> "395 MB"
+        Language.ODIA -> "395 MB"
+        Language.ENGLISH -> "390 MB"
     }
 
-/** Small status line under a language's name: size, downloaded, downloading now, or not downloaded. */
+/** Small status line under a language's name: size, downloaded, downloading percentage, or not downloaded. */
 @Composable
 private fun PackStatus(
     language: Language,
     downloaded: Boolean,
     downloadingNow: Boolean,
     chrome: UiStrings,
+    progressFraction: Float? = null,
 ) {
     val sizeText = language.packSize
     val success = ITantraTheme.extended.success
     when {
         downloadingNow -> Row(verticalAlignment = Alignment.CenterVertically) {
+            val pctText = if (progressFraction != null && progressFraction > 0f) {
+                "${(progressFraction * 100).toInt()}%"
+            } else {
+                "0%"
+            }
             Text(
-                text = "$sizeText · ${chrome.downloadingLabel}",
+                text = "$sizeText · $pctText",
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.primary,
-                fontWeight = FontWeight.Medium,
+                fontWeight = FontWeight.SemiBold,
             )
         }
         downloaded -> Row(verticalAlignment = Alignment.CenterVertically) {

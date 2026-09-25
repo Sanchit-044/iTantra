@@ -146,11 +146,6 @@ fun AlertScreen(viewModel: MainViewModel) {
             onCancelRecording = { viewModel.cancelAlertRecording() },
             chrome = chrome,
         )
-
-        uiState.notice?.let {
-            Spacer(Modifier.height(20.dp))
-            UserNoticeBanner(notice = uiState.notice, strings = chrome)
-        }
     }
 }
 

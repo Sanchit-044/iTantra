@@ -150,7 +150,7 @@ fun SubScreenScaffold(
     }
 }
 
-/** Unified, themed snackbar host matching the app's clean 2-tone aesthetic. */
+/** Unified, standard Material 3 snackbar host matching the app and system theme. */
 @Composable
 fun AppSnackbarHost(
     hostState: androidx.compose.material3.SnackbarHostState,
@@ -158,52 +158,17 @@ fun AppSnackbarHost(
 ) {
     androidx.compose.material3.SnackbarHost(
         hostState = hostState,
-        modifier = modifier,
+        modifier = modifier.navigationBarsPadding(),
     ) { data ->
-        Surface(
-            modifier = Modifier
-                .padding(horizontal = 16.dp, vertical = 8.dp)
-                .fillMaxWidth(),
+        androidx.compose.material3.Snackbar(
+            snackbarData = data,
             shape = MaterialTheme.shapes.medium,
-            color = MaterialTheme.colorScheme.surfaceContainerHighest,
-            contentColor = MaterialTheme.colorScheme.onSurface,
-            shadowElevation = 6.dp,
-            border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)),
-        ) {
-            Row(
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Icon(
-                    imageVector = Icons.Filled.Warning,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.error,
-                    modifier = Modifier.size(20.dp),
-                )
-                Spacer(Modifier.width(12.dp))
-                Text(
-                    text = data.visuals.message,
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = FontWeight.Medium,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    modifier = Modifier.weight(1f),
-                )
-                if (data.visuals.actionLabel != null) {
-                    Spacer(Modifier.width(8.dp))
-                    androidx.compose.material3.TextButton(
-                        onClick = { data.performAction() },
-                        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 4.dp),
-                    ) {
-                        Text(
-                            text = data.visuals.actionLabel!!,
-                            style = MaterialTheme.typography.labelMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.primary,
-                        )
-                    }
-                }
-            }
-        }
+            containerColor = MaterialTheme.colorScheme.inverseSurface,
+            contentColor = MaterialTheme.colorScheme.inverseOnSurface,
+            actionColor = MaterialTheme.colorScheme.inversePrimary,
+            actionContentColor = MaterialTheme.colorScheme.inversePrimary,
+            dismissActionContentColor = MaterialTheme.colorScheme.inverseOnSurface,
+        )
     }
 }
 
