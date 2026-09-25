@@ -291,9 +291,9 @@ fun RadarScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(bottom = 12.dp),
-                color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                color = MaterialTheme.colorScheme.surfaceContainerLow,
                 shape = MaterialTheme.shapes.medium,
-                border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.4f)),
+                border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
             ) {
                 Row(
                     modifier = Modifier.padding(14.dp),
@@ -357,8 +357,9 @@ fun RadarScreen(
                         enabled = canJoin,
                         modifier = Modifier.fillMaxWidth(),
                         shape = MaterialTheme.shapes.medium,
-                        color = MaterialTheme.colorScheme.secondaryContainer,
-                        contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                        color = MaterialTheme.colorScheme.surfaceContainerLow,
+                        contentColor = MaterialTheme.colorScheme.onSurface,
+                        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
                     ) {
                         Row(
                             modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp).fillMaxWidth(),
@@ -367,12 +368,12 @@ fun RadarScreen(
                             Box(
                                 modifier = Modifier
                                     .size(40.dp)
-                                    .background(MaterialTheme.colorScheme.secondary, CircleShape),
+                                    .background(MaterialTheme.colorScheme.primaryContainer, CircleShape),
                                 contentAlignment = Alignment.Center
                             ) {
                                 Text(
                                     text = peer.name.take(1).uppercase(),
-                                    color = MaterialTheme.colorScheme.onSecondary,
+                                    color = MaterialTheme.colorScheme.primary,
                                     fontWeight = FontWeight.Bold
                                 )
                             }
@@ -382,15 +383,15 @@ fun RadarScreen(
                                 Text(
                                     "${peer.band.label} (${peer.estimatedDistanceMeters()}m) · ${peer.radiosLabel}",
                                     style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.7f),
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
                             }
                             if (peer.hasWifi) {
-                                Icon(Icons.Filled.Wifi, contentDescription = chrome.channelWifiLabel, modifier = Modifier.size(18.dp))
+                                Icon(Icons.Filled.Wifi, contentDescription = chrome.channelWifiLabel, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
                                 Spacer(Modifier.width(6.dp))
                             }
                             if (peer.hasBluetooth) {
-                                Icon(Icons.Filled.Bluetooth, contentDescription = chrome.channelBluetoothLabel, modifier = Modifier.size(18.dp))
+                                Icon(Icons.Filled.Bluetooth, contentDescription = chrome.channelBluetoothLabel, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
                             }
                         }
                     }

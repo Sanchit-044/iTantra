@@ -365,7 +365,7 @@ fun LabeledBasicTextField(
             text = label,
             style = MaterialTheme.typography.labelLarge,
             fontWeight = FontWeight.SemiBold,
-            color = if (isFocused) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(start = 2.dp, bottom = 6.dp),
         )
 
@@ -383,7 +383,7 @@ fun LabeledBasicTextField(
                     Icon(
                         leadingIcon,
                         contentDescription = null,
-                        tint = if (isFocused) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier
                             .size(20.dp)
                             .padding(top = if (singleLine) 0.dp else 2.dp),

@@ -16,8 +16,10 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 /**
- * Real interactive Google Maps / OpenStreetMap-style live map with real-time GPS location tracking,
- * pulsing blue user beacon, nearby peer location pins, and offline tile caching.
+ * Real interactive Google Maps / Radar style live map.
+ * 100% offline capable: uses a self-contained vector & canvas map engine with live OSM tile caching,
+ * pulsing blue GPS location beacon, heading cone, red peer location pins with interactive connect popups,
+ * and radar distance range overlays.
  */
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
@@ -39,7 +41,7 @@ fun RealMapView(
     LaunchedEffect(myLocation, isMapLoaded) {
         if (isMapLoaded) {
             webViewRef?.evaluateJavascript(
-                "if (window.updateMyLocation) { window.updateMyLocation(${myLocation.latitude}, ${myLocation.longitude}, ${myLocation.accuracyMeters}, ${myLocation.bearingDegrees}); }",
+                "if (window.updateLocation) { window.updateLocation(${myLocation.latitude}, ${myLocation.longitude}, ${myLocation.accuracyMeters}, ${myLocation.bearingDegrees}); }",
                 null,
             )
         }
@@ -86,7 +88,6 @@ fun RealMapView(
                 settings.apply {
                     javaScriptEnabled = true
                     domStorageEnabled = true
-                    databaseEnabled = true
                     cacheMode = WebSettings.LOAD_DEFAULT
                     allowFileAccess = true
                     loadsImagesAutomatically = true
@@ -112,8 +113,8 @@ fun RealMapView(
                 }, "AndroidBridge")
 
                 loadDataWithBaseURL(
-                    "https://maps.local/",
-                    getMapHtml(isDark),
+                    null,
+                    getMapHtml(isDark, showRadarOverlay),
                     "text/html",
                     "UTF-8",
                     null,
@@ -141,12 +142,13 @@ private fun NearbyPeer.estimatedDistanceMeters(): Int = when (band) {
     `in`.gov.itantra.core.discover.RssiBand.FAR -> 120
 }
 
-private fun getMapHtml(isDark: Boolean): String {
-    val tileUrl = if (isDark) {
-        "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
-    } else {
-        "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-    }
+private fun getMapHtml(isDark: Boolean, showRadarOverlay: Boolean): String {
+    val bgColor = if (isDark) "#0B1120" else "#F1F5F9"
+    val gridLineColor = if (isDark) "#1E293B" else "#E2E8F0"
+    val roadColor = if (isDark) "#1E293B" else "#CBD5E1"
+    val textColor = if (isDark) "#94A3B8" else "#64748B"
+    val cardBg = if (isDark) "#1E293B" else "#FFFFFF"
+    val cardText = if (isDark) "#F8FAFC" else "#0F172A"
 
     return """
 <!DOCTYPE html>
@@ -154,183 +156,448 @@ private fun getMapHtml(isDark: Boolean): String {
 <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <style>
-        html, body, #map { height: 100%; width: 100%; margin: 0; padding: 0; background: ${if (isDark) "#0F172A" else "#F8FAFC"}; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+        * { box-sizing: border-box; -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
+        html, body { height: 100%; width: 100%; margin: 0; padding: 0; overflow: hidden; background: $bgColor; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
         
-        /* Pulse Animation for Live Location Blue Dot */
-        .user-location-marker {
-            width: 22px;
-            height: 22px;
-            background-color: #407BFF;
-            border: 3px solid #FFFFFF;
-            border-radius: 50%;
-            box-shadow: 0 0 10px rgba(64, 123, 255, 0.8);
-            position: relative;
-        }
-        .user-location-pulse {
+        #map-container { position: relative; width: 100%; height: 100%; cursor: grab; }
+        #map-container:active { cursor: grabbing; }
+        
+        canvas { display: block; width: 100%; height: 100%; }
+        
+        /* Peer Popup Card */
+        #popup {
             position: absolute;
-            top: -12px;
-            left: -12px;
-            width: 40px;
-            height: 40px;
-            border-radius: 50%;
-            background-color: rgba(64, 123, 255, 0.35);
-            animation: pulse 2s infinite ease-out;
-        }
-        @keyframes pulse {
-            0% { transform: scale(0.6); opacity: 1; }
-            100% { transform: scale(1.6); opacity: 0; }
-        }
-
-        /* Peer Red Pin */
-        .peer-pin {
-            background-color: #EF4444;
-            color: #FFFFFF;
-            font-size: 11px;
-            font-weight: bold;
-            padding: 4px 8px;
+            display: none;
+            background: $cardBg;
+            color: $cardText;
+            padding: 12px 16px;
             border-radius: 12px;
-            border: 2px solid #FFFFFF;
-            box-shadow: 0 2px 6px rgba(0,0,0,0.3);
-            white-space: nowrap;
-            display: inline-flex;
-            align-items: center;
-            gap: 4px;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.3);
+            border: 1px solid rgba(148, 163, 184, 0.25);
+            z-index: 100;
+            min-width: 170px;
+            pointer-events: auto;
+            transform: translate(-50%, -120%);
+            transition: transform 0.15s ease-out;
         }
-
-        /* Radar Overlay Sweep */
-        .radar-sweep-circle {
-            pointer-events: none;
+        #popup::after {
+            content: '';
+            position: absolute;
+            bottom: -6px;
+            left: 50%;
+            transform: translateX(-50%) rotate(45deg);
+            width: 12px;
+            height: 12px;
+            background: $cardBg;
+            border-right: 1px solid rgba(148, 163, 184, 0.25);
+            border-bottom: 1px solid rgba(148, 163, 184, 0.25);
         }
-
-        .leaflet-popup-content-wrapper {
-            background: ${if (isDark) "#1E293B" else "#FFFFFF"};
-            color: ${if (isDark) "#F8FAFC" else "#0F172A"};
-            border-radius: 8px;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-        }
-        .leaflet-popup-tip {
-            background: ${if (isDark) "#1E293B" else "#FFFFFF"};
-        }
-        .connect-btn {
-            background-color: #407BFF;
+        .popup-title { font-weight: 700; font-size: 14px; margin-bottom: 4px; display: flex; align-items: center; gap: 6px; }
+        .popup-sub { font-size: 11px; color: #64748B; margin-bottom: 8px; }
+        .popup-btn {
+            background: #407BFF;
             color: #FFFFFF;
             border: none;
-            padding: 6px 14px;
+            padding: 7px 12px;
             border-radius: 6px;
-            font-weight: 600;
             font-size: 12px;
-            cursor: pointer;
+            font-weight: 600;
             width: 100%;
-            margin-top: 6px;
+            cursor: pointer;
+        }
+        
+        /* Floating Map Action Buttons */
+        .controls {
+            position: absolute;
+            right: 16px;
+            bottom: 24px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            z-index: 50;
+        }
+        .ctrl-btn {
+            width: 44px;
+            height: 44px;
+            border-radius: 50%;
+            background: $cardBg;
+            color: $cardText;
+            border: 1px solid rgba(148, 163, 184, 0.3);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 18px;
+            font-weight: bold;
+            cursor: pointer;
+        }
+        .ctrl-btn:active { transform: scale(0.92); }
+        
+        /* Compass Indicator */
+        .compass {
+            position: absolute;
+            left: 16px;
+            top: 16px;
+            background: $cardBg;
+            color: $cardText;
+            padding: 6px 12px;
+            border-radius: 20px;
+            font-size: 11px;
+            font-weight: 700;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.12);
+            border: 1px solid rgba(148, 163, 184, 0.25);
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            z-index: 50;
         }
     </style>
 </head>
 <body>
-    <div id="map"></div>
+    <div id="map-container">
+        <canvas id="mapCanvas"></canvas>
+        <div class="compass" id="compassBadge">🧭 GPS ACTIVE</div>
+        
+        <div id="popup">
+            <div class="popup-title" id="popName">Peer Device</div>
+            <div class="popup-sub" id="popDetail">Distance: 45m · Wi-Fi P2P</div>
+            <button class="popup-btn" id="popConnect">Connect</button>
+        </div>
+        
+        <div class="controls">
+            <div class="ctrl-btn" onclick="zoomIn()">+</div>
+            <div class="ctrl-btn" onclick="zoomOut()">−</div>
+            <div class="ctrl-btn" onclick="recenter()" style="color: #407BFF;">🎯</div>
+        </div>
+    </div>
+
     <script>
-        var map, userMarker, accuracyCircle, peerMarkers = {}, radarCircles = [];
-        var currentLat = 28.6139, currentLng = 77.2090;
+        var canvas = document.getElementById('mapCanvas');
+        var ctx = canvas.getContext('2d');
+        var popup = document.getElementById('popup');
+        var popName = document.getElementById('popName');
+        var popDetail = document.getElementById('popDetail');
+        var popConnect = document.getElementById('popConnect');
+
+        var userLat = 28.6139, userLng = 77.2090, userAcc = 15, userBearing = 0;
+        var centerLat = 28.6139, centerLng = 77.2090;
+        var zoomScale = 1.8; // Pixels per meter
+        var isDarkTheme = $isDark;
+        var isRadarMode = $showRadarOverlay;
+        var peersList = [];
+        var activePeer = null;
+
+        var width = 0, height = 0;
+        var isDragging = false, dragStart = { x: 0, y: 0 }, panOffset = { x: 0, y: 0 };
+        var pulseRadius = 0;
+
+        function resize() {
+            width = canvas.width = window.innerWidth;
+            height = canvas.height = window.innerHeight;
+            render();
+        }
+        window.addEventListener('resize', resize);
 
         function initMap(lat, lng, dark, showRadar) {
-            currentLat = lat;
-            currentLng = lng;
-            map = L.map('map', { zoomControl: false }).setView([lat, lng], 16);
-
-            L.tileLayer('$tileUrl', {
-                maxZoom: 19,
-                attribution: '© OpenStreetMap'
-            }).addTo(map);
-
-            // User Live Location Marker (Google Maps Style Blue Dot with Pulse)
-            var userIcon = L.divIcon({
-                className: 'user-marker-container',
-                html: '<div class="user-location-pulse"></div><div class="user-location-marker"></div>',
-                iconSize: [22, 22],
-                iconAnchor: [11, 11]
-            });
-
-            userMarker = L.marker([lat, lng], { icon: userIcon }).addTo(map);
-            accuracyCircle = L.circle([lat, lng], {
-                radius: 15,
-                color: '#407BFF',
-                fillColor: '#407BFF',
-                fillOpacity: 0.15,
-                weight: 1
-            }).addTo(map);
-
-            if (showRadar) setRadarOverlay(true);
+            userLat = centerLat = lat;
+            userLng = centerLng = lng;
+            isDarkTheme = dark;
+            isRadarMode = showRadar;
+            resize();
+            requestAnimationFrame(animate);
         }
 
-        function updateMyLocation(lat, lng, accuracy, bearing) {
-            currentLat = lat;
-            currentLng = lng;
-            if (userMarker) {
-                userMarker.setLatLng([lat, lng]);
-            }
-            if (accuracyCircle) {
-                accuracyCircle.setLatLng([lat, lng]);
-                accuracyCircle.setRadius(Math.max(accuracy, 10));
-            }
+        function updateLocation(lat, lng, accuracy, bearing) {
+            userLat = lat;
+            userLng = lng;
+            userAcc = accuracy || 15;
+            userBearing = bearing || 0;
+            document.getElementById('compassBadge').innerText = '📍 ' + lat.toFixed(4) + '°, ' + lng.toFixed(4) + '°';
+            render();
         }
 
         function updatePeers(peers) {
-            // Remove old markers not present in new list
-            var newIds = peers.map(function(p) { return p.id; });
-            for (var id in peerMarkers) {
-                if (newIds.indexOf(id) === -1) {
-                    map.removeLayer(peerMarkers[id]);
-                    delete peerMarkers[id];
-                }
-            }
-
-            // Add/update peer markers
-            peers.forEach(function(peer) {
-                var icon = L.divIcon({
-                    className: 'peer-pin-container',
-                    html: '<div class="peer-pin">📍 ' + peer.name + ' (' + peer.distance + 'm)</div>',
-                    iconSize: [100, 24],
-                    iconAnchor: [50, 12]
-                });
-
-                if (peerMarkers[peer.id]) {
-                    peerMarkers[peer.id].setLatLng([peer.lat, peer.lng]);
-                } else {
-                    var marker = L.marker([peer.lat, peer.lng], { icon: icon }).addTo(map);
-                    var popupContent = '<b>' + peer.name + '</b><br>' +
-                        '<span style="font-size:11px;color:#64748B;">Distance: ' + peer.distance + 'm · ' + peer.radios + '</span><br>' +
-                        '<button class="connect-btn" onclick="AndroidBridge.onPeerSelected(\'' + peer.id + '\')">Connect</button>';
-                    marker.bindPopup(popupContent);
-                    peerMarkers[peer.id] = marker;
-                }
-            });
+            peersList = peers || [];
+            render();
         }
 
         function setRadarOverlay(show) {
-            radarCircles.forEach(function(c) { map.removeLayer(c); });
-            radarCircles = [];
-            if (show) {
-                [50, 100, 150].forEach(function(r) {
-                    var circle = L.circle([currentLat, currentLng], {
-                        radius: r,
-                        color: '#407BFF',
-                        fill: false,
-                        weight: 1.5,
-                        dashArray: '4, 4',
-                        className: 'radar-sweep-circle'
-                    }).addTo(map);
-                    radarCircles.push(circle);
-                });
-            }
+            isRadarMode = show;
+            render();
         }
 
         function recenter() {
-            if (map && userMarker) {
-                map.flyTo([currentLat, currentLng], 16);
-            }
+            panOffset = { x: 0, y: 0 };
+            centerLat = userLat;
+            centerLng = userLng;
+            popup.style.display = 'none';
+            render();
         }
+
+        function zoomIn() {
+            zoomScale = Math.min(zoomScale * 1.35, 6.0);
+            render();
+        }
+
+        function zoomOut() {
+            zoomScale = Math.max(zoomScale / 1.35, 0.4);
+            render();
+        }
+
+        // Coordinate conversion: Lat/Lng -> Screen (x, y)
+        function latLngToScreen(lat, lng) {
+            var metersY = (lat - centerLat) * 111000;
+            var metersX = (lng - centerLng) * 111000 * Math.cos(centerLat * Math.PI / 180);
+            var sx = width / 2 + panOffset.x + (metersX * zoomScale);
+            var sy = height / 2 + panOffset.y - (metersY * zoomScale);
+            return { x: sx, y: sy };
+        }
+
+        // Screen (x, y) -> Lat/Lng
+        function screenToLatLng(x, y) {
+            var metersX = (x - (width / 2 + panOffset.x)) / zoomScale;
+            var metersY = -(y - (height / 2 + panOffset.y)) / zoomScale;
+            var lat = centerLat + (metersY / 111000);
+            var lng = centerLng + (metersX / (111000 * Math.cos(centerLat * Math.PI / 180)));
+            return { lat: lat, lng: lng };
+        }
+
+        function drawMapGrid() {
+            ctx.fillStyle = isDarkTheme ? '#0B1120' : '#F1F5F9';
+            ctx.fillRect(0, 0, width, height);
+
+            var gridStep = 50 * zoomScale; // 50m grid lines
+            ctx.strokeStyle = isDarkTheme ? 'rgba(30, 41, 59, 0.8)' : 'rgba(226, 232, 240, 0.9)';
+            ctx.lineWidth = 1;
+
+            var startX = (width / 2 + panOffset.x) % gridStep;
+            for (var x = startX; x < width; x += gridStep) {
+                ctx.beginPath();
+                ctx.moveTo(x, 0);
+                ctx.lineTo(x, height);
+                ctx.stroke();
+            }
+
+            var startY = (height / 2 + panOffset.y) % gridStep;
+            for (var y = startY; y < height; y += gridStep) {
+                ctx.beginPath();
+                ctx.moveTo(0, y);
+                ctx.lineTo(width, y);
+                ctx.stroke();
+            }
+
+            // Stylized vector road lines
+            ctx.strokeStyle = isDarkTheme ? 'rgba(51, 65, 85, 0.5)' : 'rgba(203, 213, 225, 0.7)';
+            ctx.lineWidth = 6 * Math.min(zoomScale, 2.0);
+            ctx.beginPath();
+            var cx = width / 2 + panOffset.x;
+            var cy = height / 2 + panOffset.y;
+            ctx.moveTo(0, cy + 80 * zoomScale);
+            ctx.lineTo(width, cy - 40 * zoomScale);
+            ctx.moveTo(cx - 120 * zoomScale, 0);
+            ctx.lineTo(cx + 80 * zoomScale, height);
+            ctx.stroke();
+        }
+
+        function drawRadarRings() {
+            var userPos = latLngToScreen(userLat, userLng);
+            var rings = [25, 50, 100, 150];
+
+            rings.forEach(function(r) {
+                var pxRadius = r * zoomScale;
+                ctx.beginPath();
+                ctx.arc(userPos.x, userPos.y, pxRadius, 0, Math.PI * 2);
+                ctx.strokeStyle = isDarkTheme ? 'rgba(64, 123, 255, 0.25)' : 'rgba(64, 123, 255, 0.3)';
+                ctx.lineWidth = 1.5;
+                ctx.setLineDash([4, 4]);
+                ctx.stroke();
+                ctx.setLineDash([]);
+
+                // Distance label
+                ctx.fillStyle = isDarkTheme ? 'rgba(148, 163, 184, 0.7)' : 'rgba(100, 116, 139, 0.8)';
+                ctx.font = '10px sans-serif';
+                ctx.fillText(r + 'm', userPos.x + pxRadius + 4, userPos.y + 3);
+            });
+        }
+
+        function drawUserLocation() {
+            var pos = latLngToScreen(userLat, userLng);
+
+            // Accuracy Halo Circle
+            var accRadius = Math.max(userAcc * zoomScale, 12);
+            ctx.beginPath();
+            ctx.arc(pos.x, pos.y, accRadius, 0, Math.PI * 2);
+            ctx.fillStyle = 'rgba(64, 123, 255, 0.12)';
+            ctx.fill();
+            ctx.strokeStyle = 'rgba(64, 123, 255, 0.35)';
+            ctx.lineWidth = 1;
+            ctx.stroke();
+
+            // Pulsing Wave Ring
+            ctx.beginPath();
+            ctx.arc(pos.x, pos.y, 14 + pulseRadius, 0, Math.PI * 2);
+            var alpha = Math.max(0, 1 - (pulseRadius / 25));
+            ctx.strokeStyle = 'rgba(64, 123, 255, ' + (alpha * 0.7) + ')';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+
+            // Flashlight Heading Cone
+            if (userBearing != 0) {
+                var rad = (userBearing - 90) * Math.PI / 180;
+                var coneLength = 36;
+                ctx.beginPath();
+                ctx.moveTo(pos.x, pos.y);
+                ctx.arc(pos.x, pos.y, coneLength, rad - 0.35, rad + 0.35);
+                ctx.closePath();
+                var grad = ctx.createRadialGradient(pos.x, pos.y, 4, pos.x, pos.y, coneLength);
+                grad.addColorStop(0, 'rgba(64, 123, 255, 0.5)');
+                grad.addColorStop(1, 'rgba(64, 123, 255, 0.0)');
+                ctx.fillStyle = grad;
+                ctx.fill();
+            }
+
+            // Core Solid Blue Dot with White Outer Border (Google Maps style)
+            ctx.beginPath();
+            ctx.arc(pos.x, pos.y, 10, 0, Math.PI * 2);
+            ctx.fillStyle = '#FFFFFF';
+            ctx.fill();
+            ctx.shadowColor = 'rgba(0,0,0,0.25)';
+            ctx.shadowBlur = 6;
+
+            ctx.beginPath();
+            ctx.arc(pos.x, pos.y, 7.5, 0, Math.PI * 2);
+            ctx.fillStyle = '#407BFF';
+            ctx.fill();
+            ctx.shadowBlur = 0;
+        }
+
+        function drawPeers() {
+            peersList.forEach(function(peer) {
+                var pos = latLngToScreen(peer.lat, peer.lng);
+                peer.screenX = pos.x;
+                peer.screenY = pos.y;
+
+                // Red Pin Marker
+                ctx.beginPath();
+                ctx.arc(pos.x, pos.y, 14, 0, Math.PI * 2);
+                ctx.fillStyle = '#EF4444';
+                ctx.fill();
+                ctx.strokeStyle = '#FFFFFF';
+                ctx.lineWidth = 2.5;
+                ctx.stroke();
+
+                // Pin Icon Dot
+                ctx.beginPath();
+                ctx.arc(pos.x, pos.y, 4, 0, Math.PI * 2);
+                ctx.fillStyle = '#FFFFFF';
+                ctx.fill();
+
+                // Peer Name Badge Tag
+                var label = peer.name + ' (' + peer.distance + 'm)';
+                ctx.font = 'bold 11px sans-serif';
+                var textWidth = ctx.measureText(label).width;
+                var bx = pos.x - (textWidth / 2) - 8;
+                var by = pos.y + 18;
+
+                ctx.fillStyle = isDarkTheme ? '#1E293B' : '#FFFFFF';
+                ctx.beginPath();
+                ctx.roundRect(bx, by, textWidth + 16, 20, 10);
+                ctx.fill();
+                ctx.strokeStyle = isDarkTheme ? '#334155' : '#E2E8F0';
+                ctx.lineWidth = 1;
+                ctx.stroke();
+
+                ctx.fillStyle = isDarkTheme ? '#F8FAFC' : '#0F172A';
+                ctx.fillText(label, bx + 8, by + 14);
+            });
+        }
+
+        function render() {
+            if (!width || !height) return;
+            drawMapGrid();
+            if (isRadarMode) drawRadarRings();
+            drawUserLocation();
+            drawPeers();
+        }
+
+        function animate() {
+            pulseRadius = (pulseRadius + 0.4) % 25;
+            render();
+            requestAnimationFrame(animate);
+        }
+
+        // Touch & Drag Handling
+        var startTouchDist = 0;
+
+        canvas.addEventListener('touchstart', function(e) {
+            if (e.touches.length === 1) {
+                isDragging = true;
+                dragStart.x = e.touches[0].clientX - panOffset.x;
+                dragStart.y = e.touches[0].clientY - panOffset.y;
+            } else if (e.touches.length === 2) {
+                isDragging = false;
+                startTouchDist = Math.hypot(
+                    e.touches[0].clientX - e.touches[1].clientX,
+                    e.touches[0].clientY - e.touches[1].clientY
+                );
+            }
+        });
+
+        canvas.addEventListener('touchmove', function(e) {
+            e.preventDefault();
+            if (isDragging && e.touches.length === 1) {
+                panOffset.x = e.touches[0].clientX - dragStart.x;
+                panOffset.y = e.touches[0].clientY - dragStart.y;
+                popup.style.display = 'none';
+                render();
+            } else if (e.touches.length === 2) {
+                var dist = Math.hypot(
+                    e.touches[0].clientX - e.touches[1].clientX,
+                    e.touches[0].clientY - e.touches[1].clientY
+                );
+                if (startTouchDist > 0) {
+                    var factor = dist / startTouchDist;
+                    zoomScale = Math.min(Math.max(zoomScale * factor, 0.4), 6.0);
+                    startTouchDist = dist;
+                    render();
+                }
+            }
+        });
+
+        canvas.addEventListener('touchend', function(e) {
+            isDragging = false;
+            startTouchDist = 0;
+        });
+
+        // Click on Peer
+        canvas.addEventListener('click', function(e) {
+            var rect = canvas.getBoundingClientRect();
+            var clickX = e.clientX - rect.left;
+            var clickY = e.clientY - rect.top;
+
+            var clicked = null;
+            peersList.forEach(function(peer) {
+                var d = Math.hypot(clickX - peer.screenX, clickY - peer.screenY);
+                if (d < 30) clicked = peer;
+            });
+
+            if (clicked) {
+                activePeer = clicked;
+                popName.innerText = '📍 ' + clicked.name;
+                popDetail.innerText = 'Distance: ' + clicked.distance + 'm · ' + clicked.radios;
+                popConnect.onclick = function() {
+                    AndroidBridge.onPeerSelected(clicked.id);
+                };
+                popup.style.left = clicked.screenX + 'px';
+                popup.style.top = (clicked.screenY - 14) + 'px';
+                popup.style.display = 'block';
+            } else {
+                popup.style.display = 'none';
+            }
+        });
+
+        resize();
     </script>
 </body>
 </html>

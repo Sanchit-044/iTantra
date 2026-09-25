@@ -27,13 +27,12 @@ android {
             abiFilters += listOf("arm64-v8a", "armeabi-v7a")
         }
 
-        // Where LocalLanguagePackManager downloads the nine non-bundled language packs
-        // from (see model-host/README.md at the repo root) -- empty means "bundled
-        // Hindi only, no network fetch," which is the safe default for a clean clone.
-        // Override per machine/demo with -PmodelPackBaseUrl=http://<lan-ip>:8000
-        // (e.g. `python -m http.server 8000` run from model-host/) rather than editing
-        // this file, so nobody accidentally commits a demo laptop's LAN IP.
-        val modelPackBaseUrl = (project.findProperty("modelPackBaseUrl") as? String).orEmpty()
+        // Default host URL for on-demand language packs from GitHub Releases.
+        // Can still be overridden per build with -PmodelPackBaseUrl=<custom-url>
+        val defaultModelPackUrl = "https://github.com/Sanchit-044/iTantra/releases/latest/download"
+        val modelPackBaseUrl = (project.findProperty("modelPackBaseUrl") as? String)
+            ?.takeIf { it.isNotBlank() }
+            ?: defaultModelPackUrl
         buildConfigField("String", "MODEL_PACK_BASE_URL", "\"$modelPackBaseUrl\"")
     }
 
@@ -42,6 +41,7 @@ android {
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            signingConfig = signingConfigs.getByName("debug")
         }
     }
 
@@ -60,6 +60,10 @@ android {
 
 kotlin {
     jvmToolchain(17)
+}
+
+ksp {
+    arg("ksp.incremental", "false")
 }
 
 dependencies {

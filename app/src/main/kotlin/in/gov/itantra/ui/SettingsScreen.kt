@@ -220,13 +220,6 @@ private fun ProfileHeroCard(state: UiState, chrome: UiStrings, onClick: () -> Un
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
-            Spacer(Modifier.height(6.dp))
-            StatusPill(
-                text = chrome.offlineEncrypted,
-                containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
-                contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                icon = Icons.Outlined.Lock,
-            )
         }
     }
 }

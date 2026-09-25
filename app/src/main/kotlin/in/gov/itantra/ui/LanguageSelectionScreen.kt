@@ -285,15 +285,16 @@ private fun LanguageGlyph(language: Language, highlighted: Boolean) {
             .size(44.dp)
             .clip(CircleShape)
             .background(
-                if (highlighted) MaterialTheme.colorScheme.primary
-                else MaterialTheme.colorScheme.surfaceContainerHighest,
+                if (highlighted) MaterialTheme.colorScheme.primaryContainer
+                else MaterialTheme.colorScheme.surfaceContainerHigh,
             ),
         contentAlignment = Alignment.Center,
     ) {
         Text(
             text = language.endonym.take(1),
-            style = MaterialTheme.typography.titleLarge,
-            color = if (highlighted) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.Bold,
+            color = if (highlighted) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
 }
@@ -312,7 +313,8 @@ internal fun UiLanguageRow(
         shape = MaterialTheme.shapes.medium,
         color = if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerLow,
         contentColor = if (selected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface,
-        border = if (selected) BorderStroke(1.5.dp, MaterialTheme.colorScheme.primary) else null,
+        border = if (selected) BorderStroke(1.5.dp, MaterialTheme.colorScheme.primary)
+                 else BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
     ) {
         Row(
             modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
@@ -360,24 +362,27 @@ fun PackRow(
         enabled = !busy,
         modifier = Modifier
             .fillMaxWidth()
-            .alpha(if (isDull) 0.65f else 1.0f),
+            .alpha(if (isDull) 0.7f else 1.0f),
         shape = MaterialTheme.shapes.medium,
         color = when {
-            current -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f)
-            downloaded -> MaterialTheme.colorScheme.surfaceContainerLow
-            else -> MaterialTheme.colorScheme.surfaceContainerLowest
+            current -> MaterialTheme.colorScheme.primaryContainer
+            else -> MaterialTheme.colorScheme.surfaceContainerLow
+        },
+        contentColor = when {
+            current -> MaterialTheme.colorScheme.onPrimaryContainer
+            else -> MaterialTheme.colorScheme.onSurface
         },
         border = when {
-            current -> BorderStroke(2.dp, MaterialTheme.colorScheme.primary)
+            current -> BorderStroke(1.5.dp, MaterialTheme.colorScheme.primary)
             downloaded -> BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
-            else -> BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f))
+            else -> BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.25f))
         },
     ) {
         Row(
             modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            LanguageGlyph(language = language, highlighted = current && downloaded)
+            LanguageGlyph(language = language, highlighted = current)
 
             Spacer(Modifier.width(14.dp))
 

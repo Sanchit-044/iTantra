@@ -139,25 +139,29 @@ fun ProfileScreen(
             Box(
                 contentAlignment = Alignment.BottomEnd,
                 modifier = Modifier
-                    .clip(CircleShape)
-                    .clickable(enabled = !uiState.busy) { picker.launch("image/*") }
+                    .clickable(
+                        interactionSource = androidx.compose.runtime.remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
+                        indication = null,
+                        enabled = !uiState.busy
+                    ) { picker.launch("image/*") }
             ) {
                 Box(
                     modifier = Modifier
-                        .size(148.dp)
+                        .size(136.dp)
                         .border(3.dp, MaterialTheme.colorScheme.primary, CircleShape)
-                        .padding(6.dp),
+                        .padding(5.dp),
                 ) {
                     ProfileAvatar(
                         path = uiState.photoPath,
                         bytes = null,
-                        modifier = Modifier.fillMaxSize(),
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .clip(CircleShape),
                     )
                 }
                 Box(
                     modifier = Modifier
-                        .padding(4.dp)
-                        .size(44.dp)
+                        .size(42.dp)
                         .background(MaterialTheme.colorScheme.primary, CircleShape)
                         .border(3.dp, MaterialTheme.colorScheme.surface, CircleShape),
                     contentAlignment = Alignment.Center

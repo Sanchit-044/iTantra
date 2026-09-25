@@ -145,13 +145,15 @@ fun AlertScreen(viewModel: MainViewModel) {
 
 @Composable
 private fun AlertHeader(ready: Boolean, sending: Boolean, chrome: UiStrings) {
-    val container = if (ready) MaterialTheme.colorScheme.tertiaryContainer else MaterialTheme.colorScheme.errorContainer
-    val content = if (ready) MaterialTheme.colorScheme.onTertiaryContainer else MaterialTheme.colorScheme.onErrorContainer
+    val container = if (ready) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.errorContainer
+    val content = if (ready) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onErrorContainer
     Surface(
         modifier = Modifier.fillMaxWidth(),
         color = container,
         contentColor = content,
-        shape = MaterialTheme.shapes.large,
+        shape = MaterialTheme.shapes.medium,
+        border = if (ready) androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.35f))
+                 else androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.5f)),
     ) {
         Row(
             modifier = Modifier.padding(16.dp),
@@ -197,7 +199,7 @@ private fun QuickAlertButton(text: String, enabled: Boolean, onClick: () -> Unit
         colors = ButtonDefaults.buttonColors(
             containerColor = MaterialTheme.colorScheme.errorContainer,
             contentColor = MaterialTheme.colorScheme.onErrorContainer,
-            disabledContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+            disabledContainerColor = MaterialTheme.colorScheme.surfaceContainerLow,
             disabledContentColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
         ),
         contentPadding = PaddingValues(horizontal = 12.dp),
@@ -276,7 +278,8 @@ private fun CustomMessageCard(
     Surface(
         modifier = Modifier.fillMaxWidth(),
         color = MaterialTheme.colorScheme.surfaceContainerLow,
-        shape = MaterialTheme.shapes.large,
+        shape = MaterialTheme.shapes.medium,
+        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
