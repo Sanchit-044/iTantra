@@ -405,6 +405,7 @@ fun PackRow(
 
                 PackStatus(
                     language = language,
+                    current = current,
                     downloaded = downloaded,
                     downloadingNow = downloadingNow,
                     chrome = chrome,
@@ -469,47 +470,21 @@ fun PackRow(
                     }
                 }
                 downloaded -> {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    // Delete Button
+                    IconButton(
+                        onClick = onDelete,
+                        enabled = !busy,
+                        modifier = Modifier
+                            .size(38.dp)
+                            .clip(CircleShape)
+                            .background(MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.4f)),
                     ) {
-                        if (current) {
-                            StatusPill(
-                                text = chrome.active,
-                                containerColor = MaterialTheme.colorScheme.primary,
-                                contentColor = MaterialTheme.colorScheme.onPrimary,
-                                icon = Icons.Filled.Check,
-                            )
-                        } else {
-                            Button(
-                                onClick = onSelectCurrent,
-                                enabled = !busy,
-                                shape = MaterialTheme.shapes.medium,
-                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
-                                modifier = Modifier.height(34.dp),
-                            ) {
-                                Text(
-                                    text = "Set as Active",
-                                    style = MaterialTheme.typography.labelMedium,
-                                    fontWeight = FontWeight.SemiBold,
-                                )
-                            }
-                        }
-                        IconButton(
-                            onClick = onDelete,
-                            enabled = !busy,
-                            modifier = Modifier
-                                .size(34.dp)
-                                .clip(CircleShape)
-                                .background(MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.5f)),
-                        ) {
-                            Icon(
-                                imageVector = Icons.Filled.DeleteOutline,
-                                contentDescription = chrome.deleteLanguageAction,
-                                tint = MaterialTheme.colorScheme.error,
-                                modifier = Modifier.size(18.dp),
-                            )
-                        }
+                        Icon(
+                            imageVector = Icons.Filled.DeleteOutline,
+                            contentDescription = chrome.deleteLanguageAction,
+                            tint = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.size(20.dp),
+                        )
                     }
                 }
             }
@@ -535,6 +510,7 @@ val Language.packSize: String
 @Composable
 private fun PackStatus(
     language: Language,
+    current: Boolean,
     downloaded: Boolean,
     downloadingNow: Boolean,
     chrome: UiStrings,
@@ -557,11 +533,12 @@ private fun PackStatus(
             )
         }
         downloaded -> Row(verticalAlignment = Alignment.CenterVertically) {
+            val statusLabel = if (current) "${chrome.downloaded} · ${chrome.active}" else chrome.downloaded
             Text(
-                text = "$sizeText · ${chrome.downloaded}",
+                text = "$sizeText · $statusLabel",
                 style = MaterialTheme.typography.labelSmall,
-                color = success,
-                fontWeight = FontWeight.Medium,
+                color = if (current) MaterialTheme.colorScheme.primary else success,
+                fontWeight = if (current) FontWeight.Bold else FontWeight.Medium,
             )
         }
         else -> Row(verticalAlignment = Alignment.CenterVertically) {

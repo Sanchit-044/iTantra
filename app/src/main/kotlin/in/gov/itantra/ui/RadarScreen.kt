@@ -66,7 +66,7 @@ fun RadarScreen(
     val canJoin = (main.connectionState == ConnectionState.DISCONNECTED ||
         main.connectionState == ConnectionState.FAILED) && !main.reconnecting
 
-    var displayMode by remember { mutableStateOf(RadarDisplayMode.RADAR) }
+    var displayMode by remember { mutableStateOf(RadarDisplayMode.MAP) }
     var selectedPeer by remember { mutableStateOf<NearbyPeer?>(null) }
     var activeLocationPeer by remember { mutableStateOf<NearbyPeer?>(null) }
 
@@ -223,14 +223,14 @@ fun RadarScreen(
                             selectedPeer = peer
                         },
                         isDark = isDark,
-                        showRadarOverlay = false,
+                        showRadarOverlay = displayMode == RadarDisplayMode.HYBRID,
                         modifier = Modifier.fillMaxSize(),
                     )
                 }
 
-                // Layer 2: Tactical Military Radar Sweep Canvas (rendered on top of map)
-                if (displayMode != RadarDisplayMode.MAP || true) {
-                    val ringColor = MaterialTheme.colorScheme.primary.copy(alpha = if (displayMode == RadarDisplayMode.MAP) 0.12f else 0.25f)
+                // Layer 2: Tactical Military Radar Sweep Canvas (rendered only in RADAR mode)
+                if (displayMode == RadarDisplayMode.RADAR) {
+                    val ringColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.25f)
                     val youColor = MaterialTheme.colorScheme.primary
                     val peerColor = MaterialTheme.colorScheme.secondary
                     val labelColor = MaterialTheme.colorScheme.onSurface

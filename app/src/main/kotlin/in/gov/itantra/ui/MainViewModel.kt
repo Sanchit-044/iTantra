@@ -181,7 +181,23 @@ class MainViewModel @Inject constructor(
     private var lastConnectRequest: ConnectRequest? = null
     private var reconnectJob: Job? = null
     private var reconnectAttempts = 0
+    private var clearRecognizedTextJob: Job? = null
     private val userInitiatedDisconnect = AtomicBoolean(true)
+
+    private fun scheduleRecognizedTextClear(delayMs: Long = 4_000L) {
+        clearRecognizedTextJob?.cancel()
+        clearRecognizedTextJob = viewModelScope.launch {
+            delay(delayMs)
+            _uiState.update { current ->
+                if (!current.isSpeaking && !current.isRequestingFloor) {
+                    current.copy(recognizedText = "")
+                } else {
+                    current
+                }
+            }
+        }
+    }
+
     /** True once this session has reached CONNECTED at least once, so a later drop is a reconnect case rather than an initial-attempt failure the transport's own retry loop already gave up on. */
     private var hasReachedConnected = false
     private var lastInsertedAlertKey = ""
@@ -438,10 +454,12 @@ class MainViewModel @Inject constructor(
                     language = spoken,
                     transport = currentTransport,
                     onPartialResult = { partialText ->
+                        clearRecognizedTextJob?.cancel()
                         _uiState.update { it.copy(recognizedText = partialText) }
                     },
                     onFinalResult = { finalText ->
                         _uiState.update { it.copy(recognizedText = finalText) }
+                        scheduleRecognizedTextClear()
                         val refined = languageIdEngine.detectFromText(finalText, snap.installedLanguages)
                         if (refined != null && refined != spoken) {
                             viewModelScope.launch { languageSettings.setCurrentLanguage(refined) }
@@ -1189,6 +1207,7 @@ class MainViewModel @Inject constructor(
             }
             if (state.isSpeaking || state.isRequestingFloor) return
             AppLog.d("MainViewModel", "startPtt: Requesting floor for live PTT")
+            clearRecognizedTextJob?.cancel()
             pttWanted.set(true)
             _uiState.update {
                 it.copy(isRequestingFloor = true, recognizedText = "", notice = null)
@@ -1197,6 +1216,7 @@ class MainViewModel @Inject constructor(
         } else {
             if (state.isSpeaking) return
             AppLog.d("MainViewModel", "startPtt: Starting queued offline PTT")
+            clearRecognizedTextJob?.cancel()
             _uiState.update { it.copy(isSpeaking = true, recognizedText = "", notice = null) }
             try {
                 startPttUseCase.execute(
@@ -1204,10 +1224,12 @@ class MainViewModel @Inject constructor(
                     transport = null,
                     sendLive = false,
                     onPartialResult = { partial ->
+                        clearRecognizedTextJob?.cancel()
                         _uiState.update { it.copy(recognizedText = partial) }
                     },
                     onFinalResult = { finalText ->
                         _uiState.update { it.copy(recognizedText = finalText) }
+                        scheduleRecognizedTextClear()
                     },
                     onQueued = { publishQueues() },
                     onError = { message ->
@@ -1231,8 +1253,10 @@ class MainViewModel @Inject constructor(
         _uiState.update {
             it.copy(isSpeaking = false, isRequestingFloor = false, recognizedText = it.recognizedText)
         }
+        scheduleRecognizedTextClear()
         if (isLiveReady()) flushQueue()
     }
+
 
     fun playInbox(id: String) {
         val item = inbox.find(id) ?: return
