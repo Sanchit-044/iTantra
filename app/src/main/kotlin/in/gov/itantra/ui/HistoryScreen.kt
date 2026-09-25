@@ -135,9 +135,9 @@ fun HistoryMessageItem(msg: HistoryMessage, chrome: UiStrings) {
             .fillMaxWidth()
             .padding(start = if (outbound) 32.dp else 0.dp, end = if (outbound) 0.dp else 32.dp),
         shape = if (outbound) {
-            RoundedCornerShape(topStart = 20.dp, topEnd = 6.dp, bottomEnd = 20.dp, bottomStart = 20.dp)
+            RoundedCornerShape(topStart = 8.dp, topEnd = 2.dp, bottomEnd = 8.dp, bottomStart = 8.dp)
         } else {
-            RoundedCornerShape(topStart = 6.dp, topEnd = 20.dp, bottomEnd = 20.dp, bottomStart = 20.dp)
+            RoundedCornerShape(topStart = 2.dp, topEnd = 8.dp, bottomEnd = 8.dp, bottomStart = 8.dp)
         },
         color = bgColor,
         contentColor = contentColor,

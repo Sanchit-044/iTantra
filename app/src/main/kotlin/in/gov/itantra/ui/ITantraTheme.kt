@@ -34,11 +34,11 @@ import androidx.compose.ui.graphics.Color as ComposeColor
 // consistent tonal elevation instead of falling back to baseline purple.
 
 private val LightScheme = lightColorScheme(
-    primary = ComposeColor(0xFF3548C9),
+    primary = ComposeColor(0xFF407BFF), // rgba(64, 123, 255, 1)
     onPrimary = ComposeColor(0xFFFFFFFF),
-    primaryContainer = ComposeColor(0xFFDFE0FF),
-    onPrimaryContainer = ComposeColor(0xFF000F5C),
-    inversePrimary = ComposeColor(0xFFBCC2FF),
+    primaryContainer = ComposeColor(0xFFDCE6FF),
+    onPrimaryContainer = ComposeColor(0xFF001959),
+    inversePrimary = ComposeColor(0xFF1A73E8),
     secondary = ComposeColor(0xFF006B5F),
     onSecondary = ComposeColor(0xFFFFFFFF),
     secondaryContainer = ComposeColor(0xFFA0F2E1),
@@ -57,7 +57,7 @@ private val LightScheme = lightColorScheme(
     onSurface = ComposeColor(0xFF1B1B21),
     surfaceVariant = ComposeColor(0xFFE3E1EC),
     onSurfaceVariant = ComposeColor(0xFF46464F),
-    surfaceTint = ComposeColor(0xFF3548C9),
+    surfaceTint = ComposeColor(0xFF407BFF),
     inverseSurface = ComposeColor(0xFF303036),
     inverseOnSurface = ComposeColor(0xFFF2EFF7),
     outline = ComposeColor(0xFF767680),
@@ -73,11 +73,11 @@ private val LightScheme = lightColorScheme(
 )
 
 private val DarkScheme = darkColorScheme(
-    primary = ComposeColor(0xFFBCC2FF),
-    onPrimary = ComposeColor(0xFF0A1F8F),
-    primaryContainer = ComposeColor(0xFF2C3DB5),
-    onPrimaryContainer = ComposeColor(0xFFDFE0FF),
-    inversePrimary = ComposeColor(0xFF3548C9),
+    primary = ComposeColor(0xFF1A73E8), // rgba(26, 115, 232, 1)
+    onPrimary = ComposeColor(0xFFFFFFFF),
+    primaryContainer = ComposeColor(0xFF004494),
+    onPrimaryContainer = ComposeColor(0xFFD6E3FF),
+    inversePrimary = ComposeColor(0xFF407BFF),
     secondary = ComposeColor(0xFF84D6C5),
     onSecondary = ComposeColor(0xFF003731),
     secondaryContainer = ComposeColor(0xFF005047),
@@ -96,7 +96,7 @@ private val DarkScheme = darkColorScheme(
     onSurface = ComposeColor(0xFFE4E1E9),
     surfaceVariant = ComposeColor(0xFF46464F),
     onSurfaceVariant = ComposeColor(0xFFC7C5D0),
-    surfaceTint = ComposeColor(0xFFBCC2FF),
+    surfaceTint = ComposeColor(0xFF1A73E8),
     inverseSurface = ComposeColor(0xFFE4E1E9),
     inverseOnSurface = ComposeColor(0xFF303036),
     outline = ComposeColor(0xFF90909A),
@@ -155,10 +155,10 @@ object ITantraTheme {
 
 private val AppShapes = Shapes(
     extraSmall = RoundedCornerShape(8.dp),
-    small = RoundedCornerShape(12.dp),
-    medium = RoundedCornerShape(16.dp),
-    large = RoundedCornerShape(24.dp),
-    extraLarge = RoundedCornerShape(32.dp),
+    small = RoundedCornerShape(8.dp),
+    medium = RoundedCornerShape(8.dp),
+    large = RoundedCornerShape(8.dp),
+    extraLarge = RoundedCornerShape(8.dp),
 )
 
 private val Sans = FontFamily.SansSerif

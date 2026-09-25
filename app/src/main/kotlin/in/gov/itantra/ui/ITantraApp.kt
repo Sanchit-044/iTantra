@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -360,9 +361,6 @@ private fun MainNavBar(tab: MainTab, onSelect: (MainTab) -> Unit, chrome: UiStri
     val items = destinations(chrome, unread)
     NavigationBar(containerColor = MaterialTheme.colorScheme.surfaceContainer) {
         items.take(2).forEach { NavBarItem(it, tab, onSelect) }
-        // Fixed height, never fillMaxHeight(): NavigationBar only sets a *minimum*
-        // height, so a fill-max child stretches the bar to the whole screen and the
-        // Scaffold leaves no room for tab content.
         Box(
             modifier = Modifier
                 .weight(1f)
@@ -374,6 +372,7 @@ private fun MainNavBar(tab: MainTab, onSelect: (MainTab) -> Unit, chrome: UiStri
                 selected = tab == MainTab.ALERT,
                 contentDescription = chrome.alert,
                 onClick = { onSelect(MainTab.ALERT) },
+                modifier = Modifier.offset(y = (-12).dp),
             )
         }
         items.drop(2).forEach { NavBarItem(it, tab, onSelect) }

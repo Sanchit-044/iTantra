@@ -1,5 +1,6 @@
 package `in`.gov.itantra.ui.components
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
@@ -19,10 +20,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
-import androidx.compose.material.icons.filled.Campaign
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FloatingActionButton
-import androidx.compose.material3.FloatingActionButtonDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -36,6 +35,7 @@ import androidx.compose.material3.TopAppBarScrollBehavior
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalConfiguration
@@ -181,6 +181,7 @@ fun SettingsGroup(
             color = MaterialTheme.colorScheme.surfaceContainerLow,
             shape = MaterialTheme.shapes.large,
             modifier = Modifier.fillMaxWidth(),
+            border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)),
         ) {
             Column(content = content)
         }
@@ -195,6 +196,8 @@ fun SettingsRow(
     subtitle: String? = null,
     onClick: (() -> Unit)? = null,
     showDivider: Boolean = false,
+    iconContainerColor: androidx.compose.ui.graphics.Color = MaterialTheme.colorScheme.primaryContainer,
+    iconContentColor: androidx.compose.ui.graphics.Color = MaterialTheme.colorScheme.onPrimaryContainer,
     trailing: (@Composable () -> Unit)? = null,
 ) {
     val rowContent: @Composable () -> Unit = {
@@ -206,8 +209,8 @@ fun SettingsRow(
         ) {
             IconBadge(
                 icon = icon,
-                containerColor = MaterialTheme.colorScheme.primaryContainer,
-                contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                containerColor = iconContainerColor,
+                contentColor = iconContentColor,
                 size = 40.dp,
             )
             Spacer(Modifier.width(16.dp))
@@ -248,23 +251,37 @@ fun SettingsRow(
     }
 }
 
-/** The emergency Alert action: a prominent error-coloured FAB used in the nav bar / rail. */
+/** The emergency Alert / SOS FAB: floating circular button with outer ring and warning icon. */
 @Composable
 fun AlertFab(
     selected: Boolean,
     contentDescription: String,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
-    size: Dp = 56.dp,
+    size: Dp = 58.dp,
 ) {
-    FloatingActionButton(
+    Surface(
         onClick = onClick,
-        modifier = modifier.size(size),
+        modifier = modifier,
         shape = CircleShape,
-        containerColor = if (selected) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.errorContainer,
-        contentColor = if (selected) MaterialTheme.colorScheme.onError else MaterialTheme.colorScheme.onErrorContainer,
-        elevation = FloatingActionButtonDefaults.elevation(defaultElevation = 3.dp, pressedElevation = 6.dp),
+        color = MaterialTheme.colorScheme.surface,
+        shadowElevation = 8.dp,
+        tonalElevation = 4.dp,
     ) {
-        Icon(Icons.Filled.Campaign, contentDescription = contentDescription, modifier = Modifier.size(size * 0.46f))
+        Box(
+            modifier = Modifier
+                .padding(4.dp)
+                .size(size)
+                .clip(CircleShape)
+                .background(if (selected) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.error),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                Icons.Filled.Warning,
+                contentDescription = contentDescription,
+                tint = MaterialTheme.colorScheme.onError,
+                modifier = Modifier.size(size * 0.54f),
+            )
+        }
     }
 }
