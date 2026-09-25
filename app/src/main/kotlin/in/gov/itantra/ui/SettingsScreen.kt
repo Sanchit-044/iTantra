@@ -31,10 +31,12 @@ import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Insights
 import androidx.compose.material.icons.outlined.Lock
+import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material.icons.outlined.RecordVoiceOver
 import androidx.compose.material.icons.outlined.Translate
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SegmentedButton
@@ -51,15 +53,16 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import `in`.gov.itantra.core.Language
 import `in`.gov.itantra.core.lang.UiStrings
 import `in`.gov.itantra.core.theme.ThemeMode
 import `in`.gov.itantra.ui.components.BottomActionBar
 import `in`.gov.itantra.ui.components.DownloadProgressCard
-import `in`.gov.itantra.ui.components.IconBadge
 import `in`.gov.itantra.ui.components.InlineMessage
 import `in`.gov.itantra.ui.components.ProfileAvatar
 import `in`.gov.itantra.ui.components.SettingsGroup
@@ -67,7 +70,7 @@ import `in`.gov.itantra.ui.components.SettingsRow
 import `in`.gov.itantra.ui.components.StatusPill
 import `in`.gov.itantra.ui.components.SubScreenScaffold
 
-/** Settings tab: profile, languages, theme, diagnostics and about, as clean grouped cards. */
+/** Settings tab: clean and simple card layout with line-art icons and uppercase section headers. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(
@@ -80,43 +83,26 @@ fun SettingsScreen(
 ) {
     val mode by themeViewModel.mode.collectAsState()
     val chrome = UiStrings.forLanguage(mainState.uiLanguage)
-    val ext = ITantraTheme.extended
 
     Column(
         modifier = Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
             .padding(horizontal = 16.dp, vertical = 12.dp)
-            .padding(bottom = 24.dp),
-        verticalArrangement = Arrangement.spacedBy(20.dp),
+            .padding(bottom = 32.dp),
+        verticalArrangement = Arrangement.spacedBy(18.dp),
     ) {
-        // Hero Profile Header
+        // Hero Profile Section Card (Image 2 style)
         ProfileHeroCard(state = mainState, chrome = chrome, onClick = onOpenProfile)
 
-        // Section 1: Speech & Language
+        // Section 1: Speech & Language Card
         SettingsGroup(chrome.sectionSpeech) {
             SettingsRow(
                 icon = Icons.Outlined.RecordVoiceOver,
                 title = chrome.languagesTitle,
                 subtitle = "${mainState.currentLanguage.endonym} (${mainState.currentLanguage.englishName}) · ${chrome.installedCount(mainState.installedLanguages.size)}",
                 onClick = onOpenLanguages,
-                iconContainerColor = MaterialTheme.colorScheme.primaryContainer,
-                iconContentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                trailing = {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        StatusPill(
-                            text = mainState.currentLanguage.endonym,
-                            containerColor = MaterialTheme.colorScheme.primaryContainer,
-                            contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                        )
-                        Spacer(Modifier.width(6.dp))
-                        Icon(
-                            Icons.AutoMirrored.Filled.KeyboardArrowRight,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                },
+                showDivider = false,
             )
             SettingsRow(
                 icon = Icons.Outlined.Translate,
@@ -124,27 +110,10 @@ fun SettingsScreen(
                 subtitle = "${mainState.uiLanguage.endonym} (${mainState.uiLanguage.englishName})",
                 onClick = onOpenDisplay,
                 showDivider = true,
-                iconContainerColor = MaterialTheme.colorScheme.secondaryContainer,
-                iconContentColor = MaterialTheme.colorScheme.onSecondaryContainer,
-                trailing = {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        StatusPill(
-                            text = mainState.uiLanguage.endonym,
-                            containerColor = MaterialTheme.colorScheme.secondaryContainer,
-                            contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
-                        )
-                        Spacer(Modifier.width(6.dp))
-                        Icon(
-                            Icons.AutoMirrored.Filled.KeyboardArrowRight,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                },
             )
         }
 
-        // Section 2: Appearance & Theme
+        // Section 2: Appearance & Theme Card
         SettingsGroup(chrome.sectionAppearance) {
             Column(modifier = Modifier.padding(16.dp)) {
                 SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
@@ -167,29 +136,28 @@ fun SettingsScreen(
                         }
                     }
                 }
-                Spacer(Modifier.height(10.dp))
+                Spacer(Modifier.height(8.dp))
                 Text(
                     text = mode.help(chrome),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(start = 4.dp),
+                    modifier = Modifier.padding(start = 2.dp),
                 )
             }
         }
 
-        // Section 3: Diagnostics & System Metrics
+        // Section 3: Diagnostics & System Metrics Card
         SettingsGroup(chrome.sectionDiagnostics) {
             SettingsRow(
                 icon = Icons.Outlined.Insights,
                 title = chrome.analysis,
-                subtitle = "Live WER, RTF, CPU & Transport metrics",
+                subtitle = "Live WER, RTF, CPU & Transport telemetry",
                 onClick = onOpenAnalysis,
-                iconContainerColor = ext.successContainer,
-                iconContentColor = ext.onSuccessContainer,
+                showDivider = false,
             )
         }
 
-        // Section 4: About & System Info
+        // Section 4: About & System Info Card
         SettingsGroup(chrome.sectionAbout) {
             AboutCardContent(chrome)
         }
@@ -202,63 +170,55 @@ private fun ProfileHeroCard(state: UiState, chrome: UiStrings, onClick: () -> Un
     Surface(
         onClick = onClick,
         modifier = Modifier.fillMaxWidth(),
-        shape = MaterialTheme.shapes.large,
+        shape = MaterialTheme.shapes.medium,
         color = MaterialTheme.colorScheme.surfaceContainerLow,
-        tonalElevation = 1.dp,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f)),
     ) {
-        Row(
-            modifier = Modifier.padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically,
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(20.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Box(contentAlignment = Alignment.BottomEnd) {
                 ProfileAvatar(
                     path = local.photoPath,
                     bytes = local.thumbnailJpeg,
                     modifier = Modifier
-                        .size(60.dp)
+                        .size(88.dp)
                         .clip(CircleShape)
-                        .border(2.dp, MaterialTheme.colorScheme.primary, CircleShape),
+                        .border(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.6f), CircleShape),
                 )
                 Box(
                     modifier = Modifier
-                        .size(20.dp)
+                        .size(26.dp)
                         .background(MaterialTheme.colorScheme.primary, CircleShape)
-                        .padding(3.dp),
+                        .padding(5.dp),
                     contentAlignment = Alignment.Center,
                 ) {
                     Icon(
                         Icons.Filled.Edit,
-                        contentDescription = null,
+                        contentDescription = chrome.editProfile,
                         tint = MaterialTheme.colorScheme.onPrimary,
-                        modifier = Modifier.size(12.dp),
+                        modifier = Modifier.size(16.dp),
                     )
                 }
             }
-            Spacer(Modifier.width(16.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = if (local.name.isBlank()) chrome.noName else local.displayName,
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                Spacer(Modifier.height(4.dp))
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    StatusPill(
-                        text = chrome.offlineEncrypted,
-                        containerColor = MaterialTheme.colorScheme.secondaryContainer,
-                        contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
-                        icon = Icons.Outlined.Lock,
-                    )
-                }
-            }
-            Spacer(Modifier.width(8.dp))
-            Icon(
-                Icons.AutoMirrored.Filled.KeyboardArrowRight,
-                contentDescription = chrome.editProfile,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            Spacer(Modifier.height(12.dp))
+            Text(
+                text = if (local.name.isBlank()) chrome.noName else local.displayName,
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Spacer(Modifier.height(6.dp))
+            StatusPill(
+                text = chrome.offlineEncrypted,
+                containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                icon = Icons.Outlined.Lock,
             )
         }
     }
@@ -269,22 +229,22 @@ private fun ProfileHeroCard(state: UiState, chrome: UiStrings, onClick: () -> Un
 private fun AboutCardContent(chrome: UiStrings) {
     Column(modifier = Modifier.padding(16.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            IconBadge(
-                icon = Icons.Outlined.Info,
-                containerColor = MaterialTheme.colorScheme.tertiaryContainer,
-                contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
-                size = 36.dp,
+            Icon(
+                imageVector = Icons.Outlined.Info,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(22.dp),
             )
-            Spacer(Modifier.width(12.dp))
+            Spacer(Modifier.width(16.dp))
             Column {
                 Text(
                     text = chrome.appTitle,
                     style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
+                    fontWeight = FontWeight.SemiBold,
                 )
                 Text(
                     text = chrome.version(`in`.gov.itantra.BuildConfig.VERSION_NAME) + " · ISRO SIH PS 26173",
-                    style = MaterialTheme.typography.labelMedium,
+                    style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
@@ -352,7 +312,10 @@ fun LanguageSettingsScreen(
     }
 
     SubScreenScaffold(
-        title = if (page == LanguageSettingsPage.SPEECH) chrome.languagesTitle else chrome.appLanguageTitle,
+        title = when (page) {
+            LanguageSettingsPage.SPEECH -> chrome.languagesTitle
+            LanguageSettingsPage.DISPLAY -> chrome.appLanguageTitle
+        },
         onBack = onBack,
         backDescription = chrome.back,
         bottomBar = {
@@ -390,6 +353,7 @@ fun LanguageSettingsScreen(
                         busy = uiState.busy,
                         downloaded = language in uiState.downloaded,
                         downloadingNow = uiState.progress?.language == language,
+                        progressFraction = if (uiState.progress?.language == language) uiState.progress?.fraction else null,
                         chrome = chrome,
                         onSelectCurrent = { viewModel.setCurrent(language) },
                         onDownload = { viewModel.downloadLanguage(language) },
@@ -426,3 +390,4 @@ private fun ThemeMode.help(chrome: UiStrings): String = when (this) {
     ThemeMode.LIGHT -> chrome.themeLightHelp
     ThemeMode.DARK -> chrome.themeDarkHelp
 }
+

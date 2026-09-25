@@ -147,6 +147,7 @@ fun LanguageSelectionScreen(
                         busy = uiState.busy,
                         downloaded = language in uiState.downloaded,
                         downloadingNow = uiState.progress?.language == language,
+                        progressFraction = if (uiState.progress?.language == language) uiState.progress?.fraction else null,
                         chrome = chrome,
                         onSelectCurrent = { viewModel.setCurrent(language) },
                         onDownload = { viewModel.downloadLanguage(language) },
@@ -334,6 +335,7 @@ fun PackRow(
     onSelectCurrent: () -> Unit,
     onDownload: () -> Unit,
     onDelete: () -> Unit,
+    progressFraction: Float? = null,
 ) {
     val isDull = !downloaded && !downloadingNow
 
@@ -365,36 +367,18 @@ fun PackRow(
             modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            RadioButton(
-                selected = current,
-                onClick = onSelectCurrent,
-                enabled = !busy,
-            )
-
-            Spacer(Modifier.width(10.dp))
-
             LanguageGlyph(language = language, highlighted = current && downloaded)
 
-            Spacer(Modifier.width(12.dp))
+            Spacer(Modifier.width(14.dp))
 
             Column(modifier = Modifier.weight(1f)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        text = language.endonym,
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = if (current) FontWeight.Bold else FontWeight.Normal,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                    if (current) {
-                        Spacer(Modifier.width(8.dp))
-                        StatusPill(
-                            text = chrome.active,
-                            containerColor = MaterialTheme.colorScheme.primary,
-                            contentColor = MaterialTheme.colorScheme.onPrimary,
-                        )
-                    }
-                }
+                Text(
+                    text = language.endonym,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = if (current) FontWeight.Bold else FontWeight.Medium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
 
                 Text(
                     text = language.englishName + if (language == Language.DEFAULT) "  ·  ${chrome.defaultHint}" else "",
@@ -413,60 +397,88 @@ fun PackRow(
                 )
             }
 
-            Spacer(Modifier.width(8.dp))
+            Spacer(Modifier.width(10.dp))
 
             when {
                 downloadingNow -> {
-                    CircularProgressIndicator(
-                        modifier = Modifier
-                            .size(24.dp)
-                            .padding(2.dp),
-                        strokeWidth = 2.5.dp,
-                    )
-                }
-                !downloaded -> {
-                    Surface(
-                        onClick = onDownload,
-                        enabled = !busy,
-                        shape = CircleShape,
-                        color = MaterialTheme.colorScheme.primaryContainer,
-                        contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                    // Circular Progress Ring showing live progress
+                    Box(
+                        modifier = Modifier.size(38.dp),
+                        contentAlignment = Alignment.Center,
                     ) {
-                        Row(
-                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Icon(
-                                imageVector = Icons.Outlined.CloudDownload,
-                                contentDescription = chrome.downloadingLabel,
-                                modifier = Modifier.size(18.dp),
+                        if (progressFraction != null && progressFraction > 0f) {
+                            CircularProgressIndicator(
+                                progress = { progressFraction },
+                                modifier = Modifier.fillMaxSize(),
+                                strokeWidth = 3.dp,
+                                color = MaterialTheme.colorScheme.primary,
                             )
-                            Spacer(Modifier.width(4.dp))
                             Text(
-                                text = "Download",
-                                style = MaterialTheme.typography.labelMedium,
-                                fontWeight = FontWeight.SemiBold,
+                                text = "${(progressFraction * 100).toInt()}%",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary,
+                            )
+                        } else {
+                            CircularProgressIndicator(
+                                modifier = Modifier.fillMaxSize(),
+                                strokeWidth = 3.dp,
+                                color = MaterialTheme.colorScheme.primary,
                             )
                         }
                     }
                 }
-                downloaded -> {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
+                !downloaded -> {
+                    // Download Icon Button
+                    IconButton(
+                        onClick = onDownload,
+                        enabled = !busy,
+                        modifier = Modifier
+                            .size(38.dp)
+                            .clip(CircleShape)
+                            .background(MaterialTheme.colorScheme.primaryContainer),
+                    ) {
                         Icon(
-                            imageVector = Icons.Filled.CheckCircle,
-                            contentDescription = chrome.downloaded,
-                            tint = ITantraTheme.extended.success,
+                            imageVector = Icons.Outlined.CloudDownload,
+                            contentDescription = chrome.downloadingLabel,
+                            tint = MaterialTheme.colorScheme.primary,
                             modifier = Modifier.size(20.dp),
                         )
-                        if (!current && language != Language.DEFAULT) {
-                            Spacer(Modifier.width(4.dp))
-                            IconButton(onClick = onDelete, enabled = !busy, modifier = Modifier.size(32.dp)) {
-                                Icon(
-                                    imageVector = Icons.Filled.DeleteOutline,
-                                    contentDescription = chrome.deleteLanguageAction,
-                                    tint = MaterialTheme.colorScheme.error.copy(alpha = 0.8f),
-                                    modifier = Modifier.size(18.dp),
+                    }
+                }
+                downloaded -> {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        if (current) {
+                            StatusPill(
+                                text = chrome.active,
+                                containerColor = MaterialTheme.colorScheme.primary,
+                                contentColor = MaterialTheme.colorScheme.onPrimary,
+                                icon = Icons.Filled.Check,
+                            )
+                        } else {
+                            Button(
+                                onClick = onSelectCurrent,
+                                enabled = !busy,
+                                shape = MaterialTheme.shapes.small,
+                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                                modifier = Modifier.height(34.dp),
+                            ) {
+                                Text(
+                                    text = "Set as Active",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    fontWeight = FontWeight.SemiBold,
                                 )
+                            }
+                            if (language != Language.DEFAULT) {
+                                Spacer(Modifier.width(4.dp))
+                                IconButton(onClick = onDelete, enabled = !busy, modifier = Modifier.size(32.dp)) {
+                                    Icon(
+                                        imageVector = Icons.Filled.DeleteOutline,
+                                        contentDescription = chrome.deleteLanguageAction,
+                                        tint = MaterialTheme.colorScheme.error.copy(alpha = 0.8f),
+                                        modifier = Modifier.size(18.dp),
+                                    )
+                                }
                             }
                         }
                     }

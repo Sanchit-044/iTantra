@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
@@ -43,6 +44,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 
 /** Readable-line cap for content on tablets / landscape. */
 val MaxContentWidth: Dp = 720.dp
@@ -168,7 +170,7 @@ fun BottomActionBar(content: @Composable ColumnScope.() -> Unit) {
     }
 }
 
-/** Rounded group of settings rows with a section title above it. */
+/** Rounded group of settings rows with a clean uppercase section header above it, matching reference image. */
 @Composable
 fun SettingsGroup(
     title: String,
@@ -176,19 +178,26 @@ fun SettingsGroup(
     content: @Composable ColumnScope.() -> Unit,
 ) {
     Column(modifier = modifier.fillMaxWidth()) {
-        SectionHeader(title, modifier = Modifier.padding(start = 4.dp, bottom = 8.dp))
+        Text(
+            text = title.uppercase(),
+            style = MaterialTheme.typography.labelSmall,
+            fontWeight = FontWeight.Bold,
+            letterSpacing = 0.8.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
+            modifier = Modifier.padding(start = 4.dp, bottom = 8.dp),
+        )
         Surface(
             color = MaterialTheme.colorScheme.surfaceContainerLow,
-            shape = MaterialTheme.shapes.large,
+            shape = MaterialTheme.shapes.medium,
             modifier = Modifier.fillMaxWidth(),
-            border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)),
+            border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f)),
         ) {
             Column(content = content)
         }
     }
 }
 
-/** One tappable row inside a [SettingsGroup]. */
+/** One clean, unboxed row inside a [SettingsGroup] with line-art icon and crisp text, matching reference image. */
 @Composable
 fun SettingsRow(
     icon: ImageVector,
@@ -196,8 +205,7 @@ fun SettingsRow(
     subtitle: String? = null,
     onClick: (() -> Unit)? = null,
     showDivider: Boolean = false,
-    iconContainerColor: androidx.compose.ui.graphics.Color = MaterialTheme.colorScheme.primaryContainer,
-    iconContentColor: androidx.compose.ui.graphics.Color = MaterialTheme.colorScheme.onPrimaryContainer,
+    iconTint: androidx.compose.ui.graphics.Color = MaterialTheme.colorScheme.onSurfaceVariant,
     trailing: (@Composable () -> Unit)? = null,
 ) {
     val rowContent: @Composable () -> Unit = {
@@ -207,18 +215,24 @@ fun SettingsRow(
                 .padding(horizontal = 16.dp, vertical = 14.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            IconBadge(
-                icon = icon,
-                containerColor = iconContainerColor,
-                contentColor = iconContentColor,
-                size = 40.dp,
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = iconTint,
+                modifier = Modifier.size(22.dp),
             )
             Spacer(Modifier.width(16.dp))
             Column(modifier = Modifier.weight(1f)) {
-                Text(title, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface)
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Medium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
                 if (subtitle != null) {
+                    Spacer(Modifier.height(2.dp))
                     Text(
-                        subtitle,
+                        text = subtitle,
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 2,
@@ -231,7 +245,8 @@ fun SettingsRow(
                 onClick != null -> Icon(
                     Icons.AutoMirrored.Filled.KeyboardArrowRight,
                     contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                    modifier = Modifier.size(20.dp),
                 )
             }
         }
@@ -239,8 +254,8 @@ fun SettingsRow(
     Column {
         if (showDivider) {
             HorizontalDivider(
-                modifier = Modifier.padding(start = 72.dp),
-                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f),
+                modifier = Modifier.padding(horizontal = 16.dp),
+                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f),
             )
         }
         if (onClick != null) {
