@@ -321,4 +321,10 @@ object AppModule {
     fun provideLanBroadcastAlertManager(@ApplicationContext context: Context): `in`.gov.itantra.android.alert.LanBroadcastAlertManager {
         return `in`.gov.itantra.android.alert.LanBroadcastAlertManager(context)
     }
+
+    @Provides
+    @Singleton
+    fun provideGpsLocationTracker(@ApplicationContext context: Context): `in`.gov.itantra.android.location.GpsLocationTracker {
+        return `in`.gov.itantra.android.location.GpsLocationTracker(context)
+    }
 }
