@@ -1,35 +1,44 @@
 package `in`.gov.itantra.ui
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.systemBarsPadding
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.DeleteOutline
+import androidx.compose.material.icons.filled.RecordVoiceOver
 import androidx.compose.material.icons.outlined.CloudDownload
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.RadioButton
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -39,12 +48,16 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import `in`.gov.itantra.core.Language
 import `in`.gov.itantra.core.lang.UiStrings
-import kotlin.math.roundToInt
+import `in`.gov.itantra.ui.components.BottomActionBar
+import `in`.gov.itantra.ui.components.DownloadProgressCard
+import `in`.gov.itantra.ui.components.MaxContentWidth
+import `in`.gov.itantra.ui.components.InlineMessage
+import `in`.gov.itantra.ui.components.SetupHeader
 
 @Composable
 fun LanguageSelectionScreen(
@@ -79,44 +92,49 @@ fun LanguageSelectionScreen(
     }
 
     uiState.pendingDelete?.let { language ->
-        AlertDialog(
-            onDismissRequest = { viewModel.cancelDelete() },
-            title = { Text(chrome.deleteLanguageTitle) },
-            text = { Text(chrome.deleteLanguageBody(language.englishName)) },
-            confirmButton = {
-                TextButton(onClick = { viewModel.confirmDelete() }) {
-                    Text(chrome.deleteConfirm, color = MaterialTheme.colorScheme.error)
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { viewModel.cancelDelete() }) {
-                    Text(chrome.pairingCancel)
-                }
-            },
+        DeleteLanguageDialog(
+            language = language,
+            chrome = chrome,
+            onConfirm = { viewModel.confirmDelete() },
+            onDismiss = { viewModel.cancelDelete() },
         )
     }
 
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .systemBarsPadding()
-            .padding(16.dp),
+            .statusBarsPadding(),
     ) {
         LazyColumn(
-            modifier = Modifier.weight(1f),
-            verticalArrangement = Arrangement.spacedBy(4.dp),
+            modifier = Modifier
+                .weight(1f)
+                .align(Alignment.CenterHorizontally)
+                .widthIn(max = MaxContentWidth)
+                .fillMaxWidth(),
+            contentPadding = PaddingValues(horizontal = 20.dp, vertical = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             if (!isSetup || setupPacksPage) {
                 item(key = "packs-title") {
-                    Text(
-                        text = if (isSetup) chrome.chooseLanguages else chrome.languagesTitle,
-                        style = MaterialTheme.typography.headlineSmall,
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(
-                        text = if (isSetup) chrome.chooseLanguagesBody else chrome.speechHelp,
-                        style = MaterialTheme.typography.bodyMedium,
-                    )
+                    if (isSetup) {
+                        SetupHeader(
+                            step = 2,
+                            totalSteps = 3,
+                            stepLabel = chrome.step(2, 3),
+                            title = chrome.chooseLanguages,
+                            body = chrome.chooseLanguagesBody,
+                        )
+                    } else {
+                        Column {
+                            Text(chrome.languagesTitle, style = MaterialTheme.typography.headlineSmall)
+                            Spacer(Modifier.height(6.dp))
+                            Text(
+                                chrome.speechHelp,
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
                     Spacer(modifier = Modifier.height(12.dp))
                 }
                 items(Language.entries.toList(), key = { "pack-${it.code}" }) { language ->
@@ -137,106 +155,168 @@ fun LanguageSelectionScreen(
 
             if (!isSetup || setupAppPage) {
                 item(key = "ui-title") {
-                    if (!isSetup) Spacer(modifier = Modifier.height(20.dp))
-                    Text(text = chrome.appLanguageTitle, style = MaterialTheme.typography.headlineSmall)
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(text = chrome.appLanguageBody, style = MaterialTheme.typography.bodyMedium)
+                    if (isSetup) {
+                        SetupHeader(
+                            step = 3,
+                            totalSteps = 3,
+                            stepLabel = chrome.step(3, 3),
+                            title = chrome.appLanguageTitle,
+                            body = chrome.appLanguageBody,
+                        )
+                    } else {
+                        Column {
+                            Spacer(modifier = Modifier.height(16.dp))
+                            Text(chrome.appLanguageTitle, style = MaterialTheme.typography.headlineSmall)
+                            Spacer(Modifier.height(6.dp))
+                            Text(
+                                chrome.appLanguageBody,
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
                     Spacer(modifier = Modifier.height(12.dp))
                 }
                 items(uiState.appLanguageOptions, key = { "ui-${it.code}" }) { language ->
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable(enabled = !uiState.busy) { viewModel.setUiLanguage(language) }
-                            .padding(vertical = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        RadioButton(
-                            selected = uiState.uiLanguage == language,
-                            onClick = { viewModel.setUiLanguage(language) },
-                            enabled = !uiState.busy,
-                        )
-                        Column {
-                            Text(language.endonym, style = MaterialTheme.typography.titleMedium)
-                            Text(language.englishName, style = MaterialTheme.typography.bodySmall)
-                        }
-                    }
+                    UiLanguageRow(
+                        language = language,
+                        selected = uiState.uiLanguage == language,
+                        enabled = !uiState.busy,
+                        onSelect = { viewModel.setUiLanguage(language) },
+                    )
                 }
             }
         }
 
-        uiState.progress?.let { progress ->
-            val fraction = progress.fraction.coerceIn(0f, 1f)
-            Spacer(modifier = Modifier.height(8.dp))
-            Column(
+        BottomActionBar {
+            uiState.progress?.let { progress ->
+                DownloadProgressCard(message = progress.message, fraction = progress.fraction)
+                Spacer(modifier = Modifier.height(12.dp))
+            }
+
+            uiState.error?.let { error ->
+                InlineMessage(text = error, isError = true)
+                Spacer(modifier = Modifier.height(12.dp))
+            }
+
+            Button(
+                onClick = {
+                    if (setupPacksPage) viewModel.goToAppLanguage() else viewModel.confirm()
+                },
+                enabled = !uiState.busy && uiState.selected.isNotEmpty(),
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(MaterialTheme.colorScheme.surfaceVariant)
-                    .padding(12.dp),
+                    .height(56.dp),
             ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(
-                        text = progress.message,
-                        style = MaterialTheme.typography.bodySmall,
-                        modifier = Modifier.weight(1f),
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = "${(fraction * 100).roundToInt()}%",
-                        style = MaterialTheme.typography.labelLarge,
-                        color = MaterialTheme.colorScheme.primary,
-                    )
+                Text(
+                    if (isSetup) chrome.continueLabel else chrome.save,
+                    style = MaterialTheme.typography.titleMedium,
+                )
+                if (isSetup) {
+                    Spacer(Modifier.width(8.dp))
+                    Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = null, modifier = Modifier.size(20.dp))
                 }
-                Spacer(modifier = Modifier.height(8.dp))
-                LinearProgressIndicator(
-                    progress = { fraction },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(8.dp)
-                        .clip(RoundedCornerShape(4.dp)),
+            }
+            if (setupAppPage) {
+                TextButton(
+                    onClick = { viewModel.backToPacks() },
+                    enabled = !uiState.busy,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text(chrome.back)
+                }
+            } else if (onBack != null) {
+                TextButton(
+                    onClick = onBack,
+                    enabled = !uiState.busy,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text(chrome.back)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+internal fun DeleteLanguageDialog(
+    language: Language,
+    chrome: UiStrings,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        icon = { Icon(Icons.Filled.DeleteOutline, contentDescription = null) },
+        iconContentColor = MaterialTheme.colorScheme.error,
+        title = { Text(chrome.deleteLanguageTitle) },
+        text = { Text(chrome.deleteLanguageBody(language.englishName)) },
+        confirmButton = {
+            TextButton(onClick = onConfirm) {
+                Text(chrome.deleteConfirm, color = MaterialTheme.colorScheme.error)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(chrome.pairingCancel)
+            }
+        },
+    )
+}
+
+/** Round glyph showing the first letter of the language in its own script. */
+@Composable
+private fun LanguageGlyph(language: Language, highlighted: Boolean) {
+    Box(
+        modifier = Modifier
+            .size(44.dp)
+            .clip(CircleShape)
+            .background(
+                if (highlighted) MaterialTheme.colorScheme.primary
+                else MaterialTheme.colorScheme.surfaceContainerHighest,
+            ),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = language.endonym.take(1),
+            style = MaterialTheme.typography.titleLarge,
+            color = if (highlighted) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+@Composable
+internal fun UiLanguageRow(
+    language: Language,
+    selected: Boolean,
+    enabled: Boolean,
+    onSelect: () -> Unit,
+) {
+    Surface(
+        onClick = onSelect,
+        enabled = enabled,
+        modifier = Modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.medium,
+        color = if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerLow,
+        contentColor = if (selected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface,
+        border = if (selected) BorderStroke(1.5.dp, MaterialTheme.colorScheme.primary) else null,
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            LanguageGlyph(language, highlighted = selected)
+            Spacer(Modifier.width(14.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(language.endonym, style = MaterialTheme.typography.titleMedium)
+                Text(
+                    language.englishName,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = if (selected) MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.75f)
+                    else MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-        }
-
-        uiState.error?.let { error ->
-            Text(
-                text = error,
-                color = MaterialTheme.colorScheme.error,
-                modifier = Modifier.padding(top = 8.dp),
-            )
-        }
-
-        Spacer(modifier = Modifier.height(12.dp))
-        Button(
-            onClick = {
-                if (setupPacksPage) viewModel.goToAppLanguage() else viewModel.confirm()
-            },
-            enabled = !uiState.busy && uiState.selected.isNotEmpty(),
-            modifier = Modifier.fillMaxWidth(),
-        ) {
-            Text(if (isSetup) chrome.continueLabel else chrome.save)
-        }
-        if (setupAppPage) {
-            TextButton(
-                onClick = { viewModel.backToPacks() },
-                enabled = !uiState.busy,
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Text(chrome.back)
-            }
-        } else if (onBack != null) {
-            TextButton(
-                onClick = onBack,
-                enabled = !uiState.busy,
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Text(chrome.back)
-            }
+            RadioButton(selected = selected, onClick = onSelect, enabled = enabled)
         }
     }
 }
@@ -254,49 +334,86 @@ fun PackRow(
     onCurrent: () -> Unit,
     onDelete: () -> Unit,
 ) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(enabled = !busy, onClick = onToggle)
-            .padding(vertical = 6.dp),
-        verticalAlignment = Alignment.CenterVertically,
+    Surface(
+        onClick = onToggle,
+        enabled = !busy,
+        modifier = Modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.medium,
+        color = if (selected) MaterialTheme.colorScheme.surfaceContainerHigh else MaterialTheme.colorScheme.surfaceContainerLow,
+        border = when {
+            current -> BorderStroke(2.dp, MaterialTheme.colorScheme.primary)
+            selected -> BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+            else -> null
+        },
     ) {
-        Checkbox(checked = selected, onCheckedChange = { onToggle() }, enabled = !busy)
-        Column(modifier = Modifier.weight(1f)) {
-            Text(text = language.endonym, style = MaterialTheme.typography.titleMedium)
-            Text(
-                text = language.englishName + if (language == Language.DEFAULT) "  ·  ${chrome.defaultHint}" else "",
-                style = MaterialTheme.typography.bodySmall,
-            )
-            PackStatus(
-                downloaded = downloaded,
-                downloadingNow = downloadingNow,
-                selected = selected,
-                chrome = chrome,
-            )
-        }
-        if (downloaded && !downloadingNow) {
-            IconButton(onClick = onDelete, enabled = !busy) {
-                Icon(
-                    imageVector = Icons.Filled.DeleteOutline,
-                    contentDescription = chrome.deleteLanguageAction,
-                    tint = MaterialTheme.colorScheme.error,
-                )
+        Column(modifier = Modifier.padding(start = 14.dp, end = 4.dp, top = 12.dp, bottom = 12.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                LanguageGlyph(language, highlighted = current)
+                Spacer(Modifier.width(14.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = language.endonym,
+                        style = MaterialTheme.typography.titleMedium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Text(
+                        text = language.englishName + if (language == Language.DEFAULT) "  ·  ${chrome.defaultHint}" else "",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    PackStatus(
+                        downloaded = downloaded,
+                        downloadingNow = downloadingNow,
+                        selected = selected,
+                        chrome = chrome,
+                    )
+                }
+                Checkbox(checked = selected, onCheckedChange = { onToggle() }, enabled = !busy)
             }
-        }
-        if (selected) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.clickable(enabled = !busy, onClick = onCurrent),
-            ) {
-                RadioButton(selected = current, onClick = onCurrent, enabled = !busy)
-                Text(chrome.active, style = MaterialTheme.typography.labelSmall)
+
+            AnimatedVisibility(visible = selected) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(start = 58.dp, top = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    FilterChip(
+                        selected = current,
+                        onClick = onCurrent,
+                        enabled = !busy,
+                        label = { Text(chrome.active) },
+                        leadingIcon = {
+                            Icon(
+                                if (current) Icons.Filled.Check else Icons.Filled.RecordVoiceOver,
+                                contentDescription = null,
+                                modifier = Modifier.size(FilterChipDefaults.IconSize),
+                            )
+                        },
+                        shape = CircleShape,
+                    )
+                    Spacer(Modifier.weight(1f))
+                    if (downloaded && !downloadingNow) {
+                        TextButton(onClick = onDelete, enabled = !busy) {
+                            Icon(
+                                imageVector = Icons.Filled.DeleteOutline,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.error,
+                                modifier = Modifier.size(18.dp),
+                            )
+                            Spacer(Modifier.width(4.dp))
+                            Text(chrome.deleteLanguageAction, color = MaterialTheme.colorScheme.error)
+                        }
+                    }
+                }
             }
         }
     }
 }
-
-private val DownloadedGreen = Color(0xFF2E7D32)
 
 /** Small status line under a language's name: downloaded, downloading now, or queued to download. */
 @Composable
@@ -306,13 +423,14 @@ private fun PackStatus(
     selected: Boolean,
     chrome: UiStrings,
 ) {
+    val success = ITantraTheme.extended.success
     when {
         downloadingNow -> Row(verticalAlignment = Alignment.CenterVertically) {
-            CircularProgressIndicator(modifier = Modifier.size(11.dp), strokeWidth = 1.5.dp)
-            Spacer(modifier = Modifier.width(4.dp))
+            CircularProgressIndicator(modifier = Modifier.size(12.dp), strokeWidth = 1.5.dp)
+            Spacer(modifier = Modifier.width(6.dp))
             Text(
                 text = chrome.downloadingLabel,
-                style = MaterialTheme.typography.labelSmall,
+                style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.primary,
             )
         }
@@ -320,23 +438,23 @@ private fun PackStatus(
             Icon(
                 imageVector = Icons.Filled.CheckCircle,
                 contentDescription = null,
-                tint = DownloadedGreen,
-                modifier = Modifier.size(12.dp),
+                tint = success,
+                modifier = Modifier.size(14.dp),
             )
             Spacer(modifier = Modifier.width(4.dp))
-            Text(text = chrome.downloaded, style = MaterialTheme.typography.labelSmall, color = DownloadedGreen)
+            Text(text = chrome.downloaded, style = MaterialTheme.typography.labelMedium, color = success)
         }
         selected -> Row(verticalAlignment = Alignment.CenterVertically) {
             Icon(
                 imageVector = Icons.Outlined.CloudDownload,
                 contentDescription = null,
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(12.dp),
+                modifier = Modifier.size(14.dp),
             )
             Spacer(modifier = Modifier.width(4.dp))
             Text(
                 text = chrome.notDownloaded,
-                style = MaterialTheme.typography.labelSmall,
+                style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }

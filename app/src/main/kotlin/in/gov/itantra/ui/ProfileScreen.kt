@@ -1,30 +1,36 @@
 package `in`.gov.itantra.ui
 
-import android.graphics.BitmapFactory
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.Person
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.outlined.Shield
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import `in`.gov.itantra.core.Language
+import `in`.gov.itantra.core.lang.UiStrings
+import `in`.gov.itantra.ui.components.AppBarTitle
+import `in`.gov.itantra.ui.components.AppTopBar
+import `in`.gov.itantra.ui.components.BottomActionBar
+import `in`.gov.itantra.ui.components.InlineMessage
+import `in`.gov.itantra.ui.components.MaxWidthBox
 import `in`.gov.itantra.ui.components.ProfileAvatar
-import java.io.File
+import `in`.gov.itantra.ui.components.SetupHeader
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -32,9 +38,12 @@ fun ProfileScreen(
     isSetup: Boolean,
     onFinished: () -> Unit,
     onBack: (() -> Unit)? = null,
+    uiLanguage: Language = Language.ENGLISH,
     viewModel: ProfileViewModel = hiltViewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    // First-run setup is always English, matching the language picker that follows it.
+    val chrome = UiStrings.forLanguage(if (isSetup) Language.ENGLISH else uiLanguage)
 
     LaunchedEffect(isSetup) {
         if (!isSetup) viewModel.reload()
@@ -54,97 +63,122 @@ fun ProfileScreen(
     }
 
     Scaffold(
+        containerColor = MaterialTheme.colorScheme.surface,
         topBar = {
-            TopAppBar(
-                title = { Text(if (isSetup) "Your profile" else "Edit profile") },
-                navigationIcon = {
-                    if (onBack != null) {
-                        IconButton(onClick = onBack) {
-                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+            if (!isSetup) {
+                AppTopBar(
+                    title = { AppBarTitle(chrome.editProfile) },
+                    navigationIcon = {
+                        if (onBack != null) {
+                            IconButton(onClick = onBack) {
+                                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = chrome.back)
+                            }
+                        }
+                    },
+                )
+            }
+        },
+        bottomBar = {
+            BottomActionBar {
+                Button(
+                    onClick = { viewModel.confirm() },
+                    enabled = uiState.canContinue,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(56.dp),
+                ) {
+                    if (uiState.busy) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(20.dp),
+                            strokeWidth = 2.dp,
+                            color = MaterialTheme.colorScheme.onPrimary,
+                        )
+                    } else {
+                        Text(if (isSetup) chrome.continueLabel else chrome.save, style = MaterialTheme.typography.titleMedium)
+                        if (isSetup) {
+                            Spacer(Modifier.width(8.dp))
+                            Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = null, modifier = Modifier.size(20.dp))
                         }
                     }
                 }
-            )
-        }
+            }
+        },
     ) { padding ->
+        MaxWidthBox(modifier = Modifier.padding(padding)) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(padding)
-                .padding(16.dp),
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 24.dp, vertical = 16.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-        Text(
-            text = "Name is required. Adding a photo is optional. The photo stays on this phone until you pair, then a small copy is sent to the other phone.",
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.fillMaxWidth().padding(bottom = 32.dp)
-        )
+            if (isSetup) {
+                SetupHeader(
+                    step = 1,
+                    totalSteps = 3,
+                    stepLabel = chrome.step(1, 3),
+                    title = chrome.profileTitle,
+                )
+                Spacer(Modifier.height(32.dp))
+            } else {
+                Spacer(Modifier.height(8.dp))
+            }
 
-        // Avatar Picker with Edit Badge
-        Box(
-            contentAlignment = Alignment.BottomEnd,
-            modifier = Modifier
-                .padding(bottom = 24.dp)
-                .clickable(enabled = !uiState.busy) { picker.launch("image/*") }
-        ) {
-            ProfileAvatar(
-                path = uiState.photoPath,
-                bytes = null,
-                modifier = Modifier
-                    .size(140.dp)
-                    .border(4.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.5f), CircleShape),
-            )
+            // Avatar Picker with Edit Badge
             Box(
+                contentAlignment = Alignment.BottomEnd,
                 modifier = Modifier
-                    .padding(8.dp)
-                    .size(40.dp)
-                    .background(MaterialTheme.colorScheme.primary, CircleShape)
-                    .border(2.dp, MaterialTheme.colorScheme.surface, CircleShape),
-                contentAlignment = Alignment.Center
+                    .clip(CircleShape)
+                    .clickable(enabled = !uiState.busy) { picker.launch("image/*") }
             ) {
-                Icon(Icons.Filled.CameraAlt, contentDescription = "Edit Photo", tint = MaterialTheme.colorScheme.onPrimary, modifier = Modifier.size(20.dp))
+                Box(
+                    modifier = Modifier
+                        .size(148.dp)
+                        .border(3.dp, MaterialTheme.colorScheme.primary, CircleShape)
+                        .padding(6.dp),
+                ) {
+                    ProfileAvatar(
+                        path = uiState.photoPath,
+                        bytes = null,
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                }
+                Box(
+                    modifier = Modifier
+                        .padding(4.dp)
+                        .size(44.dp)
+                        .background(MaterialTheme.colorScheme.primary, CircleShape)
+                        .border(3.dp, MaterialTheme.colorScheme.surface, CircleShape),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        Icons.Filled.CameraAlt,
+                        contentDescription = chrome.changePhoto,
+                        tint = MaterialTheme.colorScheme.onPrimary,
+                        modifier = Modifier.size(20.dp),
+                    )
+                }
             }
-        }
 
-        OutlinedTextField(
-            value = uiState.name,
-            onValueChange = viewModel::setName,
-            modifier = Modifier.fillMaxWidth(),
-            label = { Text("Name") },
-            leadingIcon = { Icon(Icons.Filled.Person, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
-            singleLine = true,
-            enabled = !uiState.busy,
-            shape = RoundedCornerShape(12.dp),
-            colors = OutlinedTextFieldDefaults.colors(
-                focusedBorderColor = MaterialTheme.colorScheme.primary,
-                unfocusedBorderColor = MaterialTheme.colorScheme.outline
+            Spacer(Modifier.height(16.dp))
+
+            OutlinedTextField(
+                value = uiState.name,
+                onValueChange = viewModel::setName,
+                modifier = Modifier.fillMaxWidth(),
+                label = { Text(chrome.nameLabel) },
+                leadingIcon = { Icon(Icons.Filled.Person, contentDescription = null) },
+                singleLine = true,
+                enabled = !uiState.busy,
+                shape = MaterialTheme.shapes.small,
             )
-        )
 
-        uiState.error?.let { error ->
-            Text(
-                text = error,
-                color = MaterialTheme.colorScheme.error,
-                style = MaterialTheme.typography.bodySmall,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 8.dp),
-            )
-        }
-
-        Spacer(Modifier.weight(1f))
-        
-        Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Button(
-                onClick = { viewModel.confirm() },
-                enabled = uiState.canContinue,
-                modifier = Modifier.fillMaxWidth().height(50.dp),
-                shape = RoundedCornerShape(12.dp)
-            ) {
-                Text(if (isSetup) "Continue" else "Save", style = MaterialTheme.typography.titleMedium)
+            uiState.error?.let { error ->
+                Spacer(Modifier.height(8.dp))
+                InlineMessage(text = error, isError = true)
             }
+
         }
     }
-    }
+}
 }

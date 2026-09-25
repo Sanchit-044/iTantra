@@ -1,6 +1,21 @@
 package `in`.gov.itantra.ui
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.width
+import androidx.compose.material.icons.automirrored.filled.VolumeUp
+import androidx.compose.material.icons.filled.Memory
+import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.SwapHoriz
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FilledTonalIconButton
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Surface
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.style.TextAlign
+import `in`.gov.itantra.ui.components.IconBadge
+import `in`.gov.itantra.ui.components.InlineMessage
+import `in`.gov.itantra.ui.components.StatusDot
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -42,7 +57,6 @@ import kotlin.math.roundToInt
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DiagnosticsScreen(
-    onOpenSettings: () -> Unit,
     uiLanguage: Language = Language.ENGLISH,
     viewModel: DiagnosticsViewModel = hiltViewModel(),
 ) {
@@ -55,47 +69,57 @@ fun DiagnosticsScreen(
         onDispose { viewModel.stopPolling() }
     }
 
-    Scaffold(
-        contentWindowInsets = WindowInsets(0, 0, 0, 0),
-    ) { padding ->
+    run {
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(padding)
                 .verticalScroll(rememberScrollState())
-                .padding(16.dp),
+                .padding(horizontal = 16.dp, vertical = 8.dp)
+                .padding(bottom = 16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    text = chrome.analysisHelp,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.weight(1f)
-                )
-                androidx.compose.material3.IconButton(
-                    onClick = { viewModel.share(context) },
-                    enabled = uiState.snapshot != null,
+            Surface(
+                color = MaterialTheme.colorScheme.surfaceContainerLow,
+                shape = MaterialTheme.shapes.large,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Row(
+                    modifier = Modifier.padding(start = 16.dp, end = 8.dp, top = 12.dp, bottom = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Icon(Icons.Filled.Share, contentDescription = chrome.shareJson, tint = MaterialTheme.colorScheme.primary)
+                    StatusDot(
+                        color = if (uiState.snapshot != null) ITantraTheme.extended.success else MaterialTheme.colorScheme.outline,
+                        pulsing = uiState.snapshot != null,
+                    )
+                    Spacer(Modifier.weight(1f))
+                    FilledTonalIconButton(
+                        onClick = { viewModel.share(context) },
+                        enabled = uiState.snapshot != null,
+                    ) {
+                        Icon(Icons.Filled.Share, contentDescription = chrome.shareJson)
+                    }
                 }
             }
-            if (uiState.shareError != null) {
-                Text(
-                    text = uiState.shareError!!,
-                    color = MaterialTheme.colorScheme.error,
-                    style = MaterialTheme.typography.bodySmall,
-                )
-            }
+            uiState.shareError?.let { InlineMessage(text = it, isError = true) }
 
             val snap = uiState.snapshot
             if (snap == null) {
-                Text(chrome.waitingSample)
+                Box(modifier = Modifier.fillMaxWidth().padding(vertical = 48.dp), contentAlignment = Alignment.Center) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        CircularProgressIndicator()
+                        Spacer(Modifier.height(16.dp))
+                        Text(
+                            chrome.waitingSample,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
             } else {
                 SttCard(snap, uiState, chrome, onTestMode = viewModel::setTestMode)
-                TtsCard(snap)
-                TransportCard(snap)
-                SystemCard(snap)
+                TtsCard(snap, chrome)
+                TransportCard(snap, chrome)
+                SystemCard(snap, chrome)
             }
         }
     }
@@ -109,12 +133,14 @@ private fun SttCard(
     onTestMode: (Boolean) -> Unit,
 ) {
     val stt = snap.stt
-    MetricCard("STT") {
+    MetricCard(chrome.sttTitle, Icons.Filled.Mic) {
         Row(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(bottom = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text(chrome.werTestMode, modifier = Modifier.weight(1f))
+            Text(chrome.werTestMode, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
             Switch(checked = uiState.testMode, onCheckedChange = onTestMode)
         }
         MetricRow("Current WER", formatWer(stt.measuredWer, stt.werSampleCount))
@@ -130,9 +156,9 @@ private fun SttCard(
 }
 
 @Composable
-private fun TtsCard(snap: DiagnosticsSnapshot) {
+private fun TtsCard(snap: DiagnosticsSnapshot, chrome: UiStrings) {
     val tts = snap.tts
-    MetricCard("TTS") {
+    MetricCard(chrome.ttsTitle, Icons.AutoMirrored.Filled.VolumeUp) {
         MetricRow("Model", tts.backend)
         MetricRow("Model size", formatMb(tts.modelSizeBytes))
         MetricRow("Avg synthesis", formatMs(tts.avgSynthesisMs))
@@ -142,9 +168,9 @@ private fun TtsCard(snap: DiagnosticsSnapshot) {
 }
 
 @Composable
-private fun TransportCard(snap: DiagnosticsSnapshot) {
+private fun TransportCard(snap: DiagnosticsSnapshot, chrome: UiStrings) {
     val tx = snap.transport
-    MetricCard("Transport") {
+    MetricCard(chrome.transportTitle, Icons.Filled.SwapHoriz) {
         MetricRow("Connection", formatKind(tx.kind))
         MetricRow("State", tx.state.name)
         MetricRow("Round-trip", tx.roundTripMs?.let { "$it ms" } ?: "—")
@@ -155,9 +181,9 @@ private fun TransportCard(snap: DiagnosticsSnapshot) {
 }
 
 @Composable
-private fun SystemCard(snap: DiagnosticsSnapshot) {
+private fun SystemCard(snap: DiagnosticsSnapshot, chrome: UiStrings) {
     val sys = snap.system
-    MetricCard("System") {
+    MetricCard(chrome.systemTitle, Icons.Filled.Memory) {
         MetricRow("CPU", formatCpu(sys.cpuLoad))
         MetricRow("Device", sys.deviceModel ?: "—")
         MetricRow("Android", sys.androidVersion ?: "—")
@@ -165,14 +191,24 @@ private fun SystemCard(snap: DiagnosticsSnapshot) {
 }
 
 @Composable
-private fun MetricCard(title: String, content: @Composable () -> Unit) {
-    Card(
+private fun MetricCard(title: String, icon: ImageVector, content: @Composable () -> Unit) {
+    Surface(
         modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
+        shape = MaterialTheme.shapes.large,
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
-            Text(title, style = MaterialTheme.typography.titleMedium)
-            Spacer(Modifier.height(8.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                IconBadge(
+                    icon = icon,
+                    containerColor = MaterialTheme.colorScheme.primaryContainer,
+                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                    size = 36.dp,
+                )
+                Spacer(Modifier.width(12.dp))
+                Text(title, style = MaterialTheme.typography.titleMedium)
+            }
+            Spacer(Modifier.height(12.dp))
             content()
         }
     }
@@ -183,8 +219,8 @@ private fun MetricRow(label: String, value: String) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = 4.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
+            .padding(vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
             text = label,
@@ -194,8 +230,14 @@ private fun MetricRow(label: String, value: String) {
                 .weight(1f)
                 .padding(end = 12.dp),
         )
-        Text(text = value, style = MaterialTheme.typography.bodyMedium)
+        Text(
+            text = value,
+            style = MaterialTheme.typography.titleSmall,
+            color = if (value == "—") MaterialTheme.colorScheme.outline else MaterialTheme.colorScheme.onSurface,
+            textAlign = TextAlign.End,
+        )
     }
+    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
 }
 
 private fun formatMb(bytes: Long?): String {

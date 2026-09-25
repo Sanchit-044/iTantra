@@ -1,65 +1,94 @@
 package `in`.gov.itantra.ui
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedContentTransitionScope
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Info
-import androidx.compose.material.icons.filled.Phone
+import androidx.compose.material.icons.filled.DeleteSweep
+import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Radar
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Translate
+import androidx.compose.material.icons.filled.Verified
 import androidx.compose.material.icons.filled.Warning
-import androidx.compose.runtime.DisposableEffect
+import androidx.compose.material.icons.outlined.History
+import androidx.compose.material.icons.outlined.Mic
+import androidx.compose.material.icons.outlined.Radar
+import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Badge
+import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.Button
-import androidx.compose.material3.DrawerValue
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.ModalDrawerSheet
-import androidx.compose.material3.ModalNavigationDrawer
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.NavigationRail
+import androidx.compose.material3.NavigationRailItem
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
-import androidx.compose.material3.rememberDrawerState
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material.icons.filled.Menu
-import androidx.compose.material.icons.filled.Person
-import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.rememberCoroutineScope
-import kotlinx.coroutines.launch
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.unit.dp
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.size
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
-import androidx.compose.animation.AnimatedContentTransitionScope
-import androidx.compose.animation.core.tween
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import `in`.gov.itantra.core.alert.AlertContent
 import `in`.gov.itantra.core.lang.UiStrings
+import `in`.gov.itantra.ui.components.AlertFab
+import `in`.gov.itantra.ui.components.AppBarTitle
+import `in`.gov.itantra.ui.components.AppTopBar
+import `in`.gov.itantra.ui.components.MaxWidthBox
 import `in`.gov.itantra.ui.components.ProfileAvatar
+import `in`.gov.itantra.ui.components.SubScreenScaffold
+import `in`.gov.itantra.ui.components.isWideLayout
 
-private enum class MainTab { TALK, ALERT, ANALYSIS, RADAR }
+private enum class MainTab { TALK, RADAR, ALERT, HISTORY, SETTINGS }
+
+private const val NAV_ANIM_MS = 320
 
 @Composable
 fun ITantraApp(
@@ -72,29 +101,21 @@ fun ITantraApp(
         navController = navController,
         startDestination = appViewModel.initialRoute,
         enterTransition = {
-            slideIntoContainer(
-                AnimatedContentTransitionScope.SlideDirection.Left,
-                animationSpec = tween(400)
-            )
+            slideIntoContainer(AnimatedContentTransitionScope.SlideDirection.Left, tween(NAV_ANIM_MS), initialOffset = { it / 5 }) +
+                fadeIn(tween(NAV_ANIM_MS))
         },
         exitTransition = {
-            slideOutOfContainer(
-                AnimatedContentTransitionScope.SlideDirection.Left,
-                animationSpec = tween(400)
-            )
+            slideOutOfContainer(AnimatedContentTransitionScope.SlideDirection.Left, tween(NAV_ANIM_MS), targetOffset = { it / 5 }) +
+                fadeOut(tween(NAV_ANIM_MS / 2))
         },
         popEnterTransition = {
-            slideIntoContainer(
-                AnimatedContentTransitionScope.SlideDirection.Right,
-                animationSpec = tween(400)
-            )
+            slideIntoContainer(AnimatedContentTransitionScope.SlideDirection.Right, tween(NAV_ANIM_MS), initialOffset = { it / 5 }) +
+                fadeIn(tween(NAV_ANIM_MS))
         },
         popExitTransition = {
-            slideOutOfContainer(
-                AnimatedContentTransitionScope.SlideDirection.Right,
-                animationSpec = tween(400)
-            )
-        }
+            slideOutOfContainer(AnimatedContentTransitionScope.SlideDirection.Right, tween(NAV_ANIM_MS), targetOffset = { it / 5 }) +
+                fadeOut(tween(NAV_ANIM_MS / 2))
+        },
     ) {
         composable(AppRoutes.SETUP_PROFILE) {
             ProfileScreen(
@@ -111,27 +132,43 @@ fun ITantraApp(
         composable(AppRoutes.MAIN) {
             MainContent(
                 mainViewModel = mainViewModel,
-                onOpenSettings = { navController.navigate(AppRoutes.SETTINGS) },
                 onOpenProfile = { navController.navigate(AppRoutes.SETTINGS_PROFILE) },
-                onOpenHistory = { navController.navigate(AppRoutes.HISTORY) },
-            )
-        }
-        composable(AppRoutes.SETTINGS) {
-            SettingsScreen(
-                onBack = { navController.popBackStack() },
-            )
-        }
-        composable(AppRoutes.HISTORY) {
-            HistoryScreen(
-                onBack = { navController.popBackStack() }
+                onOpenLanguages = { navController.navigate(AppRoutes.SETTINGS_LANGUAGES) },
+                onOpenDisplay = { navController.navigate(AppRoutes.SETTINGS_DISPLAY) },
+                onOpenAnalysis = { navController.navigate(AppRoutes.SETTINGS_ANALYSIS) },
             )
         }
         composable(AppRoutes.SETTINGS_PROFILE) {
+            val main by mainViewModel.uiState.collectAsState()
             ProfileScreen(
                 isSetup = false,
+                uiLanguage = main.uiLanguage,
                 onFinished = { navController.popBackStack() },
                 onBack = { navController.popBackStack() },
             )
+        }
+        composable(AppRoutes.SETTINGS_LANGUAGES) {
+            LanguageSettingsScreen(
+                page = LanguageSettingsPage.SPEECH,
+                onBack = { navController.popBackStack() },
+            )
+        }
+        composable(AppRoutes.SETTINGS_DISPLAY) {
+            LanguageSettingsScreen(
+                page = LanguageSettingsPage.DISPLAY,
+                onBack = { navController.popBackStack() },
+            )
+        }
+        composable(AppRoutes.SETTINGS_ANALYSIS) {
+            val main by mainViewModel.uiState.collectAsState()
+            val chrome = UiStrings.forLanguage(main.uiLanguage)
+            SubScreenScaffold(
+                title = chrome.analysis,
+                onBack = { navController.popBackStack() },
+                backDescription = chrome.back,
+            ) {
+                DiagnosticsScreen(uiLanguage = main.uiLanguage)
+            }
         }
     }
 }
@@ -140,15 +177,22 @@ fun ITantraApp(
 @Composable
 fun MainContent(
     mainViewModel: MainViewModel,
-    onOpenSettings: () -> Unit,
     onOpenProfile: () -> Unit,
-    onOpenHistory: () -> Unit,
+    onOpenLanguages: () -> Unit,
+    onOpenDisplay: () -> Unit,
+    onOpenAnalysis: () -> Unit,
 ) {
     val uiState by mainViewModel.uiState.collectAsState()
     val chrome = UiStrings.forLanguage(uiState.uiLanguage)
     val radarViewModel: RadarViewModel = hiltViewModel()
+    val historyViewModel: HistoryViewModel = hiltViewModel()
+    val history by historyViewModel.uiState.collectAsState()
     var tab by rememberSaveable { mutableStateOf(MainTab.TALK) }
+    var confirmClearHistory by rememberSaveable { mutableStateOf(false) }
     val snackbarHostState = remember { SnackbarHostState() }
+    val wide = isWideLayout()
+    val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior()
+    val unread = uiState.inbox.count { it.unread }
 
     LaunchedEffect(mainViewModel) {
         mainViewModel.snackbarMessage.collect { msg ->
@@ -163,219 +207,321 @@ fun MainContent(
 
     BackHandler(enabled = tab != MainTab.TALK) { tab = MainTab.TALK }
 
-    val pairing = uiState.pairingInfo
-    if (pairing != null) {
+    uiState.pairingInfo?.let { pairing ->
+        PairingDialog(
+            code = pairing.code,
+            chrome = chrome,
+            onConfirm = { mainViewModel.confirmPairing() },
+            onDismiss = { mainViewModel.dismissPairing() },
+        )
+    }
+
+    uiState.activeIncomingAlert?.let { activeAlert ->
+        val text = when (val c = activeAlert.content) {
+            is AlertContent.Template -> c.template.phrase(activeAlert.language)
+            is AlertContent.Custom -> c.text
+        }
+        IncomingAlertDialog(
+            senderName = activeAlert.senderName,
+            chrome = chrome,
+            text = text,
+            onDismiss = { mainViewModel.dismissAlert() },
+        )
+    }
+
+    if (confirmClearHistory) {
         AlertDialog(
-            onDismissRequest = { mainViewModel.dismissPairing() },
-            title = { Text(chrome.pairingTitle) },
-            text = { Text(chrome.pairingBody(pairing.code)) },
+            onDismissRequest = { confirmClearHistory = false },
+            icon = { Icon(Icons.Filled.DeleteSweep, contentDescription = null) },
+            iconContentColor = MaterialTheme.colorScheme.error,
+            title = { Text(chrome.clearHistoryTitle) },
+            text = { Text(chrome.clearHistoryBody) },
             confirmButton = {
-                Button(onClick = { mainViewModel.confirmPairing() }) {
-                    Text(chrome.pairingYes)
+                TextButton(onClick = {
+                    historyViewModel.clearHistory()
+                    confirmClearHistory = false
+                }) {
+                    Text(chrome.clearConfirm, color = MaterialTheme.colorScheme.error)
                 }
             },
             dismissButton = {
-                TextButton(onClick = { mainViewModel.dismissPairing() }) {
-                    Text(chrome.pairingCancel)
-                }
+                TextButton(onClick = { confirmClearHistory = false }) { Text(chrome.pairingCancel) }
             },
         )
     }
 
-    val activeAlert = uiState.activeIncomingAlert
-    if (activeAlert != null) {
-        AlertDialog(
-            onDismissRequest = { /* Must be explicitly dismissed via button */ },
-            icon = { Icon(Icons.Filled.Warning, contentDescription = null, tint = androidx.compose.material3.MaterialTheme.colorScheme.error) },
-            title = {
-                val title = if (activeAlert.senderName.isNullOrEmpty()) {
-                    "Incoming Alert"
-                } else {
-                    "Incoming Alert from ${activeAlert.senderName}"
-                }
-                Text(title)
-            },
-            text = { 
-                Text(
-                    text = when (val c = activeAlert.content) {
-                        is `in`.gov.itantra.core.alert.AlertContent.Template -> c.template.phrase(activeAlert.language)
-                        is `in`.gov.itantra.core.alert.AlertContent.Custom -> c.text
-                    },
-                    style = androidx.compose.material3.MaterialTheme.typography.titleLarge
-                )
-            },
-            confirmButton = {
-                Button(
-                    onClick = { mainViewModel.dismissAlert() },
-                    colors = androidx.compose.material3.ButtonDefaults.buttonColors(
-                        containerColor = androidx.compose.material3.MaterialTheme.colorScheme.error,
-                        contentColor = androidx.compose.material3.MaterialTheme.colorScheme.onError
-                    )
-                ) {
-                    Text("Okay (Stop Alarm)")
-                }
-            }
-        )
-    }
-
-    val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
-    val coroutineScope = rememberCoroutineScope()
-
-    ModalNavigationDrawer(
-        drawerState = drawerState,
-        drawerContent = {
-            // Explicit width: ModalDrawerSheet with no modifier fills the screen
-            // rather than the usual "overlay covering most, not all, of the
-            // width" pattern -- capped at 320dp so the underlying screen stays
-            // visibly peeking out at the right edge on phones, and the drawer
-            // doesn't stretch edge-to-edge on tablets either.
-            ModalDrawerSheet(modifier = Modifier.fillMaxWidth(0.8f).widthIn(max = 320.dp)) {
-                androidx.compose.foundation.layout.Spacer(Modifier.padding(12.dp))
-                
-                // Drawer Header with Profile
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 16.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    val local = uiState.localProfile
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        ProfileAvatar(
-                            path = local.photoPath,
-                            bytes = local.thumbnailJpeg,
-                            modifier = Modifier.size(48.dp)
-                        )
-                        androidx.compose.foundation.layout.Spacer(Modifier.padding(8.dp))
-                        Text(
-                            text = if (local.name.isBlank()) "No name" else local.displayName,
-                            style = androidx.compose.material3.MaterialTheme.typography.titleMedium,
-                            color = androidx.compose.material3.MaterialTheme.colorScheme.onSurface
-                        )
-                    }
-                    IconButton(onClick = {
-                        coroutineScope.launch { drawerState.close() }
-                        onOpenProfile()
-                    }) {
-                        Icon(Icons.Filled.Edit, contentDescription = "Edit Profile", tint = androidx.compose.material3.MaterialTheme.colorScheme.primary)
-                    }
-                }
-                
-                androidx.compose.material3.HorizontalDivider(modifier = Modifier.padding(bottom = 8.dp))
-
-                androidx.compose.material3.NavigationDrawerItem(
-                    label = { Text("Profile") },
-                    selected = false,
-                    icon = { Icon(Icons.Filled.Person, contentDescription = null) },
-                    onClick = {
-                        coroutineScope.launch { drawerState.close() }
-                        onOpenProfile()
-                    },
-                    modifier = Modifier.padding(horizontal = 12.dp)
-                )
-                androidx.compose.material3.NavigationDrawerItem(
-                    label = { Text("History") },
-                    selected = false,
-                    icon = { Icon(Icons.Default.Info, contentDescription = null) },
-                    onClick = {
-                        coroutineScope.launch { drawerState.close() }
-                        onOpenHistory()
-                    },
-                    modifier = Modifier.padding(horizontal = 12.dp)
-                )
-                androidx.compose.material3.NavigationDrawerItem(
-                    label = { Text(chrome.settings) },
-                    selected = false,
-                    icon = { Icon(Icons.Filled.Settings, contentDescription = null) },
-                    onClick = {
-                        coroutineScope.launch { drawerState.close() }
-                        onOpenSettings()
-                    },
-                    modifier = Modifier.padding(horizontal = 12.dp)
-                )
-            }
+    Row(modifier = Modifier.fillMaxSize()) {
+        if (wide) {
+            MainNavRail(tab = tab, onSelect = { tab = it }, chrome = chrome, unread = unread)
         }
-    ) {
         Scaffold(
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxHeight()
+                .nestedScroll(scrollBehavior.nestedScrollConnection),
+            containerColor = MaterialTheme.colorScheme.surface,
             snackbarHost = { SnackbarHost(snackbarHostState) },
             topBar = {
-                TopAppBar(
+                AppTopBar(
                     title = {
-                        Text(
-                            text = when (tab) {
-                                MainTab.TALK -> chrome.appTitle
-                                MainTab.ALERT -> chrome.alert
-                                MainTab.ANALYSIS -> chrome.analysis
-                                MainTab.RADAR -> "Radar"
-                            },
-                            color = androidx.compose.material3.MaterialTheme.colorScheme.primary
-                        )
-                    },
-                    navigationIcon = {
-                        IconButton(onClick = { coroutineScope.launch { drawerState.open() } }) {
-                            Icon(Icons.Filled.Menu, contentDescription = "Menu")
+                        when (tab) {
+                            MainTab.TALK -> AppBarTitle("iTantra")
+                            MainTab.RADAR -> AppBarTitle(chrome.navRadar)
+                            MainTab.ALERT -> AppBarTitle(chrome.alert)
+                            MainTab.HISTORY -> AppBarTitle(chrome.historyTitle)
+                            MainTab.SETTINGS -> AppBarTitle(chrome.settings)
                         }
                     },
                     actions = {
-                        if (tab == MainTab.TALK || tab == MainTab.ANALYSIS) {
-                            IconButton(onClick = onOpenSettings) {
-                                Icon(Icons.Filled.Settings, contentDescription = "Settings")
+                        when (tab) {
+                            MainTab.TALK -> {
+                                LanguageChip(label = uiState.currentLanguage.endonym, onClick = onOpenLanguages)
+                                IconButton(onClick = onOpenProfile) {
+                                    ProfileAvatar(
+                                        path = uiState.localProfile.photoPath,
+                                        bytes = uiState.localProfile.thumbnailJpeg,
+                                        modifier = Modifier.size(32.dp),
+                                    )
+                                }
                             }
+                            MainTab.HISTORY -> IconButton(
+                                onClick = { confirmClearHistory = true },
+                                enabled = history.messages.isNotEmpty(),
+                            ) {
+                                Icon(Icons.Filled.DeleteSweep, contentDescription = chrome.clearHistory)
+                            }
+                            else -> Unit
                         }
                     },
-                    colors = TopAppBarDefaults.topAppBarColors(
-                        containerColor = androidx.compose.material3.MaterialTheme.colorScheme.background
-                    )
+                    scrollBehavior = scrollBehavior,
                 )
             },
             bottomBar = {
-                NavigationBar {
-                    NavigationBarItem(
-                        selected = tab == MainTab.TALK,
-                        onClick = { tab = MainTab.TALK },
-                        icon = { Icon(Icons.Filled.Phone, contentDescription = null) },
-                        label = { Text(chrome.talk) },
-                    )
-                    NavigationBarItem(
-                        selected = tab == MainTab.ALERT,
-                        onClick = { tab = MainTab.ALERT },
-                        icon = { Icon(Icons.Filled.Warning, contentDescription = null) },
-                        label = { Text(chrome.alert) },
-                    )
-                    NavigationBarItem(
-                        selected = tab == MainTab.ANALYSIS,
-                        onClick = { tab = MainTab.ANALYSIS },
-                        icon = { Icon(Icons.Filled.Info, contentDescription = null) },
-                        label = { Text(chrome.analysis) },
-                    )
-                    NavigationBarItem(
-                        selected = tab == MainTab.RADAR,
-                        onClick = { tab = MainTab.RADAR },
-                        icon = { Icon(Icons.Filled.Radar, contentDescription = null) },
-                        label = { Text("Radar") },
-                    )
+                if (!wide) {
+                    MainNavBar(tab = tab, onSelect = { tab = it }, chrome = chrome, unread = unread)
                 }
             },
         ) { padding ->
-            androidx.compose.foundation.layout.Column(
+            AnimatedContent(
+                targetState = tab,
+                transitionSpec = { fadeIn(tween(220)) togetherWith fadeOut(tween(120)) },
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(padding)
-            ) {
-                Box(modifier = Modifier.weight(1f).fillMaxSize()) {
-                    when (tab) {
-                        MainTab.TALK -> MainScreen(viewModel = mainViewModel, onOpenSettings = onOpenSettings)
-                        MainTab.ALERT -> AlertScreen(viewModel = mainViewModel)
-                        MainTab.ANALYSIS -> DiagnosticsScreen(
-                            onOpenSettings = onOpenSettings,
-                            uiLanguage = uiState.uiLanguage,
-                        )
+                    .padding(padding),
+                label = "tab",
+            ) { current ->
+                MaxWidthBox {
+                    when (current) {
+                        MainTab.TALK -> MainScreen(viewModel = mainViewModel)
                         MainTab.RADAR -> RadarScreen(mainViewModel = mainViewModel, radarViewModel = radarViewModel)
+                        MainTab.ALERT -> AlertScreen(viewModel = mainViewModel)
+                        MainTab.HISTORY -> HistoryScreen(viewModel = historyViewModel, chrome = chrome)
+                        MainTab.SETTINGS -> SettingsScreen(
+                            mainState = uiState,
+                            onOpenProfile = onOpenProfile,
+                            onOpenLanguages = onOpenLanguages,
+                            onOpenDisplay = onOpenDisplay,
+                            onOpenAnalysis = onOpenAnalysis,
+                        )
                     }
                 }
             }
         }
     }
+}
+
+private data class NavDestination(
+    val tab: MainTab,
+    val label: String,
+    val selectedIcon: ImageVector,
+    val icon: ImageVector,
+    val badge: Int = 0,
+)
+
+private fun destinations(chrome: UiStrings, unread: Int) = listOf(
+    NavDestination(MainTab.TALK, chrome.talk, Icons.Filled.Mic, Icons.Outlined.Mic, unread),
+    NavDestination(MainTab.RADAR, chrome.navRadar, Icons.Filled.Radar, Icons.Outlined.Radar),
+    NavDestination(MainTab.HISTORY, chrome.navHistory, Icons.Filled.History, Icons.Outlined.History),
+    NavDestination(MainTab.SETTINGS, chrome.settings, Icons.Filled.Settings, Icons.Outlined.Settings),
+)
+
+@Composable
+private fun NavIcon(dest: NavDestination, selected: Boolean) {
+    BadgedBox(badge = {
+        if (dest.badge > 0) Badge { Text(if (dest.badge > 9) "9+" else dest.badge.toString()) }
+    }) {
+        Icon(if (selected) dest.selectedIcon else dest.icon, contentDescription = null)
+    }
+}
+
+/** Phone layout: Talk · Radar · [Alert FAB] · History · Settings. */
+@Composable
+private fun MainNavBar(tab: MainTab, onSelect: (MainTab) -> Unit, chrome: UiStrings, unread: Int) {
+    val items = destinations(chrome, unread)
+    NavigationBar(containerColor = MaterialTheme.colorScheme.surfaceContainer) {
+        items.take(2).forEach { NavBarItem(it, tab, onSelect) }
+        // Fixed height, never fillMaxHeight(): NavigationBar only sets a *minimum*
+        // height, so a fill-max child stretches the bar to the whole screen and the
+        // Scaffold leaves no room for tab content.
+        Box(
+            modifier = Modifier
+                .weight(1f)
+                .height(80.dp)
+                .align(Alignment.CenterVertically),
+            contentAlignment = Alignment.Center,
+        ) {
+            AlertFab(
+                selected = tab == MainTab.ALERT,
+                contentDescription = chrome.alert,
+                onClick = { onSelect(MainTab.ALERT) },
+            )
+        }
+        items.drop(2).forEach { NavBarItem(it, tab, onSelect) }
+    }
+}
+
+@Composable
+private fun RowScope.NavBarItem(dest: NavDestination, tab: MainTab, onSelect: (MainTab) -> Unit) {
+    val selected = dest.tab == tab
+    NavigationBarItem(
+        selected = selected,
+        onClick = { onSelect(dest.tab) },
+        icon = { NavIcon(dest, selected) },
+        label = { Text(dest.label, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+    )
+}
+
+/** Tablet / landscape layout: navigation rail with the Alert FAB as its header. */
+@Composable
+private fun MainNavRail(tab: MainTab, onSelect: (MainTab) -> Unit, chrome: UiStrings, unread: Int) {
+    NavigationRail(
+        containerColor = MaterialTheme.colorScheme.surfaceContainer,
+        header = {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Spacer(Modifier.height(8.dp))
+                AlertFab(
+                    selected = tab == MainTab.ALERT,
+                    contentDescription = chrome.alert,
+                    onClick = { onSelect(MainTab.ALERT) },
+                )
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    chrome.alert,
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.error,
+                )
+            }
+        },
+    ) {
+        Spacer(Modifier.weight(1f))
+        destinations(chrome, unread).forEach { dest ->
+            val selected = dest.tab == tab
+            NavigationRailItem(
+                selected = selected,
+                onClick = { onSelect(dest.tab) },
+                icon = { NavIcon(dest, selected) },
+                label = { Text(dest.label, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                modifier = Modifier.padding(vertical = 4.dp),
+            )
+        }
+        Spacer(Modifier.weight(1f))
+    }
+}
+
+@Composable
+private fun LanguageChip(label: String, onClick: () -> Unit) {
+    Surface(
+        onClick = onClick,
+        shape = CircleShape,
+        color = MaterialTheme.colorScheme.secondaryContainer,
+        contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+        modifier = Modifier.padding(end = 4.dp),
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(Icons.Filled.Translate, contentDescription = null, modifier = Modifier.size(16.dp))
+            Spacer(Modifier.width(6.dp))
+            Text(text = label, style = MaterialTheme.typography.labelLarge, maxLines = 1)
+        }
+    }
+}
+
+@Composable
+private fun PairingDialog(
+    code: String,
+    chrome: UiStrings,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        icon = { Icon(Icons.Filled.Verified, contentDescription = null) },
+        title = { Text(chrome.pairingTitle, textAlign = TextAlign.Center) },
+        text = {
+            Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
+                Surface(
+                    color = MaterialTheme.colorScheme.primaryContainer,
+                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                    shape = MaterialTheme.shapes.medium,
+                ) {
+                    Text(
+                        text = code.chunked(3).joinToString(" "),
+                        style = MaterialTheme.typography.headlineMedium,
+                        fontFamily = FontFamily.Monospace,
+                        letterSpacing = 4.sp,
+                        modifier = Modifier.padding(horizontal = 24.dp, vertical = 12.dp),
+                    )
+                }
+                Spacer(Modifier.height(16.dp))
+                Text(
+                    chrome.pairingBody(code),
+                    style = MaterialTheme.typography.bodyMedium,
+                    textAlign = TextAlign.Center,
+                )
+            }
+        },
+        confirmButton = { Button(onClick = onConfirm) { Text(chrome.pairingYes) } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(chrome.pairingCancel) } },
+    )
+}
+
+@Composable
+private fun IncomingAlertDialog(senderName: String?, chrome: UiStrings, text: String, onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = { /* Must be explicitly dismissed via button */ },
+        containerColor = MaterialTheme.colorScheme.errorContainer,
+        iconContentColor = MaterialTheme.colorScheme.error,
+        titleContentColor = MaterialTheme.colorScheme.onErrorContainer,
+        textContentColor = MaterialTheme.colorScheme.onErrorContainer,
+        icon = { Icon(Icons.Filled.Warning, contentDescription = null, modifier = Modifier.size(36.dp)) },
+        title = {
+            Text(
+                text = if (senderName.isNullOrEmpty()) chrome.incomingAlert else chrome.incomingAlertFrom(senderName),
+                textAlign = TextAlign.Center,
+            )
+        },
+        text = {
+            Text(
+                text = text,
+                style = MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.Bold,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth(),
+            )
+        },
+        confirmButton = {
+            Button(
+                onClick = onDismiss,
+                modifier = Modifier.fillMaxWidth(),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.error,
+                    contentColor = MaterialTheme.colorScheme.onError,
+                ),
+            ) {
+                Text(chrome.stopAlarm)
+            }
+        },
+    )
 }

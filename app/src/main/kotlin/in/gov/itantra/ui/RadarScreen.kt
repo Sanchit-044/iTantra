@@ -24,6 +24,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Bluetooth
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Wifi
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
@@ -43,7 +44,10 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import `in`.gov.itantra.core.discover.NearbyPeer
 import `in`.gov.itantra.core.discover.NearbyPeerBook
 import `in`.gov.itantra.core.discover.RssiBand
+import `in`.gov.itantra.core.lang.UiStrings
 import `in`.gov.itantra.core.transport.ConnectionState
+import `in`.gov.itantra.ui.components.SectionHeader
+import `in`.gov.itantra.ui.components.StatusPill
 import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.hypot
@@ -62,6 +66,7 @@ fun RadarScreen(
         main.connectionState == ConnectionState.FAILED) && !main.reconnecting
 
     var selectedPeer by remember { mutableStateOf<NearbyPeer?>(null) }
+    val chrome = UiStrings.forLanguage(main.uiLanguage)
 
     Column(
         modifier = Modifier
@@ -69,13 +74,7 @@ fun RadarScreen(
             .padding(16.dp),
     ) {
 
-        Text(
-            text = "Discover nearby walkie-talkies. The other device must be in Host mode. Tap to connect.",
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(top = 4.dp, bottom = 16.dp)
-        )
-        
+
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -83,39 +82,42 @@ fun RadarScreen(
             FilterChip(
                 selected = radar.filter == RadarFilter.BOTH,
                 onClick = { radarViewModel.setFilter(RadarFilter.BOTH) },
-                label = { Text("Both") },
+                label = { Text(chrome.filterBoth) },
+                leadingIcon = if (radar.filter == RadarFilter.BOTH) {
+                    { Icon(Icons.Filled.Check, contentDescription = null, modifier = Modifier.size(16.dp)) }
+                } else null,
             )
             FilterChip(
                 selected = radar.filter == RadarFilter.WIFI,
                 onClick = { radarViewModel.setFilter(RadarFilter.WIFI) },
-                label = { Text("Wi-Fi") },
+                label = { Text(chrome.channelWifiLabel) },
                 leadingIcon = { Icon(Icons.Filled.Wifi, contentDescription = null, modifier = Modifier.size(16.dp)) }
             )
             FilterChip(
                 selected = radar.filter == RadarFilter.BLUETOOTH,
                 onClick = { radarViewModel.setFilter(RadarFilter.BLUETOOTH) },
-                label = { Text("Bluetooth") },
+                label = { Text(chrome.channelBluetoothLabel) },
                 leadingIcon = { Icon(Icons.Filled.Bluetooth, contentDescription = null, modifier = Modifier.size(16.dp)) }
             )
         }
-        
-        Spacer(Modifier.height(16.dp))
-        
-        Card(
+
+        Spacer(Modifier.height(12.dp))
+
+        Surface(
             modifier = Modifier
                 .fillMaxWidth()
                 .weight(1f)
                 .padding(bottom = 16.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-            shape = RoundedCornerShape(24.dp)
+            color = MaterialTheme.colorScheme.surfaceContainerLow,
+            shape = MaterialTheme.shapes.extraLarge,
         ) {
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                val ringColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)
+                val ringColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.18f)
                 val youColor = MaterialTheme.colorScheme.primary
                 val peerColor = MaterialTheme.colorScheme.secondary
                 val sweepColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.4f)
                 val labelColor = MaterialTheme.colorScheme.onSurface
-                
+
                 RadarPlot(
                     peers = radar.peers,
                     ringColor = ringColor,
@@ -127,14 +129,14 @@ fun RadarScreen(
                     onPeerTap = { peer ->
                         if (!canJoin) return@RadarPlot
                         radarViewModel.stop()
-                        
+
                         val myName = main.localProfile.displayName
                         val peerName = peer.name
                         val isHost = if (myName != peerName) myName > peerName else true
-                        
+
                         val useWifi = peer.hasWifi && (radar.filter == RadarFilter.BOTH || radar.filter == RadarFilter.WIFI)
                         val useBluetooth = peer.hasBluetooth && (radar.filter == RadarFilter.BOTH || radar.filter == RadarFilter.BLUETOOTH)
-                        
+
                         if (useWifi) {
                             // Both devices act as CLIENT and let Wi-Fi Direct negotiate the
                             // Group Owner -- but an unbiased negotiation is a coin flip that
@@ -167,18 +169,18 @@ fun RadarScreen(
                     main.reconnecting -> {
                         Box(
                             modifier = Modifier
-                                .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.8f), RoundedCornerShape(8.dp))
-                                .padding(12.dp)
+                                .background(MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.92f), MaterialTheme.shapes.medium)
+                                .padding(horizontal = 20.dp, vertical = 14.dp)
                         ) {
                             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                                 Text(
-                                    "Reconnecting… (attempt ${main.reconnectAttempt})",
+                                    chrome.reconnecting(main.reconnectAttempt),
                                     color = MaterialTheme.colorScheme.primary,
                                     style = MaterialTheme.typography.labelMedium
                                 )
                                 Spacer(Modifier.height(8.dp))
-                                Button(onClick = { mainViewModel.disconnect() }) {
-                                    Text("Cancel")
+                                OutlinedButton(onClick = { mainViewModel.disconnect() }) {
+                                    Text(chrome.pairingCancel)
                                 }
                             }
                         }
@@ -186,11 +188,11 @@ fun RadarScreen(
                     main.connectionState == ConnectionState.CONNECTED -> {
                         Box(
                             modifier = Modifier
-                                .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.8f), RoundedCornerShape(8.dp))
-                                .padding(12.dp)
+                                .background(MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.92f), MaterialTheme.shapes.medium)
+                                .padding(horizontal = 20.dp, vertical = 14.dp)
                         ) {
                             Text(
-                                "Disconnect on Talk screen before joining.",
+                                chrome.disconnectFirst,
                                 color = MaterialTheme.colorScheme.error,
                                 style = MaterialTheme.typography.labelMedium
                             )
@@ -199,53 +201,71 @@ fun RadarScreen(
                     main.connectionState == ConnectionState.DISCOVERING || main.connectionState == ConnectionState.HANDSHAKING -> {
                         Box(
                             modifier = Modifier
-                                .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.8f), RoundedCornerShape(8.dp))
-                                .padding(12.dp)
+                                .background(MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.92f), MaterialTheme.shapes.medium)
+                                .padding(horizontal = 20.dp, vertical = 14.dp)
                         ) {
                             Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                CircularProgressIndicator(modifier = Modifier.size(28.dp), strokeWidth = 3.dp)
+                                Spacer(Modifier.height(10.dp))
                                 Text(
-                                    "Connecting...",
+                                    chrome.connectingLabel,
                                     color = MaterialTheme.colorScheme.primary,
                                     style = MaterialTheme.typography.labelMedium
                                 )
                                 Spacer(Modifier.height(8.dp))
-                                Button(onClick = { mainViewModel.disconnect() }) {
-                                    Text("Cancel")
+                                OutlinedButton(onClick = { mainViewModel.disconnect() }) {
+                                    Text(chrome.pairingCancel)
                                 }
                             }
                         }
                     }
                     else -> {
                         if (radar.scanning && radar.peers.isEmpty()) {
-                            Text(
-                                "Scanning for peers...",
-                                color = MaterialTheme.colorScheme.primary,
-                                style = MaterialTheme.typography.labelMedium,
-                                modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 24.dp)
-                            )
+                            Surface(
+                                color = MaterialTheme.colorScheme.primaryContainer,
+                                contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                                shape = CircleShape,
+                                modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 20.dp),
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp)
+                                    Spacer(Modifier.width(8.dp))
+                                    Text(chrome.scanningPeers, style = MaterialTheme.typography.labelLarge)
+                                }
+                            }
                         }
                     }
                 }
             }
         }
-        
+
         if (radar.peers.isNotEmpty()) {
-            Text("Discovered (${radar.peers.size})", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+            SectionHeader(chrome.discoveredTitle) {
+                StatusPill(
+                    text = radar.peers.size.toString(),
+                    containerColor = MaterialTheme.colorScheme.primaryContainer,
+                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                )
+            }
             Spacer(Modifier.height(8.dp))
-            LazyColumn(modifier = Modifier.height(140.dp).fillMaxWidth()) {
+            LazyColumn(
+                modifier = Modifier.heightIn(max = 180.dp).fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
                 items(radar.peers, key = { it.id }) { peer ->
-                    Card(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 4.dp)
-                            .clip(RoundedCornerShape(12.dp))
-                            .clickable(enabled = canJoin) {
-                                selectedPeer = peer
-                            },
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)
+                    Surface(
+                        onClick = { selectedPeer = peer },
+                        enabled = canJoin,
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = MaterialTheme.shapes.medium,
+                        color = MaterialTheme.colorScheme.secondaryContainer,
+                        contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
                     ) {
                         Row(
-                            modifier = Modifier.padding(16.dp).fillMaxWidth(),
+                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp).fillMaxWidth(),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Box(
@@ -260,10 +280,21 @@ fun RadarScreen(
                                     fontWeight = FontWeight.Bold
                                 )
                             }
-                            Spacer(Modifier.width(16.dp))
-                            Column {
-                                Text(peer.name, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSecondaryContainer)
-                                Text("${peer.band.label} · ${peer.radiosLabel}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.7f))
+                            Spacer(Modifier.width(14.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(peer.name, style = MaterialTheme.typography.titleMedium)
+                                Text(
+                                    "${peer.band.label} · ${peer.radiosLabel}",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.7f),
+                                )
+                            }
+                            if (peer.hasWifi) {
+                                Icon(Icons.Filled.Wifi, contentDescription = chrome.channelWifiLabel, modifier = Modifier.size(18.dp))
+                                Spacer(Modifier.width(6.dp))
+                            }
+                            if (peer.hasBluetooth) {
+                                Icon(Icons.Filled.Bluetooth, contentDescription = chrome.channelBluetoothLabel, modifier = Modifier.size(18.dp))
                             }
                         }
                     }
@@ -275,8 +306,8 @@ fun RadarScreen(
     selectedPeer?.let { peer ->
         AlertDialog(
             onDismissRequest = { selectedPeer = null },
-            title = { Text("Connect to ${peer.name}") },
-            text = { Text("Choose your role for this connection.\nThe Host should wait for the Joiner to connect.") },
+            title = { Text(chrome.connectTo(peer.name)) },
+            text = { Text(chrome.chooseRoleBody) },
             confirmButton = {
                 Button(onClick = {
                     selectedPeer = null
@@ -290,7 +321,7 @@ fun RadarScreen(
                         mainViewModel.connect()
                     }
                 }) {
-                    Text("Host")
+                    Text(chrome.hostRole)
                 }
             },
             dismissButton = {
@@ -308,7 +339,7 @@ fun RadarScreen(
                         mainViewModel.connect(peerAddress = addr, peerName = peer.name)
                     }
                 }) {
-                    Text("Join")
+                    Text(chrome.joinRole)
                 }
             }
         )
@@ -366,7 +397,7 @@ private fun RadarPlot(
     ) {
         val center = Offset(size.width / 2f, size.height / 2f)
         val maxR = min(size.width, size.height) / 2f * 0.9f
-        
+
         // Concentric Rings
         listOf(0.33f, 0.66f, 1f).forEach { frac ->
             drawCircle(
@@ -376,20 +407,17 @@ private fun RadarPlot(
                 style = Stroke(width = 3f),
             )
         }
-        
+
         // Radar Sweep Cone
         drawArc(
-            brush = Brush.sweepGradient(
-                colors = listOf(Color.Transparent, sweepColor, Color.Transparent),
-                center = center
-            ),
+            color = sweepColor.copy(alpha = 0.18f),
             startAngle = sweepAngle - 90f - 45f,
             sweepAngle = 45f,
             useCenter = true,
             topLeft = Offset(center.x - maxR, center.y - maxR),
             size = Size(maxR * 2, maxR * 2)
         )
-        
+
         // Sweep Line
         val sweepRad = ((sweepAngle - 90f) * PI / 180.0).toFloat()
         drawLine(
@@ -398,7 +426,7 @@ private fun RadarPlot(
             end = Offset(center.x + maxR * cos(sweepRad), center.y + maxR * sin(sweepRad)),
             strokeWidth = 4f,
         )
-        
+
         // Center "You" dot
         drawCircle(color = youColor, radius = 20f, center = center)
         drawCircle(color = youColor.copy(alpha = 0.3f), radius = 32f, center = center) // Inner glow
@@ -406,7 +434,7 @@ private fun RadarPlot(
         layout.forEach { placed ->
             val pos = polar(center, maxR, placed)
             val alpha = if (placed.fading) 0.35f else 1f
-            
+
             // Peer Dot
             drawCircle(
                 color = peerColor.copy(alpha = alpha),
@@ -418,7 +446,7 @@ private fun RadarPlot(
                 radius = 36f,
                 center = pos,
             ) // Peer glow
-            
+
             drawContext.canvas.nativeCanvas.drawText(
                 "${placed.peer.name}",
                 pos.x,
