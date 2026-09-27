@@ -785,6 +785,8 @@ class MainViewModel @Inject constructor(
                                     }
                                 }
                             }
+                        }
+
                         viewModelScope.launch(Dispatchers.IO) {
                             alertPlayer.play(alertToPlay)
                             drainDeferredNormals()
