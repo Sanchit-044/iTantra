@@ -20,7 +20,7 @@ Smart India Hackathon 2026 · Problem Statement **26173** · ISRO, Department of
 [![Organisation](https://img.shields.io/badge/ISRO-Dept._of_Space-149447?style=flat-square)](https://www.isro.gov.in/)
 [![Platform](https://img.shields.io/badge/Platform-Android_7.0%2B_(minSdk_24)-415861?style=flat-square)](https://developer.android.com)
 [![Offline](https://img.shields.io/badge/runtime-100%25_offline-149447?style=flat-square)](#sih-evaluation-compliance)
-[![Languages](https://img.shields.io/badge/languages-10_Indic-F48C22?style=flat-square)](#supported-languages)
+[![Languages](https://img.shields.io/badge/languages-10_Indic-F48C22?style=flat-square)](#what-it-does)
 [![Licence](https://img.shields.io/badge/licence-Apache--2.0-415861?style=flat-square)](#licence)
 
 </div>
@@ -60,10 +60,10 @@ flowchart LR
 
 ## What it does
 
-- **Ten Indian languages** — Hindi, Tamil, Bengali, Gujarati, Marathi, Kannada, Malayalam, Telugu, Odia, English.
+- **Ten Indian languages** — Hindi, Tamil, Bengali, Gujarati, Marathi, Kannada, Malayalam, Telugu, Odia, English (100% on-device STT, TTS voice synthesis, and cross-translation).
 - **Entirely offline.** No cloud, no SIM, no network call at runtime.
 - **One speaks, many hear.** Every frame is broadcast to the whole net, and a phone out of range is reached by a relay hop through one that isn't.
-- **Cross-language alerts.** A Hindi speaker's alert reaches a Tamil speaker in Tamil — no translation model. It falls out of how the compression works.
+- **Cross-language alerts.** A Hindi speaker's alert reaches a Tamil speaker in Tamil — no translation model needed for emergency templates.
 - **Encrypted.** AES-256-GCM with a pre-shared key, so a fraudulent evacuation order can't be injected.
 - **Two modes** — push-to-talk, and released for ordinary two-way conversation.
 - **Four transports behind one interface:** Bluetooth Classic, BLE, Wi-Fi Direct, and LAN sockets.
@@ -101,21 +101,6 @@ flowchart LR
   Focus --> MaxVol["🔊 Lock Volume to 100%"]
   MaxVol --> Siren["🚨 Non-Interruptible Siren"]
 ```
-
-## Supported Languages
-
-| Language | Script | Wire Code | STT Engine | TTS Engine | On-Device Translation |
-| --- | --- | --- | --- | --- | --- |
-| **Hindi** *(Default)* | Devanagari | `0x01` | IndicWav2Vec CTC INT8 | Indic-TTS VITS INT8 | Yes (IndicTrans2) |
-| **Tamil** | Tamil | `0x02` | IndicWav2Vec CTC INT8 | Indic-TTS VITS INT8 | Yes (Template / Dictionary) |
-| **Bengali** | Bengali | `0x03` | IndicWav2Vec CTC INT8 | Indic-TTS VITS INT8 | Yes (Template / Dictionary) |
-| **Gujarati** | Gujarati | `0x04` | IndicWav2Vec CTC INT8 | Indic-TTS VITS INT8 | Yes (Template / Dictionary) |
-| **Marathi** | Devanagari | `0x05` | IndicWav2Vec CTC INT8 | Indic-TTS VITS INT8 | Yes (IndicTrans2) |
-| **Kannada** | Kannada | `0x06` | IndicWav2Vec CTC INT8 | Indic-TTS VITS INT8 | Yes (Template / Dictionary) |
-| **Malayalam** | Malayalam | `0x07` | IndicWav2Vec CTC INT8 | Indic-TTS VITS INT8 | Yes (Template / Dictionary) |
-| **Telugu** | Telugu | `0x08` | IndicWav2Vec CTC INT8 | Indic-TTS VITS INT8 | Yes (Template / Dictionary) |
-| **Odia** | Odia | `0x09` | IndicWav2Vec CTC INT8 | Indic-TTS VITS INT8 | Yes (Template / Dictionary) |
-| **English** | Latin | `0x0A` | Wav2Vec2 CTC INT8 | MMS-TTS VITS INT8 | Yes (Template / Dictionary) |
 
 ## SIH Evaluation Compliance
 
