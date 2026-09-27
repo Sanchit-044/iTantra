@@ -56,6 +56,12 @@ class WifiAlertBroadcaster(private val context: Context) {
                 isAdvertising = true
                 currentServiceInfo = serviceInfo
 
+                // Trigger peer discovery to beacon the local service
+                manager.discoverPeers(channel, object : WifiP2pManager.ActionListener {
+                    override fun onSuccess() {}
+                    override fun onFailure(reason: Int) {}
+                })
+
                 // Broadcast for 30 seconds
                 handler.postDelayed({
                     stopBroadcasting()

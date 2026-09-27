@@ -25,8 +25,9 @@ class BleAlertBroadcaster(private val context: Context) {
     @SuppressLint("MissingPermission")
     fun broadcastAlert(language: Language, content: AlertContent, sequence: Long, senderName: String? = null, ttl: Int = 3) {
         val adapter = (context.getSystemService(Context.BLUETOOTH_SERVICE) as? BluetoothManager)?.adapter
+            ?: android.bluetooth.BluetoothAdapter.getDefaultAdapter()
         if (adapter == null || !adapter.isEnabled) {
-            AppLog.w("BleAlertBroadcaster", "Bluetooth disabled, cannot broadcast alert")
+            AppLog.w("BleAlertBroadcaster", "Bluetooth disabled or unavailable, cannot broadcast alert")
             return
         }
 

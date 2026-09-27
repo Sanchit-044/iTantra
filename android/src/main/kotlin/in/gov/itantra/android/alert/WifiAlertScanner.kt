@@ -44,9 +44,22 @@ class WifiAlertScanner(
             val manager = p2pManager ?: return
             val channel = p2pChannel ?: return
 
-            manager.discoverServices(channel, object : WifiP2pManager.ActionListener {
-                override fun onSuccess() {}
-                override fun onFailure(reason: Int) {}
+            // Android Wi-Fi Direct requires discoverPeers to activate radio scan before discoverServices works
+            manager.discoverPeers(channel, object : WifiP2pManager.ActionListener {
+                override fun onSuccess() {
+                    manager.discoverServices(channel, object : WifiP2pManager.ActionListener {
+                        override fun onSuccess() {
+                            AppLog.d("WifiAlertScanner", "Wi-Fi Direct DNS-SD service discovery running")
+                        }
+                        override fun onFailure(reason: Int) {
+                            AppLog.w("WifiAlertScanner", "Wi-Fi Direct service discovery failed: $reason")
+                        }
+                    })
+                }
+                override fun onFailure(reason: Int) {
+                    // Direct service discovery fallback
+                    manager.discoverServices(channel, null)
+                }
             })
 
             handler.postDelayed(this, 10_000)

@@ -197,6 +197,19 @@ class LanBroadcastAlertManager(
         val destinations = mutableSetOf<InetAddress>()
         try {
             destinations.add(InetAddress.getByName("255.255.255.255"))
+            // Common default AP/Hotspot and Wi-Fi Direct broadcast addresses
+            listOf(
+                "192.168.43.255", // Standard Android Hotspot broadcast
+                "192.168.49.255", // Standard Android Wi-Fi Direct P2P broadcast
+                "192.168.43.1",   // Hotspot host
+                "192.168.49.1",   // Wi-Fi Direct Group Owner host
+                "192.168.1.255",
+                "192.168.0.255",
+                "10.0.0.255"
+            ).forEach {
+                runCatching { destinations.add(InetAddress.getByName(it)) }
+            }
+
             val interfaces = java.net.NetworkInterface.getNetworkInterfaces() ?: return destinations
             for (iface in interfaces) {
                 if (!iface.isUp || iface.isLoopback) continue
@@ -204,6 +217,27 @@ class LanBroadcastAlertManager(
                     val broadcast = addr.broadcast
                     if (broadcast != null) {
                         destinations.add(broadcast)
+                    }
+                    val ip = addr.address
+                    if (ip is java.net.Inet4Address) {
+                        // Calculate broadcast if prefix length is available
+                        val prefix = addr.networkPrefixLength.toInt()
+                        if (prefix in 1..31) {
+                            val mask = -1 shl (32 - prefix)
+                            val ipBytes = ip.address
+                            val ipInt = ((ipBytes[0].toInt() and 0xFF) shl 24) or
+                                    ((ipBytes[1].toInt() and 0xFF) shl 16) or
+                                    ((ipBytes[2].toInt() and 0xFF) shl 8) or
+                                    (ipBytes[3].toInt() and 0xFF)
+                            val broadcastInt = ipInt or mask.inv()
+                            val bCastBytes = byteArrayOf(
+                                ((broadcastInt ushr 24) and 0xFF).toByte(),
+                                ((broadcastInt ushr 16) and 0xFF).toByte(),
+                                ((broadcastInt ushr 8) and 0xFF).toByte(),
+                                (broadcastInt and 0xFF).toByte()
+                            )
+                            runCatching { destinations.add(InetAddress.getByAddress(bCastBytes)) }
+                        }
                     }
                 }
             }

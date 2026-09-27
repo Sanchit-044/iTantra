@@ -18,6 +18,15 @@ import `in`.gov.itantra.android.alert.WifiAlertScanner
 import `in`.gov.itantra.core.diag.AppLog
 import javax.inject.Inject
 
+import `in`.gov.itantra.android.alert.LanBroadcastAlertManager
+import `in`.gov.itantra.core.alert.AlertPlayer
+import `in`.gov.itantra.core.alert.AlertTemplate
+import `in`.gov.itantra.core.alert.IncomingAlert
+import `in`.gov.itantra.core.transport.MessageType
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+
 @AndroidEntryPoint
 class ConnectionService : Service() {
 
@@ -26,6 +35,12 @@ class ConnectionService : Service() {
 
     @Inject
     lateinit var wifiAlertScanner: WifiAlertScanner
+
+    @Inject
+    lateinit var lanAlertManager: LanBroadcastAlertManager
+
+    @Inject
+    lateinit var alertPlayer: AlertPlayer
 
     @Inject
     lateinit var alertNotificationManager: AlertNotificationManager
@@ -59,10 +74,27 @@ class ConnectionService : Service() {
             startForeground(NOTIFICATION_ID, notification)
         }
 
-        // If the service is killed by the system, recreate it.
-
+        // Keep all offline alert scanners and UDP subnet listeners active in background
         bleAlertScanner.startScanning()
         wifiAlertScanner.startScanning()
+        lanAlertManager.startListening { packet ->
+            if (packet.type == MessageType.ALERT) {
+                val split = packet.text.split("\u001F", limit = 2)
+                val senderName = if (split.size == 2) split[0].takeIf { it.isNotBlank() } else null
+                val wirePayload = if (split.size == 2) split[1] else packet.text
+                val content = AlertTemplate.fromWirePayload(wirePayload)
+                val alert = IncomingAlert(
+                    content = content,
+                    language = packet.language,
+                    sequence = packet.sequence,
+                    receivedAtMs = System.currentTimeMillis(),
+                    senderName = senderName
+                )
+                CoroutineScope(Dispatchers.IO).launch {
+                    alertPlayer.play(alert)
+                }
+            }
+        }
 
         when (intent?.action) {
             ACTION_TRANSPORT_CONNECTED -> acquireLocks()
@@ -76,6 +108,7 @@ class ConnectionService : Service() {
         super.onDestroy()
         bleAlertScanner.stopScanning()
         wifiAlertScanner.stopScanning()
+        lanAlertManager.stopListening()
         releaseLocks()
     }
 

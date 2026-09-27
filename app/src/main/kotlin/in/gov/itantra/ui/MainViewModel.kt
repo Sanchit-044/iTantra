@@ -1247,10 +1247,19 @@ class MainViewModel @Inject constructor(
 
         // 1. Connectionless BLE Broadcast (If ALL or BLUETOOTH)
         if (channel == AlertChannel.ALL || channel == AlertChannel.BLUETOOTH) {
-            try {
-                bleAlertBroadcaster.broadcastAlert(lang, content, sequence.toLong(), senderName, ttl = 3)
-            } catch (e: Exception) {
-                AppLog.e("MainViewModel", "BLE broadcast crashed", e)
+            val btAdapter = (context.getSystemService(Context.BLUETOOTH_SERVICE) as? android.bluetooth.BluetoothManager)?.adapter
+                ?: android.bluetooth.BluetoothAdapter.getDefaultAdapter()
+            if (btAdapter == null || !btAdapter.isEnabled) {
+                AppLog.w("MainViewModel", "Bluetooth is disabled, cannot broadcast BLE alert")
+                viewModelScope.launch {
+                    _snackbarMessage.emit("Note: Bluetooth is OFF. Turn ON Bluetooth for BLE mesh alerts.")
+                }
+            } else {
+                try {
+                    bleAlertBroadcaster.broadcastAlert(lang, content, sequence.toLong(), senderName, ttl = 3)
+                } catch (e: Exception) {
+                    AppLog.e("MainViewModel", "BLE broadcast crashed", e)
+                }
             }
         }
 
