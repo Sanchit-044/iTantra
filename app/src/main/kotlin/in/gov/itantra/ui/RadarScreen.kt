@@ -71,7 +71,7 @@ fun RadarScreen(
 
     // Calculate nearest peer based on RSSI distance
     val nearestPeer = remember(radar.peers) {
-        radar.peers.minByOrNull { it.estimatedDistanceMeters() }
+        radar.peers.minByOrNull { it.distanceMeters }
     }
 
     // Sweep animation
@@ -210,8 +210,8 @@ fun RadarScreen(
                 val center = Offset(size.width / 2f, size.height / 2f)
                 val maxR = min(size.width, size.height) / 2f * 0.88f
 
-                // Concentric range rings
-                val rings = listOf(0.33f to "25m", 0.66f to "65m", 1.0f to "120m")
+                // Calibrated metric concentric range rings (2m, 8m, 20m, 40m)
+                val rings = listOf(0.18f to "2m", 0.40f to "8m", 0.68f to "20m", 0.95f to "40m")
                 val textPaint = android.graphics.Paint().apply {
                     color = textColor
                     textSize = 20f
@@ -315,8 +315,8 @@ fun RadarScreen(
                         center = pos,
                     )
 
-                    // Clean label
-                    val label = placed.peer.name
+                    // Clean label with distance
+                    val label = "${placed.peer.name} (${placed.peer.formattedDistance()})"
                     drawContext.canvas.nativeCanvas.drawText(
                         label,
                         pos.x,
@@ -362,8 +362,13 @@ fun RadarScreen(
                             fontWeight = FontWeight.SemiBold,
                             color = MaterialTheme.colorScheme.onSurface,
                         )
+                        val trendWord = when (nearest.trend) {
+                            `in`.gov.itantra.core.discover.SignalTrend.CLOSING -> " · Closing in"
+                            `in`.gov.itantra.core.discover.SignalTrend.FURTHER -> " · Moving away"
+                            `in`.gov.itantra.core.discover.SignalTrend.STEADY -> ""
+                        }
                         Text(
-                            text = "${nearest.estimatedDistanceMeters()}m · ${nearest.radiosLabel}",
+                            text = "${nearest.formattedDistance()}$trendWord · ${nearest.radiosLabel}",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -449,8 +454,13 @@ fun RadarScreen(
                                         )
                                     }
                                 }
+                                val trendWord = when (peer.trend) {
+                                    `in`.gov.itantra.core.discover.SignalTrend.CLOSING -> " · Closing in"
+                                    `in`.gov.itantra.core.discover.SignalTrend.FURTHER -> " · Moving away"
+                                    `in`.gov.itantra.core.discover.SignalTrend.STEADY -> ""
+                                }
                                 Text(
-                                    text = "${peer.estimatedDistanceMeters()}m · ${peer.radiosLabel}",
+                                    text = "${peer.formattedDistance()}$trendWord · ${peer.radiosLabel}",
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
@@ -538,13 +548,18 @@ private data class PlacedPeer(
 
 private fun peerLayout(peers: List<NearbyPeer>, nowMs: Long): List<PlacedPeer> =
     peers.map { peer ->
+        // Calibrated piecewise mapping of distanceMeters to radar ring radius fraction
+        val dist = peer.distanceMeters
+        val radiusFrac = when {
+            dist <= 2.0f -> 0.18f * (dist / 2.0f).coerceIn(0.5f, 1.0f)
+            dist <= 8.0f -> 0.18f + 0.22f * ((dist - 2.0f) / 6.0f)
+            dist <= 20.0f -> 0.40f + 0.28f * ((dist - 8.0f) / 12.0f)
+            dist <= 40.0f -> 0.68f + 0.27f * ((dist - 20.0f) / 20.0f)
+            else -> 0.95f
+        }
         PlacedPeer(
             peer = peer,
-            radiusFrac = when (peer.band) {
-                RssiBand.NEAR -> 0.30f
-                RssiBand.MID -> 0.62f
-                RssiBand.FAR -> 0.90f
-            },
+            radiusFrac = radiusFrac,
             angleDeg = peer.stableAngleDegrees(),
             fading = NearbyPeerBook.fading(peer, nowMs),
         )
@@ -557,10 +572,4 @@ private fun polar(center: Offset, maxR: Float, placed: PlacedPeer): Offset {
         center.x + (r * cos(rad)).toFloat(),
         center.y + (r * sin(rad)).toFloat(),
     )
-}
-
-private fun NearbyPeer.estimatedDistanceMeters(): Int = when (band) {
-    RssiBand.NEAR -> 25
-    RssiBand.MID -> 65
-    RssiBand.FAR -> 120
 }

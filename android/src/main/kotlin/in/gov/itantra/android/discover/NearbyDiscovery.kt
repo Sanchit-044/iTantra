@@ -249,19 +249,31 @@ class NearbyDiscovery(private val context: Context) {
         leAdvertiser = null
     }
 
+    private val smoothers = java.util.concurrent.ConcurrentHashMap<String, `in`.gov.itantra.core.discover.SignalSmoother>()
+
     private val scanCallback = object : ScanCallback() {
         override fun onScanResult(callbackType: Int, result: ScanResult) {
             if (!running.get()) return
             val name = result.scanRecord?.deviceName
                 ?: result.device.name
                 ?: "Unknown"
+            val address = result.device.address
+            val now = nowMs()
+            val smoother = smoothers.getOrPut(address) { `in`.gov.itantra.core.discover.SignalSmoother() }
+            val smoothedRssi = smoother.offer(result.rssi, now)
+            val distance = smoother.estimateDistanceMeters()
+            val trend = smoother.trend(now)
+
             remember(
                 NearbyPeerBook.sighting(
                     name = name,
                     radio = NearbyRadio.BLUETOOTH,
-                    address = result.device.address,
+                    address = address,
                     rssiDbm = result.rssi,
-                    nowMs = nowMs(),
+                    nowMs = now,
+                    smoothedRssiDbm = smoothedRssi,
+                    distanceMeters = distance,
+                    trend = trend,
                 )
             )
         }

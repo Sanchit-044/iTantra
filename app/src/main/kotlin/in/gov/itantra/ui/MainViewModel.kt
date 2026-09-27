@@ -226,11 +226,12 @@ class MainViewModel @Inject constructor(
     private val relayEngine = RelayEngine(localNodeId = "local_node")
     private val alertDeliveryTracker = AlertDeliveryTracker()
 
+    private val alertSignalSmoother = `in`.gov.itantra.core.discover.SignalSmoother()
+
     private fun estimateDistanceMeters(rssi: Int?): Float {
         if (rssi == null || rssi == 0) return 3.5f
-        val ratio = (-59.0 - rssi) / (10.0 * 2.0)
-        val d = Math.pow(10.0, ratio).toFloat()
-        return d.coerceIn(0.5f, 50.0f)
+        alertSignalSmoother.offer(rssi, android.os.SystemClock.elapsedRealtime())
+        return alertSignalSmoother.estimateDistanceMeters()
     }
 
     init {
