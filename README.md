@@ -119,12 +119,12 @@ flowchart LR
 
 ## SIH Evaluation Compliance
 
-| Evaluation Metric | Weight | Requirement | iTantra Implementation & Defense |
-| --- | --- | --- | --- |
-| **Accuracy** | **40%** | Low WER & natural TTS | AI4Bharat IndicWav2Vec CTC + Indic-TTS VITS models; script-aware normalizers. |
-| **Efficiency** | **20%** | Low memory & CPU footprint | Dynamic INT8 ONNX models (~150MB); single-model RAM rule (**<250MB active RAM**); 0% idle CPU. |
-| **Latency** | **20%** | Sub-second voice round-trip | 800ms silence endpointer; clause-level pipelined TTS playback start in **<400ms**; RTF $\approx 0.07$. |
-| **Robustness** | **20%** | 100% Offline & Open Source | Pure ONNX Runtime (MIT); zero cloud APIs; AES-256-GCM AEAD encryption; 30-day inbox queue. |
+| Evaluation Metric | Requirement | iTantra Implementation & Defense |
+| --- | --- | --- |
+| **Accuracy** | Low WER & natural TTS | AI4Bharat IndicWav2Vec CTC + Indic-TTS VITS models; script-aware normalizers. |
+| **Efficiency** | Low memory & CPU footprint | Dynamic INT8 ONNX models (~150MB); single-model RAM rule (**<250MB active RAM**); 0% idle CPU. |
+| **Latency** | Sub-second voice round-trip | 800ms silence endpointer; clause-level pipelined TTS playback start in **<400ms**; RTF $\approx 0.07$. |
+| **Robustness** | 100% Offline & Open Source | Pure ONNX Runtime (MIT); zero cloud APIs; AES-256-GCM AEAD encryption; 30-day inbox queue. |
 
 ## Screenshots & Interface Flow
 
