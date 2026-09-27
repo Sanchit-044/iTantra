@@ -27,8 +27,16 @@ class WifiAlertBroadcaster(private val context: Context) {
         }
     }
 
+    private var stopBroadcastRunnable: Runnable? = null
+
     @SuppressLint("MissingPermission")
-    fun broadcastAlert(language: Language, content: AlertContent, sequence: Long, senderName: String? = null) {
+    fun broadcastAlert(
+        language: Language,
+        content: AlertContent,
+        sequence: Long,
+        senderName: String? = null,
+        durationMs: Long = 300_000L, // 5 minutes default
+    ) {
         AppLog.d("WifiAlertBroadcaster", "broadcastAlert called for sequence $sequence")
         val manager = p2pManager ?: run {
             AppLog.e("WifiAlertBroadcaster", "Wi-Fi P2P Manager is null, cannot broadcast")
@@ -62,10 +70,9 @@ class WifiAlertBroadcaster(private val context: Context) {
                     override fun onFailure(reason: Int) {}
                 })
 
-                // Broadcast for 30 seconds
-                handler.postDelayed({
-                    stopBroadcasting()
-                }, 30_000)
+                val runnable = Runnable { stopBroadcasting() }
+                stopBroadcastRunnable = runnable
+                handler.postDelayed(runnable, durationMs)
             }
 
             override fun onFailure(reason: Int) {
@@ -76,6 +83,8 @@ class WifiAlertBroadcaster(private val context: Context) {
 
     @SuppressLint("MissingPermission")
     fun stopBroadcasting() {
+        stopBroadcastRunnable?.let { handler.removeCallbacks(it) }
+        stopBroadcastRunnable = null
         if (!isAdvertising) return
         val manager = p2pManager ?: return
         val channel = p2pChannel ?: return

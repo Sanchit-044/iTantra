@@ -186,7 +186,19 @@ fun ITantraApp(
             }
         }
 
-        // Full Screen Emergency Alert Overlay (Guaranteed to display over any screen in the app)
+        // Full Screen Outbound Emergency Broadcast Overlay (For Alert Sender)
+        uiState.activeOutboundAlert?.let { outboundAlert ->
+            if (!outboundAlert.isMinimized) {
+                OutboundAlertFullScreen(
+                    outboundAlert = outboundAlert,
+                    chrome = chrome,
+                    onStopAlert = { mainViewModel.stopOutboundAlert() },
+                    onMinimize = { mainViewModel.minimizeOutboundAlert() },
+                )
+            }
+        }
+
+        // Full Screen Emergency Alert Overlay (For Incoming Alerts)
         uiState.activeIncomingAlert?.let { activeAlert ->
             IncomingAlertFullScreen(
                 alert = activeAlert,
@@ -331,30 +343,48 @@ fun MainContent(
                 }
             },
         ) { padding ->
-            AnimatedContent(
-                targetState = tab,
-                transitionSpec = { fadeIn(tween(220)) togetherWith fadeOut(tween(120)) },
+            Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(padding),
-                label = "tab",
-            ) { current ->
-                MaxWidthBox {
-                    when (current) {
-                        MainTab.TALK -> MainScreen(
-                            viewModel = mainViewModel,
-                            onOpenHistory = { tab = MainTab.HISTORY },
-                        )
-                        MainTab.RADAR -> RadarScreen(mainViewModel = mainViewModel, radarViewModel = radarViewModel)
-                        MainTab.ALERT -> AlertScreen(viewModel = mainViewModel)
-                        MainTab.HISTORY -> HistoryScreen(viewModel = historyViewModel, chrome = chrome)
-                        MainTab.SETTINGS -> SettingsScreen(
-                            mainState = uiState,
-                            onOpenProfile = onOpenProfile,
-                            onOpenLanguages = onOpenLanguages,
-                            onOpenDisplay = onOpenDisplay,
-                            onOpenAnalysis = onOpenAnalysis,
-                            onOpenAbout = onOpenAbout,
+                    .padding(padding)
+            ) {
+                AnimatedContent(
+                    targetState = tab,
+                    transitionSpec = { fadeIn(tween(220)) togetherWith fadeOut(tween(120)) },
+                    modifier = Modifier.fillMaxSize(),
+                    label = "tab",
+                ) { current ->
+                    MaxWidthBox {
+                        when (current) {
+                            MainTab.TALK -> MainScreen(
+                                viewModel = mainViewModel,
+                                onOpenHistory = { tab = MainTab.HISTORY },
+                            )
+                            MainTab.RADAR -> RadarScreen(mainViewModel = mainViewModel, radarViewModel = radarViewModel)
+                            MainTab.ALERT -> AlertScreen(viewModel = mainViewModel)
+                            MainTab.HISTORY -> HistoryScreen(viewModel = historyViewModel, chrome = chrome)
+                            MainTab.SETTINGS -> SettingsScreen(
+                                mainState = uiState,
+                                onOpenProfile = onOpenProfile,
+                                onOpenLanguages = onOpenLanguages,
+                                onOpenDisplay = onOpenDisplay,
+                                onOpenAnalysis = onOpenAnalysis,
+                                onOpenAbout = onOpenAbout,
+                            )
+                        }
+                    }
+                }
+
+                // Minimized floating emergency broadcast banner
+                uiState.activeOutboundAlert?.let { outbound ->
+                    if (outbound.isMinimized) {
+                        MinimizedOutboundAlertBanner(
+                            outboundAlert = outbound,
+                            onExpand = { mainViewModel.expandOutboundAlert() },
+                            onStopAlert = { mainViewModel.stopOutboundAlert() },
+                            modifier = Modifier
+                                .align(Alignment.BottomCenter)
+                                .padding(horizontal = 16.dp, vertical = 12.dp)
                         )
                     }
                 }

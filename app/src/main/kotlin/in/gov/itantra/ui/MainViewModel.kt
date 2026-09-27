@@ -92,6 +92,29 @@ enum class AudioOutputDevice {
 
 data class BluetoothDeviceInfo(val name: String, val address: String)
 
+data class AlertRecipient(
+    val peerName: String,
+    val distanceMeters: Float? = null,
+    val locationLabel: String? = null,
+    val ackTimestampMs: Long = System.currentTimeMillis(),
+    val rssiDbm: Int? = null,
+)
+
+data class OutboundAlertState(
+    val sequence: Int,
+    val content: AlertContent,
+    val language: Language,
+    val startedAtMs: Long = System.currentTimeMillis(),
+    val durationMs: Long = 300_000L, // 5 minutes broadcast window
+    val recipients: List<AlertRecipient> = emptyList(),
+    val isMinimized: Boolean = false,
+) {
+    val remainingSeconds: Int
+        get() = ((startedAtMs + durationMs - System.currentTimeMillis()) / 1000L).coerceAtLeast(0L).toInt()
+    val isExpired: Boolean
+        get() = remainingSeconds <= 0
+}
+
 data class UiState(
     val isSpeaking: Boolean = false,
     val isRequestingFloor: Boolean = false,
@@ -120,6 +143,7 @@ data class UiState(
     val peerProfile: OperatorProfile? = null,
     val radioPeerName: String? = null,
     val activeIncomingAlert: IncomingAlert? = null,
+    val activeOutboundAlert: OutboundAlertState? = null,
     val isWifiConnected: Boolean = false,
     val alertChannel: AlertChannel = AlertChannel.ALL,
     /** True while automatically retrying a connection that dropped unexpectedly. */
@@ -233,6 +257,28 @@ class MainViewModel @Inject constructor(
         if (rssi == null || rssi == 0) return 3.5f
         alertSignalSmoother.offer(rssi, android.os.SystemClock.elapsedRealtime())
         return alertSignalSmoother.estimateDistanceMeters()
+    }
+
+    private var outboundBroadcastJob: Job? = null
+
+    private fun recordAlertRecipient(receiverName: String, distance: Float?, rssi: Int?) {
+        _uiState.update { state ->
+            val activeOutbound = state.activeOutboundAlert ?: return@update state
+            val existing = activeOutbound.recipients.find { it.peerName == receiverName }
+            val updatedRecipient = existing?.copy(
+                distanceMeters = distance ?: existing.distanceMeters,
+                rssiDbm = rssi ?: existing.rssiDbm,
+                ackTimestampMs = System.currentTimeMillis()
+            ) ?: AlertRecipient(
+                peerName = receiverName,
+                distanceMeters = distance,
+                locationLabel = if (distance != null) "Direct RF Proximity (${String.format(Locale.US, "%.1f", distance)}m)" else "Nearby Radio Mesh",
+                rssiDbm = rssi,
+                ackTimestampMs = System.currentTimeMillis(),
+            )
+            val updatedList = (activeOutbound.recipients.filterNot { it.peerName == receiverName } + updatedRecipient)
+            state.copy(activeOutboundAlert = activeOutbound.copy(recipients = updatedList))
+        }
     }
 
     init {
@@ -360,9 +406,12 @@ class MainViewModel @Inject constructor(
 
         viewModelScope.launch {
             bleAlertScanner.acks.collect { (payloadHash, receiverName) ->
+                val distance = estimateDistanceMeters(bleAlertScanner.latestRssi.value)
+                val rssi = bleAlertScanner.latestRssi.value
+                recordAlertRecipient(receiverName, distance, rssi)
+
                 val ids = recentAlertIds[payloadHash]
                 if (!ids.isNullOrEmpty()) {
-                    val distance = estimateDistanceMeters(bleAlertScanner.latestRssi.value)
                     for (id in ids) {
                         historyDao.addPeerToMessage(id, MessageStatus.DELIVERED, receiverName, distance)
                         outboundQueue.markSent(id, receiverName, distance)
@@ -762,6 +811,8 @@ class MainViewModel @Inject constructor(
                         val payloadHash = parts.getOrNull(0)?.toIntOrNull() ?: return@launch
                         val receiverName = parts.getOrNull(1)?.takeIf { it.isNotBlank() } ?: "Peer (LAN)"
                         val distance = estimateDistanceMeters(bleAlertScanner.latestRssi.value)
+                        val rssi = bleAlertScanner.latestRssi.value
+                        recordAlertRecipient(receiverName, distance, rssi)
                         
                         val ids = recentAlertIds[payloadHash]
                         if (!ids.isNullOrEmpty()) {
@@ -1258,41 +1309,64 @@ class MainViewModel @Inject constructor(
         relayEngine.markOriginated(alertPacket)
         alertDeliveryTracker.trackAlert(sequence, System.currentTimeMillis(), peerCount = _uiState.value.pairedDevices.size)
 
-        // 1. Connectionless BLE Broadcast (If ALL or BLUETOOTH)
-        if (channel == AlertChannel.ALL || channel == AlertChannel.BLUETOOTH) {
-            val btAdapter = (context.getSystemService(Context.BLUETOOTH_SERVICE) as? android.bluetooth.BluetoothManager)?.adapter
-                ?: android.bluetooth.BluetoothAdapter.getDefaultAdapter()
-            if (btAdapter == null || !btAdapter.isEnabled) {
-                AppLog.w("MainViewModel", "Bluetooth is disabled, cannot broadcast BLE alert")
-                viewModelScope.launch {
-                    _snackbarMessage.emit("Note: Bluetooth is OFF. Turn ON Bluetooth for BLE mesh alerts.")
+        val outboundState = OutboundAlertState(
+            sequence = sequence,
+            content = content,
+            language = lang,
+            startedAtMs = System.currentTimeMillis(),
+            durationMs = 300_000L, // 5 minutes broadcast window
+            recipients = emptyList(),
+            isMinimized = false,
+        )
+        _uiState.update { it.copy(activeOutboundAlert = outboundState, activeIncomingAlert = null) }
+
+        outboundBroadcastJob?.cancel()
+        outboundBroadcastJob = viewModelScope.launch(Dispatchers.IO) {
+            // 1. Connectionless BLE Broadcast
+            if (channel == AlertChannel.ALL || channel == AlertChannel.BLUETOOTH) {
+                val btAdapter = (context.getSystemService(Context.BLUETOOTH_SERVICE) as? android.bluetooth.BluetoothManager)?.adapter
+                    ?: android.bluetooth.BluetoothAdapter.getDefaultAdapter()
+                if (btAdapter != null && btAdapter.isEnabled) {
+                    try {
+                        bleAlertBroadcaster.broadcastAlert(lang, content, sequence.toLong(), senderName, ttl = 3, durationMs = 300_000L)
+                    } catch (e: Exception) {
+                        AppLog.e("MainViewModel", "BLE broadcast crashed", e)
+                    }
                 }
-            } else {
+            }
+
+            // 2. Wi-Fi Direct Broadcast
+            if (channel == AlertChannel.ALL || channel == AlertChannel.WIFI) {
                 try {
-                    bleAlertBroadcaster.broadcastAlert(lang, content, sequence.toLong(), senderName, ttl = 3)
+                    wifiAlertBroadcaster.broadcastAlert(lang, content, sequence.toLong(), senderName, durationMs = 300_000L)
                 } catch (e: Exception) {
-                    AppLog.e("MainViewModel", "BLE broadcast crashed", e)
+                    AppLog.e("MainViewModel", "Wi-Fi broadcast crashed", e)
                 }
             }
-        }
 
-        // 2. Wi-Fi Direct and Subnet UDP Broadcast (If ALL or WIFI)
-        if (channel == AlertChannel.ALL || channel == AlertChannel.WIFI) {
-            try {
-                wifiAlertBroadcaster.broadcastAlert(lang, content, sequence.toLong(), senderName)
-            } catch (e: Exception) {
-                AppLog.e("MainViewModel", "Wi-Fi broadcast crashed", e)
+            // 3. Periodic LAN Subnet UDP Burst every 6 seconds while broadcast active
+            while (kotlinx.coroutines.isActive) {
+                val current = _uiState.value.activeOutboundAlert
+                if (current == null || current.sequence != sequence || current.isExpired) {
+                    break
+                }
+                if (channel == AlertChannel.ALL || channel == AlertChannel.WIFI) {
+                    try {
+                        lanAlertManager.sendBroadcastAlert(
+                            language = lang,
+                            content = content,
+                            sequence = sequence,
+                            senderName = senderName ?: "Emergency Unit",
+                        )
+                    } catch (e: Exception) {
+                        AppLog.w("MainViewModel", "LAN periodic burst failed: ${e.message}")
+                    }
+                }
+                delay(6_000L)
             }
 
-            try {
-                lanAlertManager.sendBroadcastAlert(
-                    language = lang,
-                    content = content,
-                    sequence = sequence,
-                    senderName = senderName
-                )
-            } catch (e: Exception) {
-                AppLog.w("MainViewModel", "LAN broadcast alert send failed: ${e.message}")
+            if (_uiState.value.activeOutboundAlert?.sequence == sequence) {
+                stopAlertBroadcast()
             }
         }
 
@@ -1303,7 +1377,6 @@ class MainViewModel @Inject constructor(
             receivedAtMs = System.currentTimeMillis(),
             senderName = senderName ?: "You",
         )
-        _uiState.update { it.copy(activeIncomingAlert = localAlert) }
         viewModelScope.launch(Dispatchers.IO) {
             alertPlayer.play(localAlert)
         }
@@ -1635,9 +1708,24 @@ class MainViewModel @Inject constructor(
         publishQueues()
     }
 
+    fun minimizeOutboundAlert() {
+        _uiState.update { it.copy(activeOutboundAlert = it.activeOutboundAlert?.copy(isMinimized = true)) }
+    }
+
+    fun expandOutboundAlert() {
+        _uiState.update { it.copy(activeOutboundAlert = it.activeOutboundAlert?.copy(isMinimized = false)) }
+    }
+
+    fun stopOutboundAlert() {
+        stopAlertBroadcast()
+    }
+
     fun stopAlertBroadcast() {
+        outboundBroadcastJob?.cancel()
+        outboundBroadcastJob = null
         bleAlertBroadcaster.stopBroadcasting()
         wifiAlertBroadcaster.stopBroadcasting()
+        alertPlayer.dismissActiveAlert()
         for (item in outboundQueue.snapshot()) {
             if (item.isAlert) {
                 outboundQueue.discard(item.id)
@@ -1645,7 +1733,7 @@ class MainViewModel @Inject constructor(
             }
         }
         publishQueues()
-        _uiState.update { it.copy(alertSending = false, notice = null) }
+        _uiState.update { it.copy(alertSending = false, activeOutboundAlert = null, notice = null) }
     }
     private val profileSequence = AtomicInteger(0)
 

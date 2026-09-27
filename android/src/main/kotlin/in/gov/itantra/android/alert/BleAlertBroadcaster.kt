@@ -22,8 +22,17 @@ class BleAlertBroadcaster(private val context: Context) {
     private var advertiseCallback: AdvertiseCallback? = null
     private var advertiseAckCallback: AdvertiseCallback? = null
 
+    private var stopBroadcastRunnable: Runnable? = null
+
     @SuppressLint("MissingPermission")
-    fun broadcastAlert(language: Language, content: AlertContent, sequence: Long, senderName: String? = null, ttl: Int = 3) {
+    fun broadcastAlert(
+        language: Language,
+        content: AlertContent,
+        sequence: Long,
+        senderName: String? = null,
+        ttl: Int = 3,
+        durationMs: Long = 300_000L, // 5 minutes default
+    ) {
         val adapter = (context.getSystemService(Context.BLUETOOTH_SERVICE) as? BluetoothManager)?.adapter
             ?: android.bluetooth.BluetoothAdapter.getDefaultAdapter()
         if (adapter == null || !adapter.isEnabled) {
@@ -81,9 +90,9 @@ class BleAlertBroadcaster(private val context: Context) {
             advertiser.startAdvertising(settings, data, scanResponse, callback)
             advertiseCallback = callback
 
-            handler.postDelayed({
-                stopBroadcasting()
-            }, 30_000)
+            val runnable = Runnable { stopBroadcasting() }
+            stopBroadcastRunnable = runnable
+            handler.postDelayed(runnable, durationMs)
         } catch (e: Exception) {
             AppLog.e("BleAlertBroadcaster", "Error starting BLE advertising", e)
         }
@@ -152,6 +161,8 @@ class BleAlertBroadcaster(private val context: Context) {
 
     @SuppressLint("MissingPermission")
     fun stopBroadcasting() {
+        stopBroadcastRunnable?.let { handler.removeCallbacks(it) }
+        stopBroadcastRunnable = null
         if (!isAdvertising) return
         val cb = advertiseCallback ?: return
         try {
