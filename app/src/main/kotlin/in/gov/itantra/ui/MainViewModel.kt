@@ -1559,6 +1559,12 @@ class MainViewModel @Inject constructor(
     }
 
     fun deleteQueuedMessage(id: String) {
+        val queued = outboundQueue.snapshot().firstOrNull { it.id == id }
+        if (queued != null && queued.isAlert) {
+            bleAlertBroadcaster.stopBroadcasting()
+            wifiAlertBroadcaster.stopBroadcasting()
+            recentAlertIds.remove(queued.text.hashCode())
+        }
         outboundQueue.discard(id)
         viewModelScope.launch(Dispatchers.IO) {
             try {
@@ -1571,6 +1577,21 @@ class MainViewModel @Inject constructor(
     }
 
     fun retryQueuedMessage(id: String) {
+        val queued = outboundQueue.snapshot().firstOrNull { it.id == id }
+        if (queued != null && queued.isAlert) {
+            val content = AlertTemplate.fromWirePayload(queued.text)
+            outboundQueue.retry(id)
+            viewModelScope.launch(Dispatchers.IO) {
+                try {
+                    historyDao.updateMessageStatus(id, MessageStatus.QUEUED)
+                } catch (e: Exception) {
+                    AppLog.w("MainViewModel", "Failed to update history status for queued alert: ${e.message}")
+                }
+            }
+            sendAlert(content)
+            return
+        }
+
         outboundQueue.retry(id)
         viewModelScope.launch(Dispatchers.IO) {
             try {
@@ -1584,6 +1605,12 @@ class MainViewModel @Inject constructor(
     }
 
     fun deleteHistoryMessage(id: String) {
+        val queued = outboundQueue.snapshot().firstOrNull { it.id == id }
+        if (queued != null && queued.isAlert) {
+            bleAlertBroadcaster.stopBroadcasting()
+            wifiAlertBroadcaster.stopBroadcasting()
+            recentAlertIds.remove(queued.text.hashCode())
+        }
         outboundQueue.discard(id)
         inbox.discard(id)
         viewModelScope.launch(Dispatchers.IO) {
@@ -1594,6 +1621,19 @@ class MainViewModel @Inject constructor(
             }
         }
         publishQueues()
+    }
+
+    fun stopAlertBroadcast() {
+        bleAlertBroadcaster.stopBroadcasting()
+        wifiAlertBroadcaster.stopBroadcasting()
+        for (item in outboundQueue.snapshot()) {
+            if (item.isAlert) {
+                outboundQueue.discard(item.id)
+                recentAlertIds.remove(item.text.hashCode())
+            }
+        }
+        publishQueues()
+        _uiState.update { it.copy(alertSending = false, notice = null) }
     }
     private val profileSequence = AtomicInteger(0)
 
