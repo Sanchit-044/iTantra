@@ -272,6 +272,7 @@ object AppModule {
                     contentType = android.media.AudioAttributes.CONTENT_TYPE_SPEECH,
                 )
             },
+            repeatDurationMs = 120_000L,
         )
     }
 

@@ -22,5 +22,7 @@ data class HistoryMessage(
     val direction: MessageDirection,
     val status: MessageStatus,
     val peerName: String? = null,
-    val isAlert: Boolean = false
+    val isAlert: Boolean = false,
+    val locationLabel: String? = null,
+    val distanceMeters: Float? = null,
 )

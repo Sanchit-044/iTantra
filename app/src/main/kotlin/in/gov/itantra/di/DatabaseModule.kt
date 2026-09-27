@@ -21,7 +21,8 @@ object DatabaseModule {
             context,
             AppDatabase::class.java,
             "itantra_database"
-        ).build()
+        ).fallbackToDestructiveMigration()
+        .build()
     }
 
     @Provides
