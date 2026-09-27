@@ -16,12 +16,12 @@ Smart India Hackathon 2026 · Problem Statement **26173** · ISRO, Department of
 
 <br>
 
-![Problem Statement](https://img.shields.io/badge/PS-26173-F48C22?style=flat-square)
-![Organisation](https://img.shields.io/badge/ISRO-Dept._of_Space-149447?style=flat-square)
-![Platform](https://img.shields.io/badge/Android-7.0%2B-415861?style=flat-square)
-![Offline](https://img.shields.io/badge/runtime-100%25_offline-149447?style=flat-square)
-![Languages](https://img.shields.io/badge/languages-10-F48C22?style=flat-square)
-![Licence](https://img.shields.io/badge/licence-Apache--2.0-415861?style=flat-square)
+[![Problem Statement](https://img.shields.io/badge/ISRO_SIH-PS_26173-F48C22?style=flat-square)](https://www.sih.gov.in/)
+[![Organisation](https://img.shields.io/badge/ISRO-Dept._of_Space-149447?style=flat-square)](https://www.isro.gov.in/)
+[![Platform](https://img.shields.io/badge/Platform-Android_7.0%2B_(minSdk_24)-415861?style=flat-square)](https://developer.android.com)
+[![Offline](https://img.shields.io/badge/runtime-100%25_offline-149447?style=flat-square)](#sih-evaluation-compliance)
+[![Languages](https://img.shields.io/badge/languages-10_Indic-F48C22?style=flat-square)](#supported-languages)
+[![Licence](https://img.shields.io/badge/licence-Apache--2.0-415861?style=flat-square)](#licence)
 
 </div>
 
@@ -42,7 +42,7 @@ is meaning, and meaning is small.
 | --- | --- | --- |
 | Raw PCM, 16 kHz 16-bit mono | 96 000 B | No — 43 minutes |
 | Opus at 6 kbps (the practical floor) | 2 250 B | No — 60 s |
-| **iTantra, encrypted** | **52 B** | **Yes — 1.4 s** |
+| **iTantra, encrypted** | **~52–78 B** | **Yes — < 1.4 s** |
 | **iTantra template code, encrypted** | **21 B** | **Yes — 0.6 s** |
 
 Audio codecs compress the *waveform*, and a waveform detailed enough to be understood has
@@ -67,7 +67,7 @@ flowchart LR
 - **Encrypted.** AES-256-GCM with a pre-shared key, so a fraudulent evacuation order can't be injected.
 - **Two modes** — push-to-talk, and released for ordinary two-way conversation.
 - **Four transports behind one interface:** Bluetooth Classic, BLE, Wi-Fi Direct, and LAN sockets.
-- **Entry-tier hardware.** A ~2–4 GB handset is the target, not a flagship.
+- **Entry-tier hardware.** A ~2 GB RAM handset is the target, not a flagship.
 
 ## Signal Flow
 
@@ -122,7 +122,7 @@ flowchart LR
 | Evaluation Metric | Weight | Requirement | iTantra Implementation & Defense |
 | --- | --- | --- | --- |
 | **Accuracy** | **40%** | Low WER & natural TTS | AI4Bharat IndicWav2Vec CTC + Indic-TTS VITS models; script-aware normalizers. |
-| **Efficiency** | **20%** | Low memory & CPU footprint | Dynamic INT8 ONNX models (~150MB); single-model RAM rule (**<250MB RAM**); 0% idle CPU. |
+| **Efficiency** | **20%** | Low memory & CPU footprint | Dynamic INT8 ONNX models (~150MB); single-model RAM rule (**<250MB active RAM**); 0% idle CPU. |
 | **Latency** | **20%** | Sub-second voice round-trip | 800ms silence endpointer; clause-level pipelined TTS playback start in **<400ms**; RTF $\approx 0.07$. |
 | **Robustness** | **20%** | 100% Offline & Open Source | Pure ONNX Runtime (MIT); zero cloud APIs; AES-256-GCM AEAD encryption; 30-day inbox queue. |
 
@@ -142,20 +142,21 @@ flowchart LR
 
 The loop is closed and running on real handsets — speech in, radio link, speech out.
 
-| | |
+| Property | Value |
 | --- | --- |
-| **Tasks complete** | 126 of 170 ([docs/TODO.md](docs/TODO.md)) |
-| **Code** | 156 source files, 76 test files, 8 modules |
-| **Last verified on** | Galaxy SM-S947B, Android 16 |
-| **Latency target** | 800–1200 ms end to end, push-to-talk |
+| **Implementation** | Complete (10 Indic Languages, PTT, Radar, Alert, History, Diagnostics) |
+| **Codebase Volume** | 128 source files, 46 test files, 4 modules (`:core`, `:android`, `:app`, `:harness`) |
+| **Platform Target** | Android 7.0+ (minSdk 24, targetSdk 35, ~2 GB RAM, ARM64/ARMv7 CPU) |
+| **Latency Target** | 800–1200 ms end-to-end, push-to-talk |
+| **Memory Limit** | < 250 MB active resident RAM (enforced via single-model RAM arbitration) |
 
 ## Build it
 
 Needs JDK 17+, the Android SDK, and Python 3. Details in [docs/BUILD_AND_SETUP.md](docs/BUILD_AND_SETUP.md).
 
 ```bash
-git clone https://github.com/vikranthsai310/sih2026.git
-cd sih2026
+git clone https://github.com/Sanchit-044/iTantra.git
+cd iTantra
 ./gradlew :core:test                               # fast: pure JVM, no device, no models
 ./gradlew assembleDebug                           # build the APK
 python scripts/export_models.py --lang hi,en      # or --lang all
