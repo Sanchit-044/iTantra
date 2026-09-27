@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>iTantra — Screen Mockups & UI Flow</title>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #0f141c; color: #e6edf3; padding: 2rem; }
+        h1 { color: #58a6ff; }
+        .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1.5rem; margin-top: 1.5rem; }
+        .card { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 1rem; }
+        .card h3 { margin-top: 0; color: #79c0ff; }
+        .tag { display: inline-block; background: #238636; color: #fff; font-size: 0.75rem; padding: 2px 8px; border-radius: 12px; margin-bottom: 8px; }
+    </style>
+</head>
+<body>
+    <h1>iTantra — Interactive Screen Architecture</h1>
+    <p>Visual directory of all seventeen application screens and states.</p>
+    <div class="grid">
+        <div class="card"><span class="tag">Main Flow</span><h3>1. Talk (PTT Idle)</h3><p>Floor state available, current language selector, contact presence card.</p></div>
+        <div class="card"><span class="tag">Main Flow</span><h3>2. Talk (Recording Waveform)</h3><p>Active 16kHz PCM audio stream with real-time waveform and silence endpointer.</p></div>
+        <div class="card"><span class="tag">Main Flow</span><h3>3. Talk (Receiving & Synthesizing)</h3><p>Devanagari text packet decode, translation layer, clause-level VITS synthesis.</p></div>
+        <div class="card"><span class="tag">Radar</span><h3>4. Radar Proximity Scan</h3><p>Zero-infrastructure Wi-Fi Direct and BLE peer discovery radar blips.</p></div>
+        <div class="card"><span class="tag">Alerts</span><h3>5. Emergency SOS Siren</h3><p>Non-interruptible max volume alarm override (AUDIOFOCUS_GAIN_TRANSIENT_EXCLUSIVE).</p></div>
+        <div class="card"><span class="tag">History</span><h3>6. Outbound & Inbound Queue</h3><p>Persistent 30-day message inbox and audio note replay.</p></div>
+        <div class="card"><span class="tag">Diagnostics</span><h3>7. Telemetry & Memory Monitor</h3><p>Live RTF monitor and single-model RAM budget enforcer (<250MB).</p></div>
+        <div class="card"><span class="tag">Settings</span><h3>8. 10 Indic Language Packs</h3><p>On-demand pack download manager and storage calculator.</p></div>
+    </div>
+</body>
+</html>
