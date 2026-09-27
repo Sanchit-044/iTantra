@@ -3,6 +3,10 @@ package `in`.gov.itantra.ui
 import android.annotation.SuppressLint
 import android.bluetooth.BluetoothAdapter
 import android.content.Context
+import android.media.AudioDeviceInfo
+import android.media.AudioManager
+import android.os.Build
+import java.util.Locale
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -28,6 +32,8 @@ import `in`.gov.itantra.core.profile.ProfileCodec
 import `in`.gov.itantra.profile.FileProfileStore
 import java.io.File
 import java.util.concurrent.atomic.AtomicInteger
+import `in`.gov.itantra.core.relay.RelayEngine
+import `in`.gov.itantra.core.alert.AlertDeliveryTracker
 import `in`.gov.itantra.core.stt.LanguageIdEngine
 import `in`.gov.itantra.core.stt.resolveSpokenLanguage
 import `in`.gov.itantra.core.translate.TranslationEngine
@@ -78,6 +84,12 @@ enum class AlertChannel {
     ALL, WIFI, BLUETOOTH
 }
 
+enum class AudioOutputDevice {
+    SPEAKER,
+    EARPIECE,
+    BLUETOOTH
+}
+
 data class BluetoothDeviceInfo(val name: String, val address: String)
 
 data class UiState(
@@ -101,6 +113,9 @@ data class UiState(
     val queuedOutbound: List<OutboundMessage> = emptyList(),
     val inbox: List<InboxMessage> = emptyList(),
     val playingInboxId: String? = null,
+    val isPlayingAudio: Boolean = false,
+    val receivingText: String = "",
+    val audioOutputDevice: AudioOutputDevice = AudioOutputDevice.SPEAKER,
     val localProfile: OperatorProfile = OperatorProfile(),
     val peerProfile: OperatorProfile? = null,
     val radioPeerName: String? = null,
@@ -116,7 +131,7 @@ data class UiState(
     val alertRecordingText: String = "",
 ) {
     val canSendAlert: Boolean
-        get() = (connectionState == ConnectionState.CONNECTED && pairingConfirmed) || isWifiConnected
+        get() = true
 
     val talkingToName: String
         get() = peerProfile?.displayName
@@ -208,6 +223,16 @@ class MainViewModel @Inject constructor(
         }
     }
 
+    private val relayEngine = RelayEngine(localNodeId = "local_node")
+    private val alertDeliveryTracker = AlertDeliveryTracker()
+
+    private fun estimateDistanceMeters(rssi: Int?): Float {
+        if (rssi == null || rssi == 0) return 3.5f
+        val ratio = (-59.0 - rssi) / (10.0 * 2.0)
+        val d = Math.pow(10.0, ratio).toFloat()
+        return d.coerceIn(0.5f, 50.0f)
+    }
+
     init {
         for (item in outboundQueue.snapshot()) {
             if (item.isAlert) {
@@ -225,29 +250,34 @@ class MainViewModel @Inject constructor(
                     if (alertKey != lastInsertedAlertKey) {
                         lastInsertedAlertKey = alertKey
                         lastInsertedAlertHistoryId = java.util.UUID.randomUUID().toString()
+                        val distance = estimateDistanceMeters(bleAlertScanner.latestRssi.value)
+                        val location = "Emergency Beacon"
                         try {
+                            val alertWire = alert.content.toWirePayload()
                             historyDao.insertMessage(
                                 HistoryMessage(
                                     id = lastInsertedAlertHistoryId,
-                                    text = alert.content.toWirePayload(),
+                                    text = alertWire,
                                     language = alert.language,
                                     timestampMs = alert.receivedAtMs,
                                     direction = MessageDirection.INBOUND,
                                     status = MessageStatus.RECEIVED,
                                     peerName = alert.senderName ?: _uiState.value.talkingToName,
-                                    isAlert = true
+                                    isAlert = true,
+                                    locationLabel = location,
+                                    distanceMeters = distance,
                                 )
                             )
                             if (lanAlertManager.isWifiConnected()) {
                                 lanAlertManager.sendBroadcastAck(
                                     sequence = alert.sequence,
-                                    payloadHash = alert.content.toWirePayload().hashCode(),
+                                    payloadHash = alertWire.hashCode(),
                                     receiverName = _uiState.value.localProfile.displayName
                                 )
                             }
                             // Always send BLE ACK for fully offline cases
                             bleAlertBroadcaster.broadcastAck(
-                                payloadHash = alert.content.toWirePayload().hashCode(),
+                                payloadHash = alertWire.hashCode(),
                                 receiverName = _uiState.value.localProfile.displayName
                             )
                         } catch (e: Exception) {
@@ -255,17 +285,17 @@ class MainViewModel @Inject constructor(
                         }
                     } else if (alert.senderName != null) {
                         try {
+                            val distance = estimateDistanceMeters(bleAlertScanner.latestRssi.value)
                             historyDao.updateMessageStatusAndPeer(
                                 id = lastInsertedAlertHistoryId,
                                 status = MessageStatus.RECEIVED,
-                                peerName = alert.senderName
+                                peerName = alert.senderName,
+                                distanceMeters = distance,
                             )
                         } catch (e: Exception) {
                             AppLog.w("MainViewModel", "Failed to update alert peer name: ${e.message}")
                         }
                     }
-                } else {
-                    _uiState.update { it.copy(activeIncomingAlert = null) }
                 }
             }
         }
@@ -303,26 +333,36 @@ class MainViewModel @Inject constructor(
         lanAlertManager.startListening { packet ->
             onReceive(packet)
         }
+        bleAlertScanner.startScanning()
         refreshWifiState()
         lanAlertManager.observeWifiState { isConnected ->
             _uiState.update { it.copy(isWifiConnected = isConnected) }
         }
-        
+
+        viewModelScope.launch {
+            bleAlertScanner.alerts.collect { packet ->
+                onReceive(packet)
+            }
+        }
+
         viewModelScope.launch {
             bleAlertScanner.acks.collect { (payloadHash, receiverName) ->
                 val ids = recentAlertIds[payloadHash]
                 if (!ids.isNullOrEmpty()) {
+                    val distance = estimateDistanceMeters(bleAlertScanner.latestRssi.value)
                     for (id in ids) {
-                        historyDao.addPeerToMessage(id, MessageStatus.DELIVERED, receiverName)
-                        outboundQueue.discard(id)
+                        historyDao.addPeerToMessage(id, MessageStatus.DELIVERED, receiverName, distance)
+                        outboundQueue.markSent(id, receiverName, distance)
                     }
-                    _snackbarMessage.emit("Alert received by $receiverName (via BLE)")
-                    
+                    val progress = alertDeliveryTracker.onAck(payloadHash, receiverName, System.currentTimeMillis())
+                    val deliveryInfo = progress?.display() ?: receiverName
+                    _snackbarMessage.emit("Alert delivered to $deliveryInfo (~${String.format(Locale.US, "%.1f", distance)}m)")
+
                     val currentNotice = _uiState.value.notice
                     if (currentNotice is UserNotice.Raw && currentNotice.detail?.contains("broadcasting nearby") == true) {
                         _uiState.update { it.copy(notice = null) }
                     }
-                    
+
                     publishQueues()
                 }
             }
@@ -334,6 +374,7 @@ class MainViewModel @Inject constructor(
         userInitiatedDisconnect.set(true)
         reconnectJob?.cancel()
         lanAlertManager.stopListening()
+        bleAlertScanner.stopScanning()
         transport?.setListener(null)
         transport?.disconnect()
         if (diagnostics.attachedTransport === transport) {
@@ -466,10 +507,15 @@ class MainViewModel @Inject constructor(
                         }
                     },
                     onSentLive = { text, timestampMs ->
+                        val queuedMsg = outboundQueue.enqueue(spoken, text, isAlert = false)
+                        if (queuedMsg != null) {
+                            outboundQueue.markSent(queuedMsg.id, _uiState.value.talkingToName)
+                            publishQueues()
+                        }
                         viewModelScope.launch(Dispatchers.IO) {
                             historyDao.insertMessage(
                                 HistoryMessage(
-                                    id = UUID.randomUUID().toString(),
+                                    id = queuedMsg?.id ?: UUID.randomUUID().toString(),
                                     text = text,
                                     language = spoken,
                                     timestampMs = timestampMs,
@@ -612,6 +658,72 @@ class MainViewModel @Inject constructor(
                                 )
                             }
                         }
+
+                        // Immediately archive into inbox and history so it displays in Recent Chats on the Talk screen
+                        val alertText = when (val c = alertToPlay.content) {
+                            is AlertContent.Template -> c.template.phrase(currentLang)
+                            is AlertContent.Custom -> c.text
+                        }
+                        val alertId = "alert_${alertToPlay.sequence}_${alertToPlay.receivedAtMs}"
+                        val effectiveSender = senderName ?: _uiState.value.talkingToName
+                        val distance = estimateDistanceMeters(bleAlertScanner.latestRssi.value)
+                        val location = "Emergency Beacon"
+                        inbox.offer(
+                            id = alertId,
+                            language = alertToPlay.language,
+                            text = alertText,
+                            receivedAtMs = alertToPlay.receivedAtMs,
+                            senderName = effectiveSender,
+                            isAlert = true,
+                            locationLabel = location,
+                            distanceMeters = distance,
+                        )
+                        historyDao.insertMessage(
+                            HistoryMessage(
+                                id = alertId,
+                                text = alertText,
+                                language = alertToPlay.language,
+                                timestampMs = alertToPlay.receivedAtMs,
+                                direction = MessageDirection.INBOUND,
+                                status = MessageStatus.RECEIVED,
+                                peerName = effectiveSender,
+                                isAlert = true,
+                                locationLabel = location,
+                                distanceMeters = distance,
+                            )
+                        )
+                        _uiState.update { it.copy(activeIncomingAlert = alertToPlay) }
+                        publishQueues()
+
+                        // Multi-Hop Relay Hopping: Re-broadcast alert across BLE & LAN to cover long distance communication
+                        val currentTtl = if (packet.flags > 0) packet.flags else 3
+                        val relayDecision = relayEngine.consider(packet, senderNodeId = senderName, ttl = currentTtl)
+                        if (relayDecision is RelayEngine.Decision.Forward) {
+                            viewModelScope.launch(Dispatchers.IO) {
+                                delay(relayDecision.delayMillis)
+                                val nextTtl = currentTtl - 1
+                                if (nextTtl > 0) {
+                                    AppLog.d("MainViewModel", "Relaying emergency alert multi-hop (nextTtl=$nextTtl)")
+                                    bleAlertBroadcaster.broadcastAlert(
+                                        language = alertToPlay.language,
+                                        content = alertToPlay.content,
+                                        sequence = alertToPlay.sequence.toLong(),
+                                        senderName = senderName,
+                                        ttl = nextTtl,
+                                    )
+                                    if (lanAlertManager.isWifiConnected()) {
+                                        lanAlertManager.sendBroadcastAlert(
+                                            language = alertToPlay.language,
+                                            content = alertToPlay.content,
+                                            sequence = alertToPlay.sequence,
+                                            senderName = senderName ?: "Relayed Peer",
+                                            ttl = nextTtl,
+                                        )
+                                    }
+                                }
+                            }
+                        }
+
                         alertPlayer.play(alertToPlay)
                         drainDeferredNormals()
                     }
@@ -635,14 +747,17 @@ class MainViewModel @Inject constructor(
                         val parts = packet.text.split(":")
                         val payloadHash = parts.getOrNull(0)?.toIntOrNull() ?: return@launch
                         val receiverName = parts.getOrNull(1)?.takeIf { it.isNotBlank() } ?: "Peer (LAN)"
+                        val distance = estimateDistanceMeters(bleAlertScanner.latestRssi.value)
                         
                         val ids = recentAlertIds[payloadHash]
                         if (!ids.isNullOrEmpty()) {
                             for (id in ids) {
-                                historyDao.addPeerToMessage(id, MessageStatus.DELIVERED, receiverName)
-                                outboundQueue.discard(id)
+                                historyDao.addPeerToMessage(id, MessageStatus.DELIVERED, receiverName, distance)
+                                outboundQueue.markSent(id, receiverName, distance)
                             }
-                            _snackbarMessage.emit("Alert received by $receiverName")
+                            val progress = alertDeliveryTracker.onAck(payloadHash, receiverName, System.currentTimeMillis())
+                            val deliveryInfo = progress?.display() ?: receiverName
+                            _snackbarMessage.emit("Alert delivered to $deliveryInfo (~${String.format(Locale.US, "%.1f", distance)}m)")
                             val currentNotice = _uiState.value.notice
                             if (currentNotice is UserNotice.Raw && currentNotice.detail?.contains("broadcasting nearby") == true) {
                                 _uiState.update { it.copy(notice = null) }
@@ -708,7 +823,12 @@ class MainViewModel @Inject constructor(
     private suspend fun playNormalOrDefer(packet: Packet) {
         val accepted = alertPlayer.tryPlayNormal(packet.sequence) { }
         if (accepted) {
-            receivePttUseCase.execute(packet, _uiState.value.currentLanguage)
+            _uiState.update { it.copy(isPlayingAudio = true, receivingText = packet.text) }
+            try {
+                receivePttUseCase.execute(packet, _uiState.value.currentLanguage)
+            } finally {
+                _uiState.update { it.copy(isPlayingAudio = false, receivingText = "") }
+            }
         } else {
             synchronized(deferredNormals) {
                 if (deferredNormals.size < MAX_DEFERRED_NORMAL) {
@@ -726,7 +846,12 @@ class MainViewModel @Inject constructor(
                 synchronized(deferredNormals) { deferredNormals.addFirst(next) }
                 break
             }
-            receivePttUseCase.execute(next, _uiState.value.currentLanguage)
+            _uiState.update { it.copy(isPlayingAudio = true, receivingText = next.text) }
+            try {
+                receivePttUseCase.execute(next, _uiState.value.currentLanguage)
+            } finally {
+                _uiState.update { it.copy(isPlayingAudio = false, receivingText = "") }
+            }
         }
     }
 
@@ -949,6 +1074,40 @@ class MainViewModel @Inject constructor(
     }
 
     /**
+     * Dismisses the active incoming emergency alarm, stops the audio playback,
+     * and archives the emergency SOS message directly into the inbox with high-priority alert styling.
+     */
+    fun dismissAlert() {
+        val active = _uiState.value.activeIncomingAlert
+        if (active != null) {
+            val alertText = when (val c = active.content) {
+                is AlertContent.Template -> c.template.phrase(_uiState.value.currentLanguage)
+                is AlertContent.Custom -> c.text
+            }
+            inbox.offer(
+                id = "alert_${active.sequence}_${active.receivedAtMs}",
+                language = active.language,
+                text = alertText,
+                receivedAtMs = active.receivedAtMs,
+                senderName = active.senderName ?: _uiState.value.talkingToName,
+                isAlert = true,
+                locationLabel = "Emergency Beacon",
+            )
+            publishQueues()
+        }
+        alertPlayer.dismissActiveAlert()
+        _uiState.update { it.copy(activeIncomingAlert = null) }
+    }
+
+    /**
+     * Silences the active emergency audio playback (e.g., when switching to acoustic tracking mode)
+     * without dismissing the visual alert overlay.
+     */
+    fun muteAlertAudio() {
+        alertPlayer.dismissActiveAlert()
+    }
+
+    /**
      * Sends a canned quick-chat text the same way PTT sends a recognized utterance: while the
      * link is live, it requests the floor and -- once [onFloorGranted] fires -- puts the text on
      * the air tagged MessageType.NORMAL, so the receiver plays/shows it immediately instead of
@@ -992,10 +1151,15 @@ class MainViewModel @Inject constructor(
             )
             currentTransport.send(packet)
             AppLog.d("MainViewModel", "Sent quick chat live: sq=${packet.sequence}")
+            val queuedMsg = outboundQueue.enqueue(lang, text, isAlert = false)
+            if (queuedMsg != null) {
+                outboundQueue.markSent(queuedMsg.id, _uiState.value.talkingToName)
+                publishQueues()
+            }
             viewModelScope.launch(Dispatchers.IO) {
                 historyDao.insertMessage(
                     HistoryMessage(
-                        id = UUID.randomUUID().toString(),
+                        id = queuedMsg?.id ?: UUID.randomUUID().toString(),
                         text = text,
                         language = lang,
                         timestampMs = packet.timestampMs,
@@ -1053,15 +1217,6 @@ class MainViewModel @Inject constructor(
         }
     }
 
-    fun deleteQueuedMessage(id: String) {
-        outboundQueue.discard(id)
-        publishQueues()
-    }
-
-    fun dismissAlert() {
-        alertPlayer.dismissActiveAlert()
-    }
-
     private val alertSequence = AtomicInteger(0)
 
     fun refreshWifiState() {
@@ -1085,16 +1240,20 @@ class MainViewModel @Inject constructor(
         AppLog.d("MainViewModel", "Triggering broadcasters for sequence $sequence over channel $channel")
         val senderName = _uiState.value.localProfile.displayName
 
-        // 1. Connectionless BLE (If ALL or BLUETOOTH)
+        val alertPacket = Packet.text(MessageType.ALERT, lang, sequence, payload)
+        relayEngine.markOriginated(alertPacket)
+        alertDeliveryTracker.trackAlert(sequence, System.currentTimeMillis(), peerCount = _uiState.value.pairedDevices.size)
+
+        // 1. Connectionless BLE Broadcast (If ALL or BLUETOOTH)
         if (channel == AlertChannel.ALL || channel == AlertChannel.BLUETOOTH) {
             try {
-                bleAlertBroadcaster.broadcastAlert(lang, content, sequence.toLong(), senderName)
+                bleAlertBroadcaster.broadcastAlert(lang, content, sequence.toLong(), senderName, ttl = 3)
             } catch (e: Exception) {
                 AppLog.e("MainViewModel", "BLE broadcast crashed", e)
             }
         }
 
-        // 2. Wi-Fi Direct and LAN (If ALL or WIFI)
+        // 2. Wi-Fi Direct and Subnet UDP Broadcast (If ALL or WIFI)
         if (channel == AlertChannel.ALL || channel == AlertChannel.WIFI) {
             try {
                 wifiAlertBroadcaster.broadcastAlert(lang, content, sequence.toLong(), senderName)
@@ -1102,28 +1261,23 @@ class MainViewModel @Inject constructor(
                 AppLog.e("MainViewModel", "Wi-Fi broadcast crashed", e)
             }
 
-            if (wifiConnected) {
-                try {
-                    lanAlertManager.sendBroadcastAlert(
-                        language = lang,
-                        content = content,
-                        sequence = sequence,
-                        senderName = senderName
-                    )
-                } catch (e: Exception) {
-                    AppLog.w("MainViewModel", "LAN broadcast alert send failed: ${e.message}")
-                }
+            try {
+                lanAlertManager.sendBroadcastAlert(
+                    language = lang,
+                    content = content,
+                    sequence = sequence,
+                    senderName = senderName
+                )
+            } catch (e: Exception) {
+                AppLog.w("MainViewModel", "LAN broadcast alert send failed: ${e.message}")
             }
         }
 
-        // 3. P2P Direct Send or Queue
+        // 3. P2P Direct Stream or Local Broadcast Tracking
         if (!canSendViaP2P) {
             val queuedMsg = outboundQueue.enqueue(lang, payload, isAlert = true)
-            publishQueues()
-            _uiState.update { 
-                it.copy(notice = UserNotice.Raw("Alert broadcasting nearby. Queued for P2P delivery.")) 
-            }
             if (queuedMsg != null) {
+                outboundQueue.markSending(queuedMsg.id)
                 val list = recentAlertIds.getOrPut(payload.hashCode()) { mutableListOf() }
                 if (!list.contains(queuedMsg.id)) list.add(queuedMsg.id)
                 viewModelScope.launch(Dispatchers.IO) {
@@ -1134,12 +1288,16 @@ class MainViewModel @Inject constructor(
                             language = lang,
                             timestampMs = queuedMsg.createdAtMs,
                             direction = MessageDirection.OUTBOUND,
-                            status = MessageStatus.QUEUED,
+                            status = MessageStatus.SENT,
                             peerName = null,
                             isAlert = true
                         )
                     )
                 }
+            }
+            publishQueues()
+            _uiState.update { 
+                it.copy(notice = UserNotice.Raw("Emergency Alert broadcasting on all channels (BLE, Wi-Fi, LAN)...")) 
             }
             return
         }
@@ -1153,10 +1311,15 @@ class MainViewModel @Inject constructor(
                     content = content,
                     pairingConfirmed = true,
                 )
+                val queuedMsg = outboundQueue.enqueue(lang, payload, isAlert = true)
+                if (queuedMsg != null) {
+                    outboundQueue.markSent(queuedMsg.id, _uiState.value.talkingToName)
+                    val list = recentAlertIds.getOrPut(payload.hashCode()) { mutableListOf() }
+                    if (!list.contains(queuedMsg.id)) list.add(queuedMsg.id)
+                    publishQueues()
+                }
                 _uiState.update { it.copy(alertSending = false, notice = UserNotice.AlertSent) }
-                val historyId = UUID.randomUUID().toString()
-                val list = recentAlertIds.getOrPut(payload.hashCode()) { mutableListOf() }
-                if (!list.contains(historyId)) list.add(historyId)
+                val historyId = queuedMsg?.id ?: UUID.randomUUID().toString()
                 historyDao.insertMessage(
                     HistoryMessage(
                         id = historyId,
@@ -1171,9 +1334,10 @@ class MainViewModel @Inject constructor(
                 )
             } catch (e: Exception) {
                 val queuedMsg = outboundQueue.enqueue(lang, payload, isAlert = true)
-                publishQueues()
-                _uiState.update { it.copy(alertSending = false, notice = UserNotice.Raw("Alert queued: ${e.message}")) }
                 if (queuedMsg != null) {
+                    outboundQueue.markSending(queuedMsg.id)
+                    val list = recentAlertIds.getOrPut(payload.hashCode()) { mutableListOf() }
+                    if (!list.contains(queuedMsg.id)) list.add(queuedMsg.id)
                     historyDao.insertMessage(
                         HistoryMessage(
                             id = queuedMsg.id,
@@ -1181,12 +1345,14 @@ class MainViewModel @Inject constructor(
                             language = lang,
                             timestampMs = queuedMsg.createdAtMs,
                             direction = MessageDirection.OUTBOUND,
-                            status = MessageStatus.QUEUED,
+                            status = MessageStatus.SENT,
                             peerName = null,
                             isAlert = true
                         )
                     )
                 }
+                publishQueues()
+                _uiState.update { it.copy(alertSending = false, notice = UserNotice.Raw("Broadcasting alert on BLE & LAN (P2P stream error: ${e.message})")) }
             }
         }
     }
@@ -1262,7 +1428,7 @@ class MainViewModel @Inject constructor(
         val item = inbox.find(id) ?: return
         if (_uiState.value.playingInboxId != null) return
         viewModelScope.launch(Dispatchers.IO) {
-            _uiState.update { it.copy(playingInboxId = id, notice = null) }
+            _uiState.update { it.copy(playingInboxId = id, isPlayingAudio = true, receivingText = item.text, notice = null) }
             try {
                 val currentLang = _uiState.value.currentLanguage
                 val (playText, playLang) = if (item.language == currentLang) {
@@ -1286,14 +1452,124 @@ class MainViewModel @Inject constructor(
             } catch (e: Exception) {
                 _uiState.update { it.copy(notice = UserNotice.PlaybackError(e.message)) }
             } finally {
-                _uiState.update { it.copy(playingInboxId = null) }
+                _uiState.update { it.copy(playingInboxId = null, isPlayingAudio = false, receivingText = "") }
                 publishQueues()
             }
         }
     }
 
+    /**
+     * Sets the active audio output route (Speakerphone, Phone Earpiece, or Bluetooth Headset).
+     */
+    fun setAudioOutputDevice(device: AudioOutputDevice) {
+        _uiState.update { it.copy(audioOutputDevice = device) }
+        try {
+            val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+            when (device) {
+                AudioOutputDevice.SPEAKER -> {
+                    audioManager.mode = AudioManager.MODE_IN_COMMUNICATION
+                    audioManager.isSpeakerphoneOn = true
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                        audioManager.clearCommunicationDevice()
+                        audioManager.availableCommunicationDevices.firstOrNull {
+                            it.type == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER
+                        }?.let {
+                            audioManager.setCommunicationDevice(it)
+                        }
+                    }
+                }
+                AudioOutputDevice.EARPIECE -> {
+                    audioManager.mode = AudioManager.MODE_IN_COMMUNICATION
+                    audioManager.isSpeakerphoneOn = false
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                        audioManager.clearCommunicationDevice()
+                        audioManager.availableCommunicationDevices.firstOrNull {
+                            it.type == AudioDeviceInfo.TYPE_BUILTIN_EARPIECE
+                        }?.let {
+                            audioManager.setCommunicationDevice(it)
+                        }
+                    }
+                }
+                AudioOutputDevice.BLUETOOTH -> {
+                    audioManager.mode = AudioManager.MODE_IN_COMMUNICATION
+                    audioManager.isSpeakerphoneOn = false
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                        audioManager.clearCommunicationDevice()
+                        audioManager.availableCommunicationDevices.firstOrNull {
+                            it.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO ||
+                            it.type == AudioDeviceInfo.TYPE_BLUETOOTH_A2DP ||
+                            it.type == AudioDeviceInfo.TYPE_BLE_HEADSET
+                        }?.let {
+                            audioManager.setCommunicationDevice(it)
+                        }
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            AppLog.w("MainViewModel", "Could not route audio: ${e.message}")
+        }
+    }
+
+    /**
+     * Cycles through available audio output devices.
+     */
+    fun toggleAudioOutputDevice() {
+        val current = _uiState.value.audioOutputDevice
+        val next = when (current) {
+            AudioOutputDevice.SPEAKER -> AudioOutputDevice.EARPIECE
+            AudioOutputDevice.EARPIECE -> AudioOutputDevice.SPEAKER
+            AudioOutputDevice.BLUETOOTH -> AudioOutputDevice.SPEAKER
+        }
+        setAudioOutputDevice(next)
+    }
+
     fun dismissInbox(id: String) {
         inbox.discard(id)
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                historyDao.deleteMessage(id)
+            } catch (e: Exception) {
+                AppLog.w("MainViewModel", "Failed to delete history for inbox item: ${e.message}")
+            }
+        }
+        publishQueues()
+    }
+
+    fun deleteQueuedMessage(id: String) {
+        outboundQueue.discard(id)
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                historyDao.deleteMessage(id)
+            } catch (e: Exception) {
+                AppLog.w("MainViewModel", "Failed to delete history for queued item: ${e.message}")
+            }
+        }
+        publishQueues()
+    }
+
+    fun retryQueuedMessage(id: String) {
+        outboundQueue.retry(id)
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                historyDao.updateMessageStatus(id, MessageStatus.QUEUED)
+            } catch (e: Exception) {
+                AppLog.w("MainViewModel", "Failed to update history status for queued item: ${e.message}")
+            }
+        }
+        publishQueues()
+        if (isLiveReady()) flushQueue()
+    }
+
+    fun deleteHistoryMessage(id: String) {
+        outboundQueue.discard(id)
+        inbox.discard(id)
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                historyDao.deleteMessage(id)
+            } catch (e: Exception) {
+                AppLog.w("MainViewModel", "Failed to delete history message: ${e.message}")
+            }
+        }
         publishQueues()
     }
     private val profileSequence = AtomicInteger(0)

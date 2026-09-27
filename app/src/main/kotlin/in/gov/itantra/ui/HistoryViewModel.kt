@@ -64,4 +64,10 @@ class HistoryViewModel @Inject constructor(
             historyDao.clearHistory()
         }
     }
+
+    fun deleteMessage(id: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            historyDao.deleteMessage(id)
+        }
+    }
 }
