@@ -163,6 +163,7 @@ class MainViewModel @Inject constructor(
     private val bleAlertBroadcaster: `in`.gov.itantra.android.alert.BleAlertBroadcaster,
     private val bleAlertScanner: `in`.gov.itantra.android.alert.BleAlertScanner,
     private val wifiAlertBroadcaster: `in`.gov.itantra.android.alert.WifiAlertBroadcaster,
+    private val wifiAlertScanner: `in`.gov.itantra.android.alert.WifiAlertScanner,
     private val lanAlertManager: LanBroadcastAlertManager,
 ) : ViewModel(), TransportListener {
 
@@ -331,10 +332,9 @@ class MainViewModel @Inject constructor(
         outboundQueue.purgeExpired()
         inbox.purgeExpired()
         publishQueues(notifyIfUnread = true)
-        lanAlertManager.startListening { packet ->
-            onReceive(packet)
-        }
+        lanAlertManager.startListening()
         bleAlertScanner.startScanning()
+        wifiAlertScanner.startScanning()
         refreshWifiState()
         lanAlertManager.observeWifiState { isConnected ->
             _uiState.update { it.copy(isWifiConnected = isConnected) }
@@ -342,6 +342,18 @@ class MainViewModel @Inject constructor(
 
         viewModelScope.launch {
             bleAlertScanner.alerts.collect { packet ->
+                onReceive(packet)
+            }
+        }
+
+        viewModelScope.launch {
+            wifiAlertScanner.alerts.collect { packet ->
+                onReceive(packet)
+            }
+        }
+
+        viewModelScope.launch {
+            lanAlertManager.alerts.collect { packet ->
                 onReceive(packet)
             }
         }
@@ -376,6 +388,7 @@ class MainViewModel @Inject constructor(
         reconnectJob?.cancel()
         lanAlertManager.stopListening()
         bleAlertScanner.stopScanning()
+        wifiAlertScanner.stopScanning()
         transport?.setListener(null)
         transport?.disconnect()
         if (diagnostics.attachedTransport === transport) {

@@ -44,10 +44,18 @@ class LanBroadcastAlertManager(
     // Deduplication cache: Packet signature -> timestamp
     private val recentAlerts = ConcurrentHashMap<String, Long>()
 
+    private val _alerts = kotlinx.coroutines.flow.MutableSharedFlow<Packet>(extraBufferCapacity = 20)
+    val alerts = _alerts.asSharedFlow()
+
+    private val listeners = java.util.concurrent.CopyOnWriteArrayList<(Packet) -> Unit>()
+
     /**
      * Start background UDP listener for incoming LAN emergency alerts.
      */
-    fun startListening(onPacketReceived: (Packet) -> Unit) {
+    fun startListening(onPacketReceived: ((Packet) -> Unit)? = null) {
+        if (onPacketReceived != null && !listeners.contains(onPacketReceived)) {
+            listeners.add(onPacketReceived)
+        }
         if (isListening.getAndSet(true)) return
 
         acquireMulticastLock()
@@ -82,7 +90,10 @@ class LanBroadcastAlertManager(
                             purgeStaleCache(now)
                             if (recentAlerts.putIfAbsent(alertKey, now) == null) {
                                 AppLog.d(TAG, "Received LAN broadcast packet (${packet.type}): ${packet.text}")
-                                onPacketReceived(packet)
+                                _alerts.tryEmit(packet)
+                                for (listener in listeners) {
+                                    runCatching { listener(packet) }
+                                }
                             }
                         }
                     } catch (e: Exception) {

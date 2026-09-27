@@ -66,6 +66,9 @@ class WifiAlertScanner(
         }
     }
 
+    private val _alerts = kotlinx.coroutines.flow.MutableSharedFlow<`in`.gov.itantra.core.transport.Packet>(extraBufferCapacity = 10)
+    val alerts = _alerts.asSharedFlow()
+
     @SuppressLint("MissingPermission")
     fun startScanning() {
         if (isScanning) return
@@ -82,43 +85,51 @@ class WifiAlertScanner(
 
         manager.setDnsSdResponseListeners(channel,
             { instanceName, registrationType, srcDevice ->
-                // Handled in TxtRecordListener
+                AppLog.d("WifiAlertScanner", "DNS-SD Service Available: $instanceName, $registrationType from ${srcDevice.deviceAddress}")
             },
             { fullDomainName, record, srcDevice ->
-                AppLog.d("WifiAlertScanner", "Discovered DNS-SD service: $fullDomainName from ${srcDevice.deviceAddress}")
-                if (fullDomainName.contains(WifiAlertBroadcaster.INSTANCE_PREFIX)) {
-                    val decoded = AlertCodec.decodeWifiPayload(record)
-                    if (decoded == null) {
-                        AppLog.w("WifiAlertScanner", "Failed to decode Wi-Fi alert payload from TXT record")
-                        return@setDnsSdResponseListeners
-                    }
-                    
+                AppLog.d("WifiAlertScanner", "Discovered DNS-SD TXT: $fullDomainName from ${srcDevice.deviceAddress}")
+                val decoded = AlertCodec.decodeWifiPayload(record)
+                if (decoded != null) {
                     val language = decoded.language
                     val sequence = decoded.sequence
                     val content = decoded.content
+                    val senderName = decoded.senderName ?: "Wi-Fi Peer"
+                    val wirePayload = content.toWirePayload()
 
-                    val dedupKey = "${srcDevice.deviceAddress}:$sequence"
-                        if (!recentAlerts.add(dedupKey)) {
-                            return@setDnsSdResponseListeners
+                    val dedupKey = "${srcDevice.deviceAddress}:$sequence:$wirePayload"
+                    if (!recentAlerts.add(dedupKey)) {
+                        return@setDnsSdResponseListeners
+                    }
+                    
+                    if (recentAlerts.size > 100) {
+                        val iterator = recentAlerts.iterator()
+                        for (i in 0 until 50) {
+                            if (iterator.hasNext()) iterator.next()
+                            iterator.remove()
                         }
-                        
-                        if (recentAlerts.size > 100) {
-                            val iterator = recentAlerts.iterator()
-                            for (i in 0 until 50) {
-                                if (iterator.hasNext()) iterator.next()
-                                iterator.remove()
-                            }
-                        }
+                    }
 
-                        val alert = IncomingAlert(
-                            content = content,
-                            language = language,
-                            sequence = sequence,
-                            receivedAtMs = System.currentTimeMillis(),
-                            senderName = decoded.senderName
-                        )
-                        
+                    val alert = IncomingAlert(
+                        content = content,
+                        language = language,
+                        sequence = sequence,
+                        receivedAtMs = System.currentTimeMillis(),
+                        senderName = senderName
+                    )
+                    
                     AppLog.d("WifiAlertScanner", "Received connectionless Wi-Fi alert (seq $sequence): $content")
+                    
+                    val textPayload = "$senderName\u001F$wirePayload"
+                    val packet = `in`.gov.itantra.core.transport.Packet.text(
+                        type = `in`.gov.itantra.core.transport.MessageType.ALERT,
+                        language = language,
+                        sequence = sequence,
+                        text = textPayload,
+                        flags = decoded.ttl,
+                    )
+                    _alerts.tryEmit(packet)
+
                     kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
                         alertPlayer.play(alert)
                     }
