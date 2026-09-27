@@ -173,13 +173,30 @@ class AlertPlayer(
                     } finally {
                         sink.close()
                     }
-                } else {
+                }
+                if (!dismissed.get()) {
                     speakCustom(content.template.phrase(alert.language), alert.language)
                 }
             }
 
             is AlertContent.Custom -> {
-                speakCustom(content.text, alert.language)
+                val clip = try {
+                    templates.load(AlertTemplate.EMERGENCY_ASSISTANCE, alert.language)
+                } catch (_: Exception) {
+                    null
+                }
+                if (clip != null) {
+                    val sink = sinkProvider(clip.format)
+                    try {
+                        writeFully(sink, clip)
+                        sink.drain()
+                    } finally {
+                        sink.close()
+                    }
+                }
+                if (!dismissed.get()) {
+                    speakCustom(content.text, alert.language)
+                }
             }
         }
     }

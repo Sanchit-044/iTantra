@@ -736,10 +736,10 @@ class MainViewModel @Inject constructor(
                                     }
                                 }
                             }
+                        viewModelScope.launch(Dispatchers.IO) {
+                            alertPlayer.play(alertToPlay)
+                            drainDeferredNormals()
                         }
-
-                        alertPlayer.play(alertToPlay)
-                        drainDeferredNormals()
                     }
                     MessageType.NORMAL -> {
                         playNormalOrDefer(packet)
@@ -1294,6 +1294,18 @@ class MainViewModel @Inject constructor(
             } catch (e: Exception) {
                 AppLog.w("MainViewModel", "LAN broadcast alert send failed: ${e.message}")
             }
+        }
+
+        val localAlert = IncomingAlert(
+            content = content,
+            language = lang,
+            sequence = sequence,
+            receivedAtMs = System.currentTimeMillis(),
+            senderName = senderName ?: "You",
+        )
+        _uiState.update { it.copy(activeIncomingAlert = localAlert) }
+        viewModelScope.launch(Dispatchers.IO) {
+            alertPlayer.play(localAlert)
         }
 
         // 3. P2P Direct Stream or Local Broadcast Tracking

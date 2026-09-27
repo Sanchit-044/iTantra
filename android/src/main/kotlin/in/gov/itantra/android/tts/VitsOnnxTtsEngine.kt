@@ -381,7 +381,15 @@ class VitsOnnxTtsEngine(
             @Deprecated("Deprecated in Java")
             override fun onError(id: String, errorCode: Int) = latch.countDown()
         })
-        tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, utteranceId)
+        val params = android.os.Bundle().apply {
+            putInt(TextToSpeech.Engine.KEY_PARAM_STREAM, android.media.AudioManager.STREAM_ALARM)
+        }
+        val attributes = android.media.AudioAttributes.Builder()
+            .setUsage(android.media.AudioAttributes.USAGE_ALARM)
+            .setContentType(android.media.AudioAttributes.CONTENT_TYPE_SPEECH)
+            .build()
+        runCatching { tts.setAudioAttributes(attributes) }
+        tts.speak(text, TextToSpeech.QUEUE_FLUSH, params, utteranceId)
         if (!latch.await(FALLBACK_TTS_TIMEOUT_MS, TimeUnit.MILLISECONDS)) {
             android.util.Log.w("iTantra-TTS", "Android TTS timed out for utterance: $utteranceId")
         }

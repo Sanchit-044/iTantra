@@ -33,14 +33,14 @@ class WavTemplateSource(
         val path = template.assetPath(language)
         synchronized(cache) { cache[path] }?.let { return it }
 
-        val bytes = try {
-            context.assets.open(path).use { it.readBytes() }
-        } catch (e: Exception) {
-            // AlertPlayer catches this and speaks the template phrase through TTS.
-            throw IllegalStateException("bundled alert asset missing: $path", e)
+        val clip = try {
+            val bytes = context.assets.open(path).use { it.readBytes() }
+            WavCodec.decode(bytes, path)
+        } catch (_: Exception) {
+            // Generate loud, synthetic tactical emergency siren alarm if pre-rendered WAV is absent
+            generateEmergencySirenClip(template)
         }
 
-        val clip = WavCodec.decode(bytes, path)
         synchronized(cache) { cache[path] = clip }
         return clip
     }
@@ -50,8 +50,63 @@ class WavTemplateSource(
         AlertTemplate.entries.take(maxCachedClips).forEach { template ->
             try {
                 load(template, language)
-            } catch (_: Exception) {
-                // Missing WAV is fine: playback falls back to TTS.
+            } catch (_: Exception) {}
+        }
+    }
+
+    companion object {
+        private const val SAMPLE_RATE = 16_000
+
+        /**
+         * Generates a loud, punchy 1.6-second tactical two-tone warble emergency siren
+         * (alternating 960 Hz / 720 Hz pulses with 10ms smooth cosine fade).
+         */
+        fun generateEmergencySirenClip(template: AlertTemplate): AudioClip {
+            val totalDurationMs = 1600
+            val pulseDurationMs = 200
+            val totalSamples = SAMPLE_RATE * totalDurationMs / 1000
+            val pulseSamples = SAMPLE_RATE * pulseDurationMs / 1000
+            val pcm = ShortArray(totalSamples)
+
+            val baseHz = when (template) {
+                AlertTemplate.EMERGENCY_ASSISTANCE -> 960f
+                AlertTemplate.MEDICAL_HELP -> 880f
+                AlertTemplate.EVACUATE_IMMEDIATELY -> 1040f
+                AlertTemplate.STAY_IN_POSITION -> 720f
+                AlertTemplate.ALL_CLEAR -> 600f
+            }
+            val secondHz = baseHz * 0.75f
+
+            var offset = 0
+            var highTone = true
+            while (offset < totalSamples) {
+                val len = minOf(pulseSamples, totalSamples - offset)
+                val hz = if (highTone) baseHz else secondHz
+                writeSineTone(pcm, offset, len, hz, amplitude = 0.85, fadeMs = 12)
+                offset += len
+                highTone = !highTone
+            }
+
+            return AudioClip(pcm, `in`.gov.itantra.core.audio.AudioFormat(SAMPLE_RATE))
+        }
+
+        private fun writeSineTone(
+            out: ShortArray,
+            offset: Int,
+            length: Int,
+            hz: Float,
+            amplitude: Double,
+            fadeMs: Int,
+        ) {
+            val fadeSamples = (SAMPLE_RATE * fadeMs / 1000).coerceAtLeast(1)
+            for (i in 0 until length) {
+                var s = kotlin.math.sin(2.0 * Math.PI * hz * i / SAMPLE_RATE) * amplitude
+                if (i < fadeSamples) {
+                    s *= i.toDouble() / fadeSamples
+                } else if (length - 1 - i < fadeSamples) {
+                    s *= (length - 1 - i).toDouble() / fadeSamples
+                }
+                out[offset + i] = (s * Short.MAX_VALUE).toInt().coerceIn(Short.MIN_VALUE.toInt(), Short.MAX_VALUE.toInt()).toShort()
             }
         }
     }
