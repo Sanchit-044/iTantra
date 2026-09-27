@@ -85,6 +85,16 @@ enum class AlertTemplate(val assetKey: String) {
         fun fromAssetKey(key: String): AlertTemplate? =
             entries.firstOrNull { it.assetKey == key }
 
+        fun resolveDisplayText(text: String, language: Language): String {
+            val trimmed = text.trim()
+            if (trimmed.startsWith(WIRE_PREFIX)) {
+                val key = trimmed.removePrefix(WIRE_PREFIX)
+                val template = fromAssetKey(key)
+                if (template != null) return template.phrase(language)
+            }
+            return text
+        }
+
         fun fromWirePayload(text: String): AlertContent {
             val trimmed = text.trim()
             if (trimmed.startsWith(WIRE_PREFIX)) {

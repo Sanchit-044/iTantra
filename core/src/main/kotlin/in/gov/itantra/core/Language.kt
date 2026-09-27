@@ -15,17 +15,19 @@ enum class Language(
     val endonym: String,
     val englishName: String,
     val wire: Byte,
+    /** First code point of the script's Unicode block, or null for Latin. */
+    val blockBase: Int? = null,
 ) {
-    HINDI("hi", "hi-IN", "हिन्दी", "Hindi", 0x01),
-    TAMIL("ta", "ta-IN", "தமிழ்", "Tamil", 0x02),
-    BENGALI("bn", "bn-IN", "বাংলা", "Bengali", 0x03),
-    GUJARATI("gu", "gu-IN", "ગુજરાતી", "Gujarati", 0x04),
-    MARATHI("mr", "mr-IN", "मराठी", "Marathi", 0x05),
-    KANNADA("kn", "kn-IN", "ಕನ್ನಡ", "Kannada", 0x06),
-    MALAYALAM("ml", "ml-IN", "മലയാളം", "Malayalam", 0x07),
-    TELUGU("te", "te-IN", "తెలుగు", "Telugu", 0x08),
-    ODIA("or", "or-IN", "ଓଡ଼ିଆ", "Odia", 0x09),
-    ENGLISH("en", "en-IN", "English", "English", 0x0A),
+    HINDI("hi", "hi-IN", "हिन्दी", "Hindi", 0x01, 0x0900),
+    TAMIL("ta", "ta-IN", "தமிழ்", "Tamil", 0x02, 0x0B80),
+    BENGALI("bn", "bn-IN", "বাংলা", "Bengali", 0x03, 0x0980),
+    GUJARATI("gu", "gu-IN", "ગુજરાતી", "Gujarati", 0x04, 0x0A80),
+    MARATHI("mr", "mr-IN", "मराठी", "Marathi", 0x05, 0x0900),
+    KANNADA("kn", "kn-IN", "ಕನ್ನಡ", "Kannada", 0x06, 0x0C80),
+    MALAYALAM("ml", "ml-IN", "മലയാളം", "Malayalam", 0x07, 0x0D00),
+    TELUGU("te", "te-IN", "తెలుగు", "Telugu", 0x08, 0x0C00),
+    ODIA("or", "or-IN", "ଓଡ଼ିଆ", "Odia", 0x09, 0x0B00),
+    ENGLISH("en", "en-IN", "English", "English", 0x0A, null),
     ;
 
     companion object {

@@ -25,8 +25,10 @@ class AlertTemplateWireTest {
     }
 
     @Test
-    fun `plain text is treated as a custom alert not a template`() {
-        val content = AlertTemplate.fromWirePayload("तुरंत निकलें")
-        assertEquals(AlertContent.Custom("तुरंत निकलें"), content)
+    fun `resolveDisplayText resolves wire prefix to localized phrase`() {
+        assertEquals("आपातकाल — सहायता चाहिए", AlertTemplate.resolveDisplayText("tpl:emergency", Language.HINDI))
+        assertEquals("Emergency — Assistance needed", AlertTemplate.resolveDisplayText("tpl:emergency", Language.ENGLISH))
+        assertEquals("કટોકટી — મદદ જોઈએ છે", AlertTemplate.resolveDisplayText("tpl:emergency", Language.GUJARATI))
+        assertEquals("Custom plain text", AlertTemplate.resolveDisplayText("Custom plain text", Language.HINDI))
     }
 }

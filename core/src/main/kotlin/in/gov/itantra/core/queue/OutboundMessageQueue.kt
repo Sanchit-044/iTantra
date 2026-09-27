@@ -13,6 +13,7 @@ data class OutboundMessage(
     val state: OutboundState,
     val isAlert: Boolean = false,
     val receiverName: String? = null,
+    val distanceMeters: Float? = null,
 )
 
 interface QueueStore {
@@ -110,10 +111,14 @@ class OutboundMessageQueue(
 
     fun markFailed(id: String): Boolean = update(id, OutboundState.FAILED)
 
-    fun markSent(id: String, receiverName: String? = null) {
+    fun markSent(id: String, receiverName: String? = null, distanceMeters: Float? = null) {
         synchronized(lock) {
-            update(id, OutboundState.DELIVERED, receiverName)
+            update(id, OutboundState.DELIVERED, receiverName, distanceMeters)
         }
+    }
+
+    fun retry(id: String): Boolean {
+        return update(id, OutboundState.QUEUED)
     }
 
     fun discard(id: String) {
@@ -123,7 +128,7 @@ class OutboundMessageQueue(
         }
     }
 
-    private fun update(id: String, state: OutboundState, receiverName: String? = null): Boolean {
+    private fun update(id: String, state: OutboundState, receiverName: String? = null, distanceMeters: Float? = null): Boolean {
         synchronized(lock) {
             expireLocked()
             val index = items.indexOfFirst { it.id == id }
@@ -134,7 +139,11 @@ class OutboundMessageQueue(
                 persistLocked()
                 return false
             }
-            items[index] = current.copy(state = state, receiverName = receiverName ?: current.receiverName)
+            items[index] = current.copy(
+                state = state,
+                receiverName = receiverName ?: current.receiverName,
+                distanceMeters = distanceMeters ?: current.distanceMeters,
+            )
             persistLocked()
             return true
         }

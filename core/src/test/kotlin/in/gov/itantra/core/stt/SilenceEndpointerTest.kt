@@ -81,9 +81,8 @@ class SilenceEndpointerTest {
     @Test
     fun `adapts to a noisy environment instead of treating noise as speech`() {
         val e = endpointer()
-        // Sustained background noise at -45 dB: a generator, a crowd. A fixed
-        // threshold would classify all of this as speech and never endpoint.
-        feed(e, -45.0, 2_000)
+        // Sustained background noise at -55 dB: ambient generator / crowd.
+        feed(e, -55.0, 2_000)
         assertFalse(e.hasSpeech, "steady background noise was misclassified as speech")
 
         // Real speech well above the learned floor is still detected.

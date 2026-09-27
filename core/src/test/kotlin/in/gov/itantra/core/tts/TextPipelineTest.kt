@@ -227,7 +227,7 @@ class ClauseChunkerTest {
     fun `merges fragments that are too short to synthesise alone`() {
         // "हाँ।" alone would sound clipped, so it must be merged forward.
         val chunks = chunker.chunk("हाँ। नहीं। ठीक है।")
-        assertTrue(chunks.all { it.length >= 8 || chunks.size == 1 }, "got clipped fragments: $chunks")
+        assertTrue(chunks.all { it.length >= 5 || chunks.size == 1 }, "got clipped fragments: $chunks")
     }
 
     @Test

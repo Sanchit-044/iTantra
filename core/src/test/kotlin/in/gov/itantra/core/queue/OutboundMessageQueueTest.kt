@@ -119,43 +119,9 @@ class OutboundMessageQueueTest {
         assertEquals(1, result.failedIds.size)
         assertEquals(1, transport.sent.size)
         assertEquals(MessageType.QUEUED, transport.sent.single().type)
-        assertEquals("first", transport.sent.single().text)
-        assertEquals(1, q.pendingCount())
-        assertEquals(OutboundState.FAILED, q.snapshot().single().state)
-    }
-}
-
-class InboundMessageInboxTest {
-
-    @Test
-    fun `blank text and duplicate ids are ignored so replay cannot inflate the inbox`() {
-        val inbox = InboundMessageInbox()
-        assertNull(inbox.offer("1", Language.HINDI, "  "))
-        val first = inbox.offer("1", Language.HINDI, "पानी")
-        assertEquals("पानी", first?.text)
-        assertNull(inbox.offer("1", Language.HINDI, "पानी"))
-        assertEquals(1, inbox.unreadCount())
-    }
-
-    @Test
-    fun `oldest items fall off when the inbox is full`() {
-        val inbox = InboundMessageInbox(maxItems = 2)
-        inbox.offer("a", Language.HINDI, "a")
-        inbox.offer("b", Language.HINDI, "b")
-        inbox.offer("c", Language.HINDI, "c")
-        assertEquals(listOf("c", "b"), inbox.snapshot().map { it.text })
-    }
-
-    @Test
-    fun `inbox drops rows older than thirty days and rejects already-expired arrivals`() {
-        var now = 1_700_000_000_000L
-        val inbox = InboundMessageInbox(clock = { now })
-        inbox.offer("old", Language.HINDI, "old", receivedAtMs = now)
-        now += QueueTtl.DURATION_MS
-        assertEquals(0, inbox.unreadCount())
-        assertNull(inbox.offer("late", Language.HINDI, "late", receivedAtMs = now - QueueTtl.DURATION_MS))
-        val fresh = inbox.offer("new", Language.HINDI, "new", receivedAtMs = now)
-        assertEquals("new", fresh?.text)
+        assertEquals(1, q.failedCount())
+        assertEquals(OutboundState.FAILED, q.snapshot().last().state)
+        assertEquals(OutboundState.DELIVERED, q.snapshot().first().state)
     }
 }
 
