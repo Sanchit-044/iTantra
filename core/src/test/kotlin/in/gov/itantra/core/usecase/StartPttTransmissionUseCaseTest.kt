@@ -20,7 +20,8 @@ import kotlin.test.assertTrue
 class StartPttTransmissionUseCaseTest {
 
     private val sentPackets = mutableListOf<Packet>()
-    
+    private var releaseFloorCalls = 0
+
     private val fakeTransport = object : Transport {
         override val kind = `in`.gov.itantra.core.transport.TransportKind.LOOPBACK
         override val pairingInfo = null
@@ -31,7 +32,7 @@ class StartPttTransmissionUseCaseTest {
         override fun disconnect() {}
         override fun send(packet: Packet) { sentPackets.add(packet) }
         override fun requestFloor() {}
-        override fun releaseFloor() {}
+        override fun releaseFloor() { releaseFloorCalls++ }
         override fun confirmPairing() {}
         override val stats = `in`.gov.itantra.core.transport.TransportStats()
         override fun close() {}
@@ -40,35 +41,42 @@ class StartPttTransmissionUseCaseTest {
     private val fakeQueue = OutboundMessageQueue()
 
     @Test
-    fun `ignores empty text`() {
+    fun `ignores empty text but still releases the floor`() {
+        // Regression test: a blank final result must not leave the sender HOLDING and
+        // the receiver PEER_HOLDING forever. This is not a rare edge case -- it is
+        // exactly what a language with weaker STT model coverage produces more often
+        // than others, which is why the stuck-busy channel showed up as
+        // language-selective (e.g. Gujarati) rather than affecting every language.
         val stt = FakeSttEngine()
         val useCase = StartPttTransmissionUseCase(stt, null, fakeQueue, AtomicInteger(0))
-        
+
         useCase.execute(
             Language.HINDI, fakeTransport, sendLive = true,
             onPartialResult = {}, onFinalResult = {}, onQueued = {}, onError = {}
         )
-        
+
         stt.listener?.onFinal(SttResult("   ", Language.HINDI, null, EndpointTrigger.SILENCE, 100, 0))
-        
+
         assertTrue(sentPackets.isEmpty())
         assertTrue(fakeQueue.snapshot().isEmpty())
+        assertEquals(1, releaseFloorCalls)
     }
 
     @Test
-    fun `ignores cancelled result`() {
+    fun `ignores cancelled result but still releases the floor`() {
         val stt = FakeSttEngine()
         val useCase = StartPttTransmissionUseCase(stt, null, fakeQueue, AtomicInteger(0))
-        
+
         useCase.execute(
             Language.HINDI, fakeTransport, sendLive = true,
             onPartialResult = {}, onFinalResult = {}, onQueued = {}, onError = {}
         )
-        
+
         stt.listener?.onFinal(SttResult("Valid Text", Language.HINDI, null, EndpointTrigger.CANCELLED, 100, 0))
-        
+
         assertTrue(sentPackets.isEmpty())
         assertTrue(fakeQueue.snapshot().isEmpty())
+        assertEquals(1, releaseFloorCalls)
     }
 
     @Test
@@ -82,11 +90,12 @@ class StartPttTransmissionUseCaseTest {
         )
         
         stt.listener?.onFinal(SttResult("Hello", Language.HINDI, null, EndpointTrigger.SILENCE, 100, 0))
-        
+
         assertEquals(1, sentPackets.size)
         assertEquals("Hello", sentPackets[0].text)
         assertEquals(MessageType.NORMAL, sentPackets[0].type)
         assertTrue(fakeQueue.snapshot().isEmpty())
+        assertEquals(1, releaseFloorCalls)
     }
 
     @Test
@@ -107,5 +116,6 @@ class StartPttTransmissionUseCaseTest {
         assertEquals(1, messages.size)
         assertEquals("Hello Offline", messages[0].text)
         assertEquals(messages[0], queuedItem)
+        assertEquals(1, releaseFloorCalls)
     }
 }

@@ -26,6 +26,14 @@ android {
             // Drop x86/x86_64 to save tens of MBs from ONNX native libs
             abiFilters += listOf("arm64-v8a", "armeabi-v7a")
         }
+
+        // Default host URL for on-demand language packs from GitHub Releases.
+        // Can still be overridden per build with -PmodelPackBaseUrl=<custom-url>
+        val defaultModelPackUrl = "https://github.com/Sanchit-044/iTantra/releases/latest/download"
+        val modelPackBaseUrl = (project.findProperty("modelPackBaseUrl") as? String)
+            ?.takeIf { it.isNotBlank() }
+            ?: defaultModelPackUrl
+        buildConfigField("String", "MODEL_PACK_BASE_URL", "\"$modelPackBaseUrl\"")
     }
 
     buildTypes {
@@ -33,11 +41,13 @@ android {
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            signingConfig = signingConfigs.getByName("debug")
         }
     }
 
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 
     compileOptions {
@@ -50,6 +60,10 @@ android {
 
 kotlin {
     jvmToolchain(17)
+}
+
+ksp {
+    arg("ksp.incremental", "false")
 }
 
 dependencies {

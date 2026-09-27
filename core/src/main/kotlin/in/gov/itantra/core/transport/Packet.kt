@@ -77,6 +77,9 @@ data class Packet(
 
     val isAlert: Boolean get() = type == MessageType.ALERT
 
+    /** Alerts and floor control both jump the send queue; see [in.gov.itantra.core.transport.ChannelArbiter]. */
+    val isPriority: Boolean get() = isAlert || type.isFloorControl
+
     val isQueued: Boolean get() = type == MessageType.QUEUED
 
     val requiresAck: Boolean get() = flags and FLAG_REQUIRES_ACK != 0

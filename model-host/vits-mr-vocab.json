@@ -72,5 +72,8 @@
   "भ": 70,
   "ी": 71,
   "थ": 72,
-  "<unk>": 73
+  "<unk>": 73,
+  "pad_id": 0,
+  "interleave_pad": true,
+  "unk_id": 73
 }

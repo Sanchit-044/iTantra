@@ -27,6 +27,16 @@ object LanguagePackPaths {
     fun ttsVocab(context: Context, language: Language): File =
         File(ttsDir(context, language), "vits-${language.code}-vocab.json")
 
+    fun translationEncoder(context: Context): File =
+        File(translationDir(context), "indictrans2-encoder-int8.onnx")
+
+    fun translationDecoder(context: Context): File =
+        File(translationDir(context), "indictrans2-decoder-int8.onnx")
+
+    fun translationVocab(context: Context): File =
+        File(translationDir(context), "indictrans2-vocab.json")
+
+    /** Legacy single-model path kept for backward-compat pack checks. */
     fun translationModel(context: Context): File =
         File(translationDir(context), "indictrans2.onnx")
 

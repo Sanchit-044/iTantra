@@ -64,7 +64,7 @@ class OutboundMessageQueueTest {
         q.enqueue(Language.HINDI, "hold")
         val transport = FakeTransport()
         val result = FlushQueuedMessagesUseCase(q).execute(transport, pairingConfirmed = false)
-        assertEquals(0, result.sent)
+        assertEquals(0, result.sentIds.size)
         assertEquals(0, transport.sent.size)
         assertEquals(1, q.pendingCount())
     }
@@ -80,7 +80,7 @@ class OutboundMessageQueueTest {
 
         val transport = FakeTransport()
         val result = FlushQueuedMessagesUseCase(q).execute(transport, pairingConfirmed = true)
-        assertEquals(0, result.sent)
+        assertEquals(0, result.sentIds.size)
         assertEquals(0, transport.sent.size)
     }
 
@@ -115,8 +115,8 @@ class OutboundMessageQueueTest {
         q.enqueue(Language.HINDI, "second")
         val transport = FakeTransport(failOn = 2)
         val result = FlushQueuedMessagesUseCase(q).execute(transport, pairingConfirmed = true)
-        assertEquals(1, result.sent)
-        assertEquals(1, result.failed)
+        assertEquals(1, result.sentIds.size)
+        assertEquals(1, result.failedIds.size)
         assertEquals(1, transport.sent.size)
         assertEquals(MessageType.QUEUED, transport.sent.single().type)
         assertEquals("first", transport.sent.single().text)

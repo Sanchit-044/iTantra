@@ -33,16 +33,20 @@ import `in`.gov.itantra.core.profile.ProfileStore
 import `in`.gov.itantra.profile.FileProfileStore
 import `in`.gov.itantra.core.theme.ThemeStore
 import `in`.gov.itantra.theme.PrefsThemeStore
+import `in`.gov.itantra.core.pack.LanguagePackInstallCoordinator
 import `in`.gov.itantra.core.pack.LanguagePackManager
 import `in`.gov.itantra.core.stt.LanguageIdEngine
 import `in`.gov.itantra.core.stt.ScriptLanguageId
 import `in`.gov.itantra.core.stt.SttEngine
+import `in`.gov.itantra.android.translate.IndicTransOnnxTranslationEngine
+import `in`.gov.itantra.core.translate.ChainedTranslationEngine
 import `in`.gov.itantra.core.translate.DictionaryTranslationEngine
 import `in`.gov.itantra.core.translate.TranslationEngine
 import `in`.gov.itantra.core.tts.ChunkedSpeaker
 import `in`.gov.itantra.core.diag.DiagnosticsSink
 import `in`.gov.itantra.core.tts.TtsEngine
 import `in`.gov.itantra.core.usecase.ReceivePttTransmissionUseCase
+import `in`.gov.itantra.core.usecase.RecordAlertMessageUseCase
 import `in`.gov.itantra.core.usecase.SendAlertUseCase
 import `in`.gov.itantra.core.usecase.StartPttTransmissionUseCase
 import `in`.gov.itantra.core.usecase.StopPttTransmissionUseCase
@@ -128,7 +132,15 @@ object AppModule {
     @Provides
     @Singleton
     fun provideLanguagePackManager(@ApplicationContext context: Context): LanguagePackManager {
-        return LocalLanguagePackManager(context)
+        return LocalLanguagePackManager(context, baseUrl = `in`.gov.itantra.BuildConfig.MODEL_PACK_BASE_URL)
+    }
+
+    @Provides
+    @Singleton
+    fun provideLanguagePackInstallCoordinator(
+        packs: LanguagePackManager,
+    ): LanguagePackInstallCoordinator {
+        return LanguagePackInstallCoordinator(packs)
     }
 
     @Provides
@@ -145,8 +157,23 @@ object AppModule {
 
     @Provides
     @Singleton
-    fun provideTranslationEngine(): TranslationEngine {
-        return DictionaryTranslationEngine()
+    fun provideIndicTransOnnxEngine(
+        @ApplicationContext context: Context,
+    ): IndicTransOnnxTranslationEngine {
+        return IndicTransOnnxTranslationEngine(context)
+    }
+
+    @Provides
+    @Singleton
+    fun provideTranslationEngine(
+        onnxEngine: IndicTransOnnxTranslationEngine,
+    ): TranslationEngine {
+        return ChainedTranslationEngine(
+            listOf(
+                DictionaryTranslationEngine(),
+                onnxEngine,
+            )
+        )
     }
 
     @Provides
@@ -170,6 +197,13 @@ object AppModule {
         sequence: AtomicInteger,
     ): StartPttTransmissionUseCase {
         return StartPttTransmissionUseCase(sttEngine, diagnostics, outboundQueue, sequence)
+    }
+
+    @Provides
+    fun provideRecordAlertMessageUseCase(
+        sttEngine: SttEngine,
+    ): RecordAlertMessageUseCase {
+        return RecordAlertMessageUseCase(sttEngine)
     }
 
     @Provides
@@ -286,5 +320,11 @@ object AppModule {
     @Singleton
     fun provideLanBroadcastAlertManager(@ApplicationContext context: Context): `in`.gov.itantra.android.alert.LanBroadcastAlertManager {
         return `in`.gov.itantra.android.alert.LanBroadcastAlertManager(context)
+    }
+
+    @Provides
+    @Singleton
+    fun provideGpsLocationTracker(@ApplicationContext context: Context): `in`.gov.itantra.android.location.GpsLocationTracker {
+        return `in`.gov.itantra.android.location.GpsLocationTracker(context)
     }
 }

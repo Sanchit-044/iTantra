@@ -45,6 +45,7 @@ import `in`.gov.itantra.core.transport.Transport
 import `in`.gov.itantra.core.transport.TransportListener
 import `in`.gov.itantra.core.usecase.FlushQueuedMessagesUseCase
 import `in`.gov.itantra.core.usecase.ReceivePttTransmissionUseCase
+import `in`.gov.itantra.core.usecase.RecordAlertMessageUseCase
 import `in`.gov.itantra.core.usecase.SendAlertUseCase
 import `in`.gov.itantra.core.usecase.StartPttTransmissionUseCase
 import `in`.gov.itantra.core.usecase.StopPttTransmissionUseCase
@@ -55,6 +56,8 @@ import `in`.gov.itantra.data.history.MessageStatus
 import java.util.UUID
 import java.util.ArrayDeque
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -104,6 +107,13 @@ data class UiState(
     val activeIncomingAlert: IncomingAlert? = null,
     val isWifiConnected: Boolean = false,
     val alertChannel: AlertChannel = AlertChannel.ALL,
+    /** True while automatically retrying a connection that dropped unexpectedly. */
+    val reconnecting: Boolean = false,
+    val reconnectAttempt: Int = 0,
+    /** True while recording a spoken alert message (see [MainViewModel.startAlertRecording]). */
+    val isRecordingAlertMessage: Boolean = false,
+    /** Live, unstable STT preview of the alert message being recorded. */
+    val alertRecordingText: String = "",
 ) {
     val canSendAlert: Boolean
         get() = (connectionState == ConnectionState.CONNECTED && pairingConfirmed) || isWifiConnected
@@ -122,6 +132,7 @@ class MainViewModel @Inject constructor(
     private val startPttUseCase: StartPttTransmissionUseCase,
     private val stopPttUseCase: StopPttTransmissionUseCase,
     private val receivePttUseCase: ReceivePttTransmissionUseCase,
+    private val recordAlertMessageUseCase: RecordAlertMessageUseCase,
     private val translationEngine: TranslationEngine,
     private val languageSettings: LanguageSettingsStore,
     private val languageIdEngine: LanguageIdEngine,
@@ -149,6 +160,46 @@ class MainViewModel @Inject constructor(
     private var transport: Transport? = null
     private val deferredNormals = ArrayDeque<Packet>()
     private val pttWanted = AtomicBoolean(false)
+
+    /**
+     * Quick-chat texts waiting for [transport] to grant the floor so they can go out live,
+     * exactly like a PTT utterance -- see [sendQuickChat]/[onFloorGranted]. Drained one at a
+     * time: each text gets its own request/grant/release round, same as a single PTT press.
+     */
+    private val pendingQuickChats = ArrayDeque<String>()
+    private val quickChatSequence = AtomicInteger(0)
+
+    /** What [connect] was last asked for, so an unexpected drop can retry the same target. */
+    private data class ConnectRequest(
+        val mode: ConnectionMode,
+        val peerAddress: String?,
+        val preferredWifiAddress: String?,
+        val peerName: String?,
+        val preferGroupOwner: Boolean?,
+    )
+
+    private var lastConnectRequest: ConnectRequest? = null
+    private var reconnectJob: Job? = null
+    private var reconnectAttempts = 0
+    private var clearRecognizedTextJob: Job? = null
+    private val userInitiatedDisconnect = AtomicBoolean(true)
+
+    private fun scheduleRecognizedTextClear(delayMs: Long = 4_000L) {
+        clearRecognizedTextJob?.cancel()
+        clearRecognizedTextJob = viewModelScope.launch {
+            delay(delayMs)
+            _uiState.update { current ->
+                if (!current.isSpeaking && !current.isRequestingFloor) {
+                    current.copy(recognizedText = "")
+                } else {
+                    current
+                }
+            }
+        }
+    }
+
+    /** True once this session has reached CONNECTED at least once, so a later drop is a reconnect case rather than an initial-attempt failure the transport's own retry loop already gave up on. */
+    private var hasReachedConnected = false
     private var lastInsertedAlertKey = ""
     private var lastInsertedAlertHistoryId = ""
     private val recentAlertIds = object : java.util.LinkedHashMap<Int, MutableList<String>>(50, 0.75f, true) {
@@ -280,6 +331,8 @@ class MainViewModel @Inject constructor(
 
     override fun onCleared() {
         super.onCleared()
+        userInitiatedDisconnect.set(true)
+        reconnectJob?.cancel()
         lanAlertManager.stopListening()
         transport?.setListener(null)
         transport?.disconnect()
@@ -330,11 +383,29 @@ class MainViewModel @Inject constructor(
         
         if (state == ConnectionState.CONNECTED || state == ConnectionState.HANDSHAKING) {
             `in`.gov.itantra.service.ConnectionService.start(context)
+        }
+        if (state == ConnectionState.CONNECTED) {
+            hasReachedConnected = true
+            reconnectAttempts = 0
+            _uiState.update { it.copy(reconnecting = false, reconnectAttempt = 0) }
+            // Protect the socket/reader thread from Doze and Wi-Fi power-save for as
+            // long as this session is live -- released the moment it stops being CONNECTED.
+            `in`.gov.itantra.service.ConnectionService.notifyTransportConnected(context)
         } else if (state == ConnectionState.DISCONNECTED || state == ConnectionState.FAILED) {
+            `in`.gov.itantra.service.ConnectionService.notifyTransportDisconnected(context)
             // Do not stop the service here, so that background alert scanning continues
             stopPtt()
             _uiState.update {
                 it.copy(channelBusy = false, isRequestingFloor = false, isSpeaking = false)
+            }
+            // A radio drop mid-session (out of range, interference) is worth retrying
+            // automatically; an initial connection attempt that never got there has
+            // already exhausted the transport's own retry budget (see openLink()), and
+            // an operator-pressed Disconnect must never be second-guessed.
+            if (hasReachedConnected && !userInitiatedDisconnect.get()) {
+                scheduleReconnect()
+            } else {
+                _uiState.update { it.copy(reconnecting = false, reconnectAttempt = 0) }
             }
         }
     }
@@ -344,6 +415,11 @@ class MainViewModel @Inject constructor(
     }
 
     override fun onFloorGranted() {
+        val quickChatText = synchronized(pendingQuickChats) { pendingQuickChats.pollFirst() }
+        if (quickChatText != null) {
+            viewModelScope.launch(Dispatchers.Main) { sendQuickChatLive(quickChatText) }
+            return
+        }
         AppLog.d("MainViewModel", "Floor granted, starting PTT")
         viewModelScope.launch(Dispatchers.Main) {
             val currentTransport = transport ?: return@launch
@@ -378,10 +454,12 @@ class MainViewModel @Inject constructor(
                     language = spoken,
                     transport = currentTransport,
                     onPartialResult = { partialText ->
+                        clearRecognizedTextJob?.cancel()
                         _uiState.update { it.copy(recognizedText = partialText) }
                     },
                     onFinalResult = { finalText ->
                         _uiState.update { it.copy(recognizedText = finalText) }
+                        scheduleRecognizedTextClear()
                         val refined = languageIdEngine.detectFromText(finalText, snap.installedLanguages)
                         if (refined != null && refined != spoken) {
                             viewModelScope.launch { languageSettings.setCurrentLanguage(refined) }
@@ -433,14 +511,33 @@ class MainViewModel @Inject constructor(
     override fun onFloorDenied(reason: String) {
         AppLog.w("MainViewModel", "Floor denied: $reason")
         pttWanted.set(false)
-        _uiState.update {
-            it.copy(
-                isSpeaking = false,
-                isRequestingFloor = false,
-                channelBusy = reason.contains("busy", ignoreCase = true),
-                recognizedText = "",
-                notice = null,
-            )
+        // A quick chat waiting on this same request/grant round did not get to send live --
+        // fall back to the offline queue rather than lose it (mirrors StartPttTransmissionUseCase
+        // queuing a PTT utterance it could not send live).
+        val strandedQuickChats = synchronized(pendingQuickChats) {
+            val all = pendingQuickChats.toList()
+            pendingQuickChats.clear()
+            all
+        }
+        // FloorController's callback runs on whichever thread produced the denial --
+        // the transport's read thread for a remote FLOOR_DENY, the scheduler thread
+        // for a local grant-timeout. Hop to Main so this can never interleave with
+        // onFloorGranted's own Main-dispatched state updates.
+        viewModelScope.launch(Dispatchers.Main) {
+            _uiState.update {
+                it.copy(
+                    isSpeaking = false,
+                    isRequestingFloor = false,
+                    // Do not re-derive channelBusy from the reason string: onChannelBusyChanged
+                    // already ran with the transport's actual peer-holds state moments earlier
+                    // (see StreamTransport's FloorListener.onDenied), and a substring match here
+                    // ("channel busy" vs. e.g. "no floor grant") can disagree with it -- showing
+                    // this device as busy when it is not, or vice versa.
+                    recognizedText = "",
+                    notice = null,
+                )
+            }
+            strandedQuickChats.forEach { queueQuickChat(it) }
         }
     }
 
@@ -492,14 +589,23 @@ class MainViewModel @Inject constructor(
                                 senderName = senderName,
                             )
                             is AlertContent.Custom -> {
-                                val translatedText = translationEngine.translateOrSame(
-                                    content.text,
-                                    packet.language,
-                                    currentLang,
-                                )
+                                val (translatedText, playLang) = try {
+                                    val translated = translationEngine.translateOrSame(
+                                        content.text,
+                                        packet.language,
+                                        currentLang,
+                                    )
+                                    translated to currentLang
+                                } catch (e: Exception) {
+                                    AppLog.w(
+                                        "MainViewModel",
+                                        "Alert translation failed (${e.message}) — playing original in ${packet.language.code}",
+                                    )
+                                    content.text to packet.language
+                                }
                                 IncomingAlert(
                                     content = AlertContent.Custom(translatedText),
-                                    language = currentLang,
+                                    language = playLang,
                                     sequence = packet.sequence,
                                     receivedAtMs = System.currentTimeMillis(),
                                     senderName = senderName,
@@ -627,28 +733,57 @@ class MainViewModel @Inject constructor(
     // --- Actions ---
 
 
-    fun connect(peerAddress: String? = null, preferredWifiAddress: String? = null, peerName: String? = null) {
+    fun connect(
+        peerAddress: String? = null,
+        preferredWifiAddress: String? = null,
+        peerName: String? = null,
+        preferGroupOwner: Boolean? = null,
+    ) {
+        userInitiatedDisconnect.set(false)
+        reconnectJob?.cancel()
+        reconnectJob = null
+        reconnectAttempts = 0
+        hasReachedConnected = false
+        val request = ConnectRequest(
+            mode = _uiState.value.connectionMode,
+            peerAddress = peerAddress,
+            preferredWifiAddress = preferredWifiAddress,
+            peerName = peerName,
+            preferGroupOwner = preferGroupOwner,
+        )
+        lastConnectRequest = request
+        _uiState.update { it.copy(reconnecting = false, reconnectAttempt = 0) }
+        performConnect(request)
+    }
+
+    /** The actual connect attempt, shared by a fresh [connect] call and an automatic reconnect. */
+    private fun performConnect(request: ConnectRequest) {
         viewModelScope.launch(Dispatchers.IO) {
             try {
                 transport?.setListener(null)
                 transport?.disconnect()
 
-                val newTransport = when (_uiState.value.connectionMode) {
+                val newTransport = when (request.mode) {
                     ConnectionMode.WIFI_DIRECT_HOST -> WifiDirectTransport(context, keyAgreementProvider, WifiDirectTransport.Role.HOST)
                     ConnectionMode.WIFI_DIRECT_CLIENT -> WifiDirectTransport(
                         context,
                         keyAgreementProvider,
                         WifiDirectTransport.Role.CLIENT,
-                        preferredPeerAddress = preferredWifiAddress ?: peerAddress,
+                        preferredPeerAddress = request.preferredWifiAddress ?: request.peerAddress,
+                        groupOwnerIntent = when (request.preferGroupOwner) {
+                            true -> WifiDirectTransport.GROUP_OWNER_INTENT
+                            false -> 0
+                            null -> -1
+                        },
                     )
                     ConnectionMode.BLUETOOTH_HOST -> BluetoothTransport(context, keyAgreementProvider, BluetoothTransport.Role.HOST)
                     ConnectionMode.BLUETOOTH_CLIENT -> {
-                        val address = peerAddress ?: _uiState.value.selectedDeviceAddress
+                        val address = request.peerAddress ?: _uiState.value.selectedDeviceAddress
                         if (address.isNullOrBlank()) {
-                            _uiState.update { it.copy(notice = UserNotice.PleaseSelectDevice) }
+                            _uiState.update { it.copy(notice = UserNotice.PleaseSelectDevice, reconnecting = false) }
                             return@launch
                         }
-                        BluetoothTransport(context, keyAgreementProvider, BluetoothTransport.Role.CLIENT, address, peerName)
+                        BluetoothTransport(context, keyAgreementProvider, BluetoothTransport.Role.CLIENT, address, request.peerName)
                     }
 
                 }
@@ -663,16 +798,52 @@ class MainViewModel @Inject constructor(
                 // Pass a 2-minute timeout since P2P setup involves manual user discovery and pairing
                 newTransport.connect(120_000)
             } catch (e: Exception) {
-                _uiState.update { it.copy(notice = UserNotice.ConnectionFailed(e.message)) }
+                _uiState.update { it.copy(notice = UserNotice.ConnectionFailed(e.message), reconnecting = false) }
             }
         }
     }
 
+    /**
+     * Retries [lastConnectRequest] with backoff after the transport drops CONNECTED
+     * without the operator asking to disconnect. Not used for an initial connection
+     * attempt that never reached CONNECTED -- the transport's own openLink() retry loop
+     * already spends its whole timeout budget on that, so a second layer of retries on
+     * top would just repeat the same failure. See [WifiDirectTransport] / [BluetoothTransport].
+     */
+    private fun scheduleReconnect() {
+        val request = lastConnectRequest ?: return
+        reconnectAttempts++
+        if (reconnectAttempts > MAX_RECONNECT_ATTEMPTS) {
+            AppLog.w("MainViewModel", "Giving up reconnecting after $MAX_RECONNECT_ATTEMPTS attempts")
+            _uiState.update { it.copy(reconnecting = false) }
+            return
+        }
+        val delayMs = (RECONNECT_BASE_DELAY_MS shl (reconnectAttempts - 1).coerceAtMost(4))
+            .coerceAtMost(RECONNECT_MAX_DELAY_MS)
+        AppLog.d("MainViewModel", "Connection dropped; reconnect attempt $reconnectAttempts in ${delayMs}ms")
+        _uiState.update { it.copy(reconnecting = true, reconnectAttempt = reconnectAttempts) }
+        reconnectJob = viewModelScope.launch {
+            delay(delayMs)
+            if (userInitiatedDisconnect.get()) return@launch
+            performConnect(request)
+        }
+    }
+
     fun disconnect() {
+        userInitiatedDisconnect.set(true)
+        reconnectJob?.cancel()
+        reconnectJob = null
         transport?.disconnect()
         // Keep the last transport attached so session counters remain visible.
         _uiState.update {
-            it.copy(pairingConfirmed = false, pairingInfo = null, peerProfile = null, radioPeerName = null)
+            it.copy(
+                pairingConfirmed = false,
+                pairingInfo = null,
+                peerProfile = null,
+                radioPeerName = null,
+                reconnecting = false,
+                reconnectAttempt = 0,
+            )
         }
     }
 
@@ -690,9 +861,19 @@ class MainViewModel @Inject constructor(
     }
 
     fun dismissPairing() {
+        userInitiatedDisconnect.set(true)
+        reconnectJob?.cancel()
+        reconnectJob = null
         transport?.disconnect()
         _uiState.update {
-            it.copy(pairingInfo = null, pairingConfirmed = false, peerProfile = null, radioPeerName = null)
+            it.copy(
+                pairingInfo = null,
+                pairingConfirmed = false,
+                peerProfile = null,
+                radioPeerName = null,
+                reconnecting = false,
+                reconnectAttempt = 0,
+            )
         }
     }
 
@@ -710,18 +891,149 @@ class MainViewModel @Inject constructor(
         sendAlert(AlertContent.Custom(trimmed))
     }
 
+    /**
+     * Records a spoken alert message via STT and sends it exactly like a typed custom
+     * alert once recognized -- same delivery path, same translate-then-TTS on the
+     * receiving phone. Mirrors [startPtt]'s offline STT capture but without any floor
+     * request or transport coupling: alerts have their own delivery path.
+     */
+    fun startAlertRecording() {
+        val state = _uiState.value
+        if (state.isRecordingAlertMessage || state.isSpeaking || state.isRequestingFloor) return
+        val language = state.currentLanguage
+        _uiState.update {
+            it.copy(isRecordingAlertMessage = true, alertRecordingText = "", notice = null)
+        }
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                recordAlertMessageUseCase.start(
+                    language = language,
+                    onPartialResult = { partial ->
+                        _uiState.update { it.copy(alertRecordingText = partial) }
+                    },
+                    onFinalResult = { text ->
+                        _uiState.update { it.copy(isRecordingAlertMessage = false, alertRecordingText = "") }
+                        if (text.isNotBlank()) sendCustomAlert(text)
+                    },
+                    onError = { message ->
+                        _uiState.update {
+                            it.copy(
+                                isRecordingAlertMessage = false,
+                                alertRecordingText = "",
+                                notice = UserNotice.GenericError(message),
+                            )
+                        }
+                    },
+                )
+            } catch (e: Exception) {
+                _uiState.update {
+                    it.copy(
+                        isRecordingAlertMessage = false,
+                        alertRecordingText = "",
+                        notice = UserNotice.GenericError(e.message),
+                    )
+                }
+            }
+        }
+    }
+
+    /** Ends the recording now and sends whatever was recognized, same as releasing PTT. */
+    fun stopAlertRecording() {
+        recordAlertMessageUseCase.stop()
+    }
+
+    /** Abandons the recording; nothing is sent. */
+    fun cancelAlertRecording() {
+        recordAlertMessageUseCase.cancel()
+        _uiState.update { it.copy(isRecordingAlertMessage = false, alertRecordingText = "") }
+    }
+
+    /**
+     * Sends a canned quick-chat text the same way PTT sends a recognized utterance: while the
+     * link is live, it requests the floor and -- once [onFloorGranted] fires -- puts the text on
+     * the air tagged MessageType.NORMAL, so the receiver plays/shows it immediately instead of
+     * filing it into the offline inbox the way a reconciled MessageType.QUEUED backlog message
+     * does. Only falls back to the offline queue when there is no live link (or the floor
+     * request is denied, or the send itself fails e.g. unpaired), exactly like PTT falls back
+     * when `sendLive` can't be honored -- see [startPtt]'s identical `isConnected` gate.
+     */
     fun sendQuickChat(text: String) {
         val trimmed = text.trim()
         if (trimmed.isEmpty()) return
+        val state = _uiState.value
+        val isConnected = state.connectionState == ConnectionState.CONNECTED
+        if (!isConnected || state.isSpeaking || state.isRequestingFloor || state.isRecordingAlertMessage) {
+            queueQuickChat(trimmed)
+            return
+        }
+        val shouldRequestFloor = synchronized(pendingQuickChats) {
+            val wasEmpty = pendingQuickChats.isEmpty()
+            pendingQuickChats.addLast(trimmed)
+            wasEmpty
+        }
+        if (shouldRequestFloor) transport?.requestFloor()
+    }
+
+    /** The actual live send once the floor is held for [text]; always releases the floor on the way out. */
+    private fun sendQuickChatLive(text: String) {
+        val currentTransport = transport
+        if (currentTransport == null) {
+            queueQuickChat(text)
+            drainNextQuickChat()
+            return
+        }
+        try {
+            val lang = _uiState.value.currentLanguage
+            val packet = Packet.text(
+                type = MessageType.NORMAL,
+                language = lang,
+                sequence = quickChatSequence.incrementAndGet(),
+                text = text,
+            )
+            currentTransport.send(packet)
+            AppLog.d("MainViewModel", "Sent quick chat live: sq=${packet.sequence}")
+            viewModelScope.launch(Dispatchers.IO) {
+                historyDao.insertMessage(
+                    HistoryMessage(
+                        id = UUID.randomUUID().toString(),
+                        text = text,
+                        language = lang,
+                        timestampMs = packet.timestampMs,
+                        direction = MessageDirection.OUTBOUND,
+                        status = MessageStatus.DELIVERED,
+                        peerName = _uiState.value.talkingToName,
+                        isAlert = false,
+                    )
+                )
+            }
+        } catch (e: Exception) {
+            AppLog.w("MainViewModel", "Failed to send quick chat live: ${e.message}, queuing it instead")
+            queueQuickChat(text)
+        } finally {
+            // Always release, even on failure -- see StartPttTransmissionUseCase's identical
+            // comment: skipping this leaves the sender HOLDING and the receiver PEER_HOLDING.
+            currentTransport.releaseFloor()
+            drainNextQuickChat()
+        }
+    }
+
+    /** Requests the floor for the next queued quick chat, if any -- one request/grant round per text. */
+    private fun drainNextQuickChat() {
+        val hasMore = synchronized(pendingQuickChats) { pendingQuickChats.isNotEmpty() }
+        if (hasMore) transport?.requestFloor()
+    }
+
+    /** Offline (or floor-denied) fallback: stored and delivered on reconnect, same as a queued PTT utterance. */
+    private fun queueQuickChat(text: String) {
         val lang = _uiState.value.currentLanguage
-        val queuedMsg = outboundQueue.enqueue(lang, trimmed, isAlert = false)
+        val queuedMsg = outboundQueue.enqueue(lang, text, isAlert = false)
         publishQueues()
         if (queuedMsg != null) {
             viewModelScope.launch(Dispatchers.IO) {
                 historyDao.insertMessage(
                     HistoryMessage(
                         id = queuedMsg.id,
-                        text = trimmed,
+                        text = text,
                         language = lang,
                         timestampMs = queuedMsg.createdAtMs,
                         direction = MessageDirection.OUTBOUND,
@@ -885,6 +1197,9 @@ class MainViewModel @Inject constructor(
 
     fun startPtt() {
         val state = _uiState.value
+        // The STT engine holds exactly one resident model/session; an alert recording
+        // in progress must finish (or be cancelled) before PTT can claim it.
+        if (state.isRecordingAlertMessage) return
         val isConnected = state.connectionState == ConnectionState.CONNECTED
         if (isConnected) {
             if (state.channelBusy) {
@@ -892,6 +1207,7 @@ class MainViewModel @Inject constructor(
             }
             if (state.isSpeaking || state.isRequestingFloor) return
             AppLog.d("MainViewModel", "startPtt: Requesting floor for live PTT")
+            clearRecognizedTextJob?.cancel()
             pttWanted.set(true)
             _uiState.update {
                 it.copy(isRequestingFloor = true, recognizedText = "", notice = null)
@@ -900,6 +1216,7 @@ class MainViewModel @Inject constructor(
         } else {
             if (state.isSpeaking) return
             AppLog.d("MainViewModel", "startPtt: Starting queued offline PTT")
+            clearRecognizedTextJob?.cancel()
             _uiState.update { it.copy(isSpeaking = true, recognizedText = "", notice = null) }
             try {
                 startPttUseCase.execute(
@@ -907,10 +1224,12 @@ class MainViewModel @Inject constructor(
                     transport = null,
                     sendLive = false,
                     onPartialResult = { partial ->
+                        clearRecognizedTextJob?.cancel()
                         _uiState.update { it.copy(recognizedText = partial) }
                     },
                     onFinalResult = { finalText ->
                         _uiState.update { it.copy(recognizedText = finalText) }
+                        scheduleRecognizedTextClear()
                     },
                     onQueued = { publishQueues() },
                     onError = { message ->
@@ -934,8 +1253,10 @@ class MainViewModel @Inject constructor(
         _uiState.update {
             it.copy(isSpeaking = false, isRequestingFloor = false, recognizedText = it.recognizedText)
         }
+        scheduleRecognizedTextClear()
         if (isLiveReady()) flushQueue()
     }
+
 
     fun playInbox(id: String) {
         val item = inbox.find(id) ?: return
@@ -943,10 +1264,24 @@ class MainViewModel @Inject constructor(
         viewModelScope.launch(Dispatchers.IO) {
             _uiState.update { it.copy(playingInboxId = id, notice = null) }
             try {
-                receivePttUseCase.execute(
-                    Packet.text(MessageType.NORMAL, item.language, 0, item.text),
-                    _uiState.value.currentLanguage
-                )
+                val currentLang = _uiState.value.currentLanguage
+                val (playText, playLang) = if (item.language == currentLang) {
+                    item.text to currentLang
+                } else {
+                    try {
+                        val translated = translationEngine.translateOrSame(
+                            item.text, item.language, currentLang,
+                        )
+                        translated to currentLang
+                    } catch (e: Exception) {
+                        AppLog.w(
+                            "MainViewModel",
+                            "Inbox translation failed (${e.message}) — playing original in ${item.language.code}",
+                        )
+                        item.text to item.language
+                    }
+                }
+                receivePttUseCase.playText(playText, playLang)
                 inbox.markRead(id)
             } catch (e: Exception) {
                 _uiState.update { it.copy(notice = UserNotice.PlaybackError(e.message)) }
@@ -1012,6 +1347,10 @@ class MainViewModel @Inject constructor(
     companion object {
         private const val MAX_DEFERRED_NORMAL = 8
         private const val PEER_THUMB_FILE = "peer-avatar.jpg"
+
+        private const val MAX_RECONNECT_ATTEMPTS = 5
+        private const val RECONNECT_BASE_DELAY_MS = 2_000L
+        private const val RECONNECT_MAX_DELAY_MS = 30_000L
     }
 
     private fun handleQueuedInbound(packet: Packet) {

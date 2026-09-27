@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- Debug-only override, merged in for debug builds alone: release keeps the
+         platform default of blocking cleartext HTTP. Needed because
+         LocalLanguagePackManager's modelPackBaseUrl points at a plain-http local
+         server or LAN address while iterating (see model-host/README.md); a
+         targetSdk 35 app blocks all cleartext traffic without this, which failed
+         downloads identically whether the host was a LAN IP or 127.0.0.1 via adb
+         reverse, indistinguishable from an actual network/connectivity problem
+         since HttpURLConnection reports it the same way. -->
+    <application android:usesCleartextTraffic="true" />
+
+</manifest>

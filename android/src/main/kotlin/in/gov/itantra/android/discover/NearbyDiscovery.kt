@@ -205,17 +205,37 @@ class NearbyDiscovery(private val context: Context) {
         }
 
         leAdvertiser = adapter.bluetoothLeAdvertiser
+        if (leAdvertiser == null) {
+            // Some devices (mostly older/budget hardware) support BLE central
+            // (scanning) but not peripheral (advertising) role. Scanning above
+            // still runs fine, so this phone will keep finding others -- it just
+            // silently stays invisible to their scans, which without this looks
+            // identical to "the other phone is out of range" from both sides.
+            noteError("This phone can't broadcast its presence over Bluetooth (no BLE peripheral support) -- it can still see others (Bluetooth scanning and Wi-Fi Direct both still work), it just won't show up on their radar.")
+        }
         val advSettings = AdvertiseSettings.Builder()
             .setAdvertiseMode(AdvertiseSettings.ADVERTISE_MODE_LOW_LATENCY)
             .setConnectable(false)
             .setTimeout(0)
             .build()
+        // The primary packet carries only the service UUID: a 128-bit UUID already
+        // consumes most of the legacy 31-byte advertisement budget, and the OS
+        // rejects (ADVERTISE_FAILED_DATA_TOO_LARGE) any advertisement -- including
+        // the device name -- that doesn't fit. The device name goes in the separate
+        // scan RESPONSE packet instead, which gets its own independent 31-byte
+        // budget; active scanning (the default, and what SCAN_MODE_LOW_LATENCY uses
+        // below) requests it automatically and ScanRecord.deviceName reads from the
+        // combined primary+response payload. Without this, every Bluetooth-only
+        // peer showed up on Radar labelled "Unknown" -- present, but useless.
         val data = AdvertiseData.Builder()
             .setIncludeDeviceName(false)
             .addServiceUuid(uuid)
             .build()
+        val scanResponse = AdvertiseData.Builder()
+            .setIncludeDeviceName(true)
+            .build()
         try {
-            leAdvertiser?.startAdvertising(advSettings, data, advertiseCallback)
+            leAdvertiser?.startAdvertising(advSettings, data, scanResponse, advertiseCallback)
         } catch (e: Exception) {
             noteError("Bluetooth advertise failed: ${e.message}")
         }

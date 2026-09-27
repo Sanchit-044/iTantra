@@ -24,7 +24,7 @@ The Android app and Cursor brief live in this directory. Full agent context: `.c
 - If translation is unavailable, **show an error / download prompt**. Do not run source-language text through the target TTS voice.
 - Hindi / Tamil / Bengali **wire codes stay 0x01 / 0x02 / 0x03**. New languages use 0x04+.
 
-App flow: first launch → language picker → download selected packs → **Talk | Alert | Analysis | Radar**. Later launches skip the picker. Settings reopens the same picker.
+App flow: first launch → profile → language picker → download selected packs → main screen with bottom nav **Talk | Radar | [Alert FAB] | History | Settings** (navigation rail on ≥600dp). No drawer. Later launches skip setup. Settings tab holds profile, speech languages, app language, theme, and **Analysis** (diagnostics) as pushed screens.
 
 ## Modules
 
@@ -45,9 +45,9 @@ App flow: first launch → language picker → download selected packs → **Tal
 - Alert: `SendAlertUseCase`, `AlertPlayer`, `AlertScreen`
 - Queue: `OutboundMessageQueue`, `InboundMessageInbox`, `QueueTtl` (30 days)
 - LID: `ScriptLanguageId`, `LanguageIdEngine.resolveSpokenLanguage`
-- Translation: `TranslationEngine`, `DictionaryTranslationEngine` (demo phrases only)
+- Translation: `ChainedTranslationEngine` → `DictionaryTranslationEngine` (8 phrases, instant) → `IndicTransOnnxTranslationEngine` (IndicTrans2 320M, **Hindi↔Marathi only** -- pivots through Devanagari internally, no on-device transliteration for other scripts yet, see PROJECT.md). `BpeTokenizer` handles SentencePiece BPE tokenization.
 - Packs: `LanguagePackManager`, `android/.../pack/LocalLanguagePackManager`
-- UI: `ITantraApp` (Talk \| Alert \| Analysis \| Radar), `ProfileScreen`, `LanguageSelectionScreen`, `MainScreen`, `AlertScreen`, `DiagnosticsScreen`, `RadarScreen`, `MainViewModel`
+- UI: `ITantraApp` (tabs Talk \| Radar \| Alert FAB \| History \| Settings; routes for profile / languages / display / analysis), shared components in `ui/components/` (`Common.kt`, `Scaffolding.kt`), `ProfileScreen`, `LanguageSelectionScreen`, `MainScreen`, `AlertScreen`, `DiagnosticsScreen`, `RadarScreen`, `MainViewModel`
 - Persistence: `PrefsLanguageSettingsStore` (`setupDone`, `installed`, `current`, `uiLanguage`); `FileProfileStore` (name + `filesDir/profile/avatar.jpg`); `PrefsThemeStore` (`SYSTEM` / `LIGHT` / `DARK`, default System)
 - App chrome: `UiStrings` keyed by `uiLanguage` (English ∪ installed). Speech `current` is separate.
 - After pairing confirm: PROFILE `0x0A` (name + thumbnail). `UiState.localProfile` / `peerProfile` for Talk and the map branch.
@@ -66,4 +66,8 @@ App flow: first launch → language picker → download selected packs → **Tal
 
 ## Out of scope unless asked
 
-Mesh (3+ phones), lock-screen / power SOS, true GPS map of peers, continuous call mode, meaning-preserving translation beyond the offline engine, bundling real ONNX weights in git.
+Mesh (3+ phones), lock-screen / power SOS, true GPS map of peers, continuous call mode, bundling real ONNX weights in git.
+
+## Translation model setup
+
+Run `python export_translation_models.py` from the repo root to download IndicTrans2 320M, export encoder + decoder to ONNX, quantize to INT8, and save vocab JSON. Requires: `pip install transformers optimum onnxruntime sentencepiece protobuf`. Output lands in `app/src/main/assets/models/translation/`.

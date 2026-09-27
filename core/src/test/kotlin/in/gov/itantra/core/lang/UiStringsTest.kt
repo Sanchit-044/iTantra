@@ -28,6 +28,26 @@ class UiStringsTest {
     }
 
     @Test
+    fun `ui chrome templates substitute placeholders in every language`() {
+        for (language in Language.entries) {
+            val s = UiStrings.forLanguage(language)
+            assertTrue(s.step(2, 3).contains("2") && s.step(2, 3).contains("3"), "$language step")
+            assertTrue(s.pendingCount(4).contains("4"), "$language pending")
+            assertTrue(s.failedCount(5).contains("5"), "$language failed")
+            for (text in listOf(
+                s.incomingAlertFrom("Asha"),
+                s.deliveredTo("Asha"),
+                s.connectTo("Asha"),
+                s.receivedFrom("Asha"),
+                s.sentTo("Asha"),
+            )) {
+                assertTrue(text.contains("Asha") && !text.contains("{"), "$language $text")
+            }
+            assertTrue(s.version("0.1.0").contains("0.1.0"), "$language version")
+        }
+    }
+
+    @Test
     fun `gujarati without a table still returns english not blanks`() {
         val s = UiStrings.forLanguage(Language.GUJARATI)
         assertEquals(UiStrings.forLanguage(Language.ENGLISH).talk, s.talk)

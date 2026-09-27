@@ -38,8 +38,14 @@ recording and look at the distribution of speech versus silence levels.
 
 | Parameter | Default | Notes |
 |---|---|---|
-| `minChunkChars` | 10 | Calibrated for Indic scripts, which are far denser per character than Latin. |
-| `maxChunkChars` | 160 | Bounds time-to-first-audio and peak synthesis memory. |
+| `minChunkChars` | 5 | Calibrated for Indic scripts, which are far denser per character than Latin. |
+| `maxChunkChars` | 55 | Bounds time-to-first-audio and peak synthesis memory. |
+
+Both were calibrated against Indic scripts and never revisited for English: at 55 Latin
+characters, `maxChunkChars` holds noticeably fewer English words per synthesized chunk
+than Indic words per chunk (e.g. "please send food and water to the school immediately"
+is right at that limit), which is worth measuring if English prosody sounds choppier
+than Hindi's.
 
 `minChunkChars` is script-sensitive and was a real bug during development: a
 Latin-derived value in the high teens merged every Hindi clause back into a single block

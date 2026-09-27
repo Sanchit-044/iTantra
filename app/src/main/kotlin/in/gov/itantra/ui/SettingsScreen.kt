@@ -1,225 +1,332 @@
 package `in`.gov.itantra.ui
 
-import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.selection.selectable
-import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.BrightnessAuto
+import androidx.compose.material.icons.filled.DarkMode
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.LightMode
+import androidx.compose.material.icons.outlined.Info
+import androidx.compose.material.icons.outlined.Insights
+import androidx.compose.material.icons.outlined.Lock
+import androidx.compose.material.icons.outlined.Person
+import androidx.compose.material.icons.outlined.RecordVoiceOver
+import androidx.compose.material.icons.outlined.Translate
 import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.RadioButton
-import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import `in`.gov.itantra.core.Language
 import `in`.gov.itantra.core.lang.UiStrings
 import `in`.gov.itantra.core.theme.ThemeMode
+import `in`.gov.itantra.ui.components.BottomActionBar
+import `in`.gov.itantra.ui.components.DownloadProgressCard
+import `in`.gov.itantra.ui.components.InlineMessage
+import `in`.gov.itantra.ui.components.ProfileAvatar
+import `in`.gov.itantra.ui.components.SettingsGroup
+import `in`.gov.itantra.ui.components.SettingsRow
+import `in`.gov.itantra.ui.components.StatusPill
+import `in`.gov.itantra.ui.components.SubScreenScaffold
 
+/** Settings tab: clean and simple card layout with line-art icons and uppercase section headers. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(
-    onBack: () -> Unit,
+    mainState: UiState,
+    onOpenProfile: () -> Unit,
+    onOpenLanguages: () -> Unit,
+    onOpenDisplay: () -> Unit,
+    onOpenAnalysis: () -> Unit,
+    onOpenAbout: () -> Unit,
     themeViewModel: ThemeSettingsViewModel = hiltViewModel(),
-    languageViewModel: LanguageSelectionViewModel = hiltViewModel(),
 ) {
     val mode by themeViewModel.mode.collectAsState()
-    val uiState by languageViewModel.uiState.collectAsState()
+    val chrome = UiStrings.forLanguage(mainState.uiLanguage)
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 32.dp),
+        verticalArrangement = Arrangement.spacedBy(18.dp),
+    ) {
+        // Hero Profile Section Card (Image 2 style)
+        ProfileHeroCard(state = mainState, chrome = chrome, onClick = onOpenProfile)
+
+        // Section 1: Speech & Language Card
+        SettingsGroup(chrome.sectionSpeech) {
+            SettingsRow(
+                icon = Icons.Outlined.RecordVoiceOver,
+                title = chrome.languagesTitle,
+                subtitle = "${mainState.currentLanguage.endonym} (${mainState.currentLanguage.englishName}) · ${chrome.installedCount(mainState.installedLanguages.size)}",
+                onClick = onOpenLanguages,
+                showDivider = false,
+            )
+            SettingsRow(
+                icon = Icons.Outlined.Translate,
+                title = chrome.appLanguageTitle,
+                subtitle = "${mainState.uiLanguage.endonym} (${mainState.uiLanguage.englishName})",
+                onClick = onOpenDisplay,
+                showDivider = true,
+            )
+        }
+
+        // Section 2: Appearance & Theme Card
+        SettingsGroup(chrome.sectionAppearance) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                    ThemeMode.entries.forEachIndexed { index, option ->
+                        SegmentedButton(
+                            selected = option == mode,
+                            onClick = { themeViewModel.setMode(option) },
+                            shape = SegmentedButtonDefaults.itemShape(index = index, count = ThemeMode.entries.size),
+                            icon = {
+                                SegmentedButtonDefaults.Icon(active = option == mode) {
+                                    Icon(
+                                        option.icon(),
+                                        contentDescription = null,
+                                        modifier = Modifier.size(SegmentedButtonDefaults.IconSize),
+                                    )
+                                }
+                            },
+                        ) {
+                            Text(option.label(chrome), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        }
+                    }
+                }
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    text = mode.help(chrome),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(start = 2.dp),
+                )
+            }
+        }
+
+        // Section 3: Diagnostics & System Metrics Card
+        SettingsGroup(chrome.sectionDiagnostics) {
+            SettingsRow(
+                icon = Icons.Outlined.Insights,
+                title = chrome.analysis,
+                subtitle = "Live WER, RTF, CPU & Transport telemetry",
+                onClick = onOpenAnalysis,
+                showDivider = false,
+            )
+        }
+
+        // Section 4: About & System Info Card
+        SettingsGroup(chrome.sectionAbout) {
+            SettingsRow(
+                icon = Icons.Outlined.Info,
+                title = chrome.appTitle,
+                subtitle = "${chrome.version(`in`.gov.itantra.BuildConfig.VERSION_NAME)} · ISRO SIH PS 26173",
+                onClick = onOpenAbout,
+                showDivider = false,
+            )
+        }
+    }
+}
+
+@Composable
+private fun ProfileHeroCard(state: UiState, chrome: UiStrings, onClick: () -> Unit) {
+    val local = state.localProfile
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(
+                interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
+                indication = null,
+                onClick = onClick,
+            )
+            .padding(vertical = 4.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Box(contentAlignment = Alignment.BottomEnd) {
+            ProfileAvatar(
+                path = local.photoPath,
+                bytes = local.thumbnailJpeg,
+                modifier = Modifier
+                    .size(92.dp)
+                    .clip(CircleShape)
+                    .border(2.5.dp, MaterialTheme.colorScheme.primary, CircleShape),
+            )
+            Box(
+                modifier = Modifier
+                    .size(28.dp)
+                    .background(MaterialTheme.colorScheme.primary, CircleShape)
+                    .border(2.dp, MaterialTheme.colorScheme.surface, CircleShape)
+                    .padding(5.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    Icons.Filled.Edit,
+                    contentDescription = chrome.editProfile,
+                    tint = MaterialTheme.colorScheme.onPrimary,
+                    modifier = Modifier.size(15.dp),
+                )
+            }
+        }
+        Spacer(Modifier.height(10.dp))
+        Text(
+            text = if (local.name.isBlank()) chrome.noName else local.displayName,
+            style = MaterialTheme.typography.titleLarge,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onSurface,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
+}
+
+enum class LanguageSettingsPage { SPEECH, DISPLAY }
+
+/** Pushed from Settings: speech language packs, or the app display language. */
+@Composable
+fun LanguageSettingsScreen(
+    page: LanguageSettingsPage,
+    onBack: () -> Unit,
+    viewModel: LanguageSelectionViewModel = hiltViewModel(),
+) {
+    val uiState by viewModel.uiState.collectAsState()
     val chrome = UiStrings.forLanguage(uiState.uiLanguage)
 
-    BackHandler(onBack = onBack)
-
     LaunchedEffect(Unit) {
-        languageViewModel.reloadFromStore()
+        viewModel.reloadFromStore()
     }
 
     LaunchedEffect(uiState.finished) {
         if (uiState.finished) {
             onBack()
-            languageViewModel.consumeFinished()
+            viewModel.consumeFinished()
         }
     }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text(chrome.settings) },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = chrome.back)
-                    }
-                }
-            )
+    uiState.pendingDelete?.let { language ->
+        DeleteLanguageDialog(
+            language = language,
+            chrome = chrome,
+            onConfirm = { viewModel.confirmDelete() },
+            onDismiss = { viewModel.cancelDelete() },
+        )
+    }
+
+    val snackbarHostState = androidx.compose.runtime.remember { androidx.compose.material3.SnackbarHostState() }
+
+    LaunchedEffect(uiState.error) {
+        uiState.error?.let { error ->
+            if (error.isNotBlank()) {
+                snackbarHostState.showSnackbar(error)
+            }
         }
-    ) { padding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-                .padding(horizontal = 16.dp, vertical = 8.dp),
+    }
+
+    SubScreenScaffold(
+        title = when (page) {
+            LanguageSettingsPage.SPEECH -> chrome.languagesTitle
+            LanguageSettingsPage.DISPLAY -> chrome.appLanguageTitle
+        },
+        onBack = onBack,
+        backDescription = chrome.back,
+        snackbarHost = { `in`.gov.itantra.ui.components.AppSnackbarHost(snackbarHostState) },
+        bottomBar = {},
+    ) {
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 32.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            LazyColumn(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(16.dp),
-            ) {
-                // Theme Section
-                item(key = "theme-section") {
-                    Card(
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-                    ) {
-                        Column(
-                            modifier = Modifier
-                                .padding(16.dp)
-                                .selectableGroup(),
-                        ) {
-                            Text("Theme", style = MaterialTheme.typography.titleMedium)
-                            Spacer(Modifier.height(8.dp))
-                            ThemeMode.entries.forEach { option ->
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .selectable(
-                                            selected = option == mode,
-                                            role = Role.RadioButton,
-                                            onClick = { themeViewModel.setMode(option) },
-                                        )
-                                        .padding(vertical = 8.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                ) {
-                                    RadioButton(selected = option == mode, onClick = null)
-                                    Column(modifier = Modifier.padding(start = 12.dp)) {
-                                        Text(option.label(), style = MaterialTheme.typography.bodyLarge)
-                                        Text(
-                                            text = option.help(),
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-
-                // Speech Languages Section
-                item(key = "packs-title") {
-                    Text(
-                        text = chrome.languagesTitle,
-                        style = MaterialTheme.typography.titleLarge,
-                        modifier = Modifier.padding(top = 8.dp)
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(
-                        text = chrome.speechHelp,
-                        style = MaterialTheme.typography.bodyMedium,
-                    )
-                }
-
-                items(Language.entries.toList(), key = { "pack-${it.code}" }) { language ->
+            when (page) {
+                LanguageSettingsPage.SPEECH -> items(Language.entries.toList(), key = { "pack-${it.code}" }) { language ->
+                    val isDownloading = language in uiState.activeDownloads || uiState.progress?.language == language
+                    val isCurrentProgress = uiState.progress?.language == language
+                    val fraction = if (isCurrentProgress) uiState.progress?.fraction else null
                     PackRow(
                         language = language,
-                        selected = language in uiState.selected,
                         current = uiState.current == language,
-                        busy = uiState.busy,
+                        busy = false,
+                        downloaded = language in uiState.downloaded,
+                        downloadingNow = isDownloading,
+                        progressFraction = fraction,
                         chrome = chrome,
-                        onToggle = { languageViewModel.toggle(language) },
-                        onCurrent = { languageViewModel.setCurrent(language) },
+                        onSelectCurrent = { viewModel.setCurrent(language) },
+                        onDownload = { viewModel.downloadLanguage(language) },
+                        onDelete = { viewModel.requestDelete(language) },
+                        onPause = { viewModel.pauseDownload(language) },
                     )
                 }
-
-                // App UI Language Section
-                item(key = "ui-title") {
-                    Spacer(modifier = Modifier.height(12.dp))
-                    Text(text = chrome.appLanguageTitle, style = MaterialTheme.typography.titleLarge)
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(text = chrome.appLanguageBody, style = MaterialTheme.typography.bodyMedium)
-                }
-
-                items(uiState.appLanguageOptions, key = { "ui-${it.code}" }) { language ->
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable(enabled = !uiState.busy) { languageViewModel.setUiLanguage(language) }
-                            .padding(vertical = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        RadioButton(
-                            selected = uiState.uiLanguage == language,
-                            onClick = { languageViewModel.setUiLanguage(language) },
-                            enabled = !uiState.busy,
-                        )
-                        Column(modifier = Modifier.padding(start = 12.dp)) {
-                            Text(language.endonym, style = MaterialTheme.typography.titleMedium)
-                            Text(language.englishName, style = MaterialTheme.typography.bodySmall)
-                        }
-                    }
+                LanguageSettingsPage.DISPLAY -> items(uiState.appLanguageOptions, key = { "ui-${it.code}" }) { language ->
+                    UiLanguageRow(
+                        language = language,
+                        selected = uiState.uiLanguage == language,
+                        enabled = !uiState.busy,
+                        onSelect = { viewModel.setUiLanguage(language) },
+                    )
                 }
             }
-
-            uiState.progress?.let { progress ->
-                Spacer(modifier = Modifier.height(8.dp))
-                LinearProgressIndicator(
-                    progress = { progress.fraction.coerceIn(0f, 1f) },
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                Text(text = progress.message, style = MaterialTheme.typography.bodySmall)
-            }
-
-            uiState.error?.let { error ->
-                Text(
-                    text = error,
-                    color = MaterialTheme.colorScheme.error,
-                    modifier = Modifier.padding(top = 8.dp),
-                )
-            }
-
-            Spacer(modifier = Modifier.height(12.dp))
-            Button(
-                onClick = { languageViewModel.confirm() },
-                enabled = !uiState.busy && uiState.selected.isNotEmpty(),
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Text(chrome.save)
-            }
-            Spacer(modifier = Modifier.height(8.dp))
         }
     }
 }
 
-private fun ThemeMode.label(): String = when (this) {
-    ThemeMode.SYSTEM -> "System"
-    ThemeMode.LIGHT -> "Light"
-    ThemeMode.DARK -> "Dark"
+private fun ThemeMode.icon(): ImageVector = when (this) {
+    ThemeMode.SYSTEM -> Icons.Filled.BrightnessAuto
+    ThemeMode.LIGHT -> Icons.Filled.LightMode
+    ThemeMode.DARK -> Icons.Filled.DarkMode
 }
 
-private fun ThemeMode.help(): String = when (this) {
-    ThemeMode.SYSTEM -> "Match the phone light or dark setting"
-    ThemeMode.LIGHT -> "Always light, even if the phone is dark"
-    ThemeMode.DARK -> "Always dark, even if the phone is light"
+private fun ThemeMode.label(chrome: UiStrings): String = when (this) {
+    ThemeMode.SYSTEM -> chrome.themeSystemLabel
+    ThemeMode.LIGHT -> chrome.themeLightLabel
+    ThemeMode.DARK -> chrome.themeDarkLabel
 }
+
+private fun ThemeMode.help(chrome: UiStrings): String = when (this) {
+    ThemeMode.SYSTEM -> chrome.themeSystemHelp
+    ThemeMode.LIGHT -> chrome.themeLightHelp
+    ThemeMode.DARK -> chrome.themeDarkHelp
+}
+

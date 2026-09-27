@@ -101,7 +101,8 @@ class BluetoothTransport(
 
         val deadline = System.currentTimeMillis() + 30_000
         var lastException: Exception? = null
-        
+        var attempt = 0
+
         while (System.currentTimeMillis() < deadline) {
             val socket = device.createInsecureRfcommSocketToServiceRecord(serviceUuid)
             try {
@@ -110,7 +111,12 @@ class BluetoothTransport(
             } catch (e: Exception) {
                 lastException = e
                 runCatching { socket.close() }
-                Thread.sleep(1000)
+                // 300ms, 600ms, 1200ms, capped at 2s -- a fresh RFCOMM attempt right after
+                // a failure often just repeats the same failure (peer still finishing its
+                // own accept() setup); backing off gives it time to settle without paying
+                // a full fixed 1s on every retry inside this call's own 30s deadline.
+                Thread.sleep((300L shl attempt.coerceAtMost(2)).coerceAtMost(2000L))
+                attempt++
             }
         }
         throw TransportException("RFCOMM connect to $address failed after 30s", lastException)
