@@ -130,9 +130,10 @@ flowchart LR
 
 <div align="center">
 
-| 1. Push-to-Talk (PTT) | 2. Offline Radar (P2P) | 3. Emergency Alert Siren | 4. System Diagnostics |
-| :---: | :---: | :---: | :---: |
-| <!-- <img src="assets/screenshots/talk/talk_screen.png" width="200"/> --> *[Talk Screen]* | <!-- <img src="assets/screenshots/radar/radar_screen.png" width="200"/> --> *[Radar Screen]* | <!-- <img src="assets/screenshots/alerts/alert_screen.png" width="200"/> --> *[Alert Screen]* | <!-- <img src="assets/screenshots/diagnostics/diagnostics_screen.png" width="200"/> --> *[Diagnostics Screen]* |
+| 1. Push-to-Talk (PTT) | 2. Transcribed & Received | 3. Proximity Radar (P2P) | 4. Emergency SOS Siren | 5. Language Pack Manager |
+| :---: | :---: | :---: | :---: | :---: |
+| <img src="assets/screenshots/talk/talk_idle.jpg" width="180" alt="Talk Screen PTT Idle"/> | <img src="assets/screenshots/talk/talk_transcribed.jpg" width="180" alt="Transcribed and Received"/> | <img src="assets/screenshots/radar/radar_scan.jpg" width="180" alt="Offline Radar P2P"/> | <img src="assets/screenshots/alerts/alert_siren.jpg" width="180" alt="Emergency Alert Siren"/> | <img src="assets/screenshots/settings/settings_packs.jpg" width="180" alt="Language Packs"/> |
+| *Real-time PTT floor* | *Devanagari STT & Voice* | *Wi-Fi Direct / BLE radar* | *100% volume alarm override* | *10 Indic packs on-demand* |
 
 </div>
 
