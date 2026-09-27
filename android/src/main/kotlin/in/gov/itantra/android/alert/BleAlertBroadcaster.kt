@@ -23,7 +23,7 @@ class BleAlertBroadcaster(private val context: Context) {
     private var advertiseAckCallback: AdvertiseCallback? = null
 
     @SuppressLint("MissingPermission")
-    fun broadcastAlert(language: Language, content: AlertContent, sequence: Long, senderName: String? = null) {
+    fun broadcastAlert(language: Language, content: AlertContent, sequence: Long, senderName: String? = null, ttl: Int = 3) {
         val adapter = (context.getSystemService(Context.BLUETOOTH_SERVICE) as? BluetoothManager)?.adapter
         if (adapter == null || !adapter.isEnabled) {
             AppLog.w("BleAlertBroadcaster", "Bluetooth disabled, cannot broadcast alert")
@@ -36,7 +36,7 @@ class BleAlertBroadcaster(private val context: Context) {
             return
         }
 
-        val payload = encodePayload(language, content, sequence, senderName)
+        val payload = encodePayload(language, content, sequence, senderName, ttl)
         if (payload == null) {
             AppLog.w("BleAlertBroadcaster", "Alert too large for BLE broadcast (connectionless)")
             return
@@ -52,19 +52,21 @@ class BleAlertBroadcaster(private val context: Context) {
             .build()
 
         val uuid = ParcelUuid(ALERT_UUID)
+        // Using 16-bit service data fits within 31-byte legacy BLE advertising frame
         val data = AdvertiseData.Builder()
             .setIncludeDeviceName(false)
-            .addServiceUuid(uuid)
+            .setIncludeTxPowerLevel(false)
+            .addServiceData(uuid, payload)
             .build()
 
         val scanResponse = AdvertiseData.Builder()
             .setIncludeDeviceName(false)
-            .addServiceData(uuid, payload)
+            .addServiceUuid(uuid)
             .build()
 
         val callback = object : AdvertiseCallback() {
             override fun onStartSuccess(settingsInEffect: AdvertiseSettings?) {
-                AppLog.d("BleAlertBroadcaster", "Started broadcasting alert via BLE")
+                AppLog.d("BleAlertBroadcaster", "Started broadcasting alert via BLE successfully")
                 isAdvertising = true
             }
 
@@ -103,10 +105,6 @@ class BleAlertBroadcaster(private val context: Context) {
             .build()
 
         val uuid = ParcelUuid(ACK_UUID)
-        val data = AdvertiseData.Builder()
-            .setIncludeDeviceName(false)
-            .addServiceUuid(uuid)
-            .build()
 
         // Encode payloadHash (4 bytes) and truncated receiverName (up to 9 bytes)
         val nameBytes = receiverName.toByteArray(Charsets.UTF_8)
@@ -116,14 +114,20 @@ class BleAlertBroadcaster(private val context: Context) {
         buffer.put(nameBytes, 0, nameLen)
         val payload = buffer.array()
 
+        val data = AdvertiseData.Builder()
+            .setIncludeDeviceName(false)
+            .setIncludeTxPowerLevel(false)
+            .addServiceData(uuid, payload)
+            .build()
+
         val scanResponse = AdvertiseData.Builder()
             .setIncludeDeviceName(false)
-            .addServiceData(uuid, payload)
+            .addServiceUuid(uuid)
             .build()
 
         val callback = object : AdvertiseCallback() {
             override fun onStartSuccess(settingsInEffect: AdvertiseSettings?) {
-                AppLog.d("BleAlertBroadcaster", "Started broadcasting ACK via BLE")
+                AppLog.d("BleAlertBroadcaster", "Started broadcasting ACK via BLE successfully")
                 isAdvertisingAck = true
             }
             override fun onStartFailure(errorCode: Int) {
@@ -170,13 +174,13 @@ class BleAlertBroadcaster(private val context: Context) {
         isAdvertisingAck = false
     }
 
-    private fun encodePayload(language: Language, content: AlertContent, sequence: Long, senderName: String? = null): ByteArray? {
-        return AlertCodec.encodeBlePayload(language, content, sequence, senderName)
+    private fun encodePayload(language: Language, content: AlertContent, sequence: Long, senderName: String? = null, ttl: Int = 3): ByteArray? {
+        return AlertCodec.encodeBlePayload(language, content, sequence, senderName, ttl)
     }
 
     companion object {
-        val ALERT_UUID: UUID = UUID.fromString("7f3d2a10-4c9b-4f2e-9a61-1b5c8d0e4a78")
-        val ACK_UUID: UUID = UUID.fromString("7f3d2a11-4c9b-4f2e-9a61-1b5c8d0e4a78")
-        private const val MAX_PAYLOAD_SIZE = 22
+        // Standard 16-bit UUID base format ensures payload fits within 31-byte legacy BLE frame
+        val ALERT_UUID: UUID = UUID.fromString("00007F3D-0000-1000-8000-00805F9B34FB")
+        val ACK_UUID: UUID = UUID.fromString("00007F3E-0000-1000-8000-00805F9B34FB")
     }
 }

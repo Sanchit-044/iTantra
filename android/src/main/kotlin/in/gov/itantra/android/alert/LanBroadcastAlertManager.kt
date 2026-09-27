@@ -54,9 +54,10 @@ class LanBroadcastAlertManager(
 
         listenerThread = thread(name = "iTantra-LanAlertListener") {
             try {
-                val udpSocket = DatagramSocket(port).apply {
+                val udpSocket = DatagramSocket(null).apply {
                     reuseAddress = true
                     broadcast = true
+                    bind(java.net.InetSocketAddress(port))
                 }
                 socket = udpSocket
 
@@ -108,16 +109,17 @@ class LanBroadcastAlertManager(
     }
 
     /**
-     * Broadcast an emergency alert to all devices on the local Wi-Fi network.
-     * Transmits 3 rapid UDP burst packets spaced 50ms apart for maximum reliability.
+     * Broadcast an emergency alert to all devices on the local Wi-Fi / hotspot / LAN network.
+     * Transmits rapid UDP burst packets across all active broadcast destinations for maximum reliability.
      */
-    fun sendBroadcastAlert(language: Language, content: AlertContent, sequence: Int, senderName: String) {
+    fun sendBroadcastAlert(language: Language, content: AlertContent, sequence: Int, senderName: String, ttl: Int = 3) {
         val textPayload = "$senderName\u001F${content.toWirePayload()}"
         val packet = Packet.text(
             type = MessageType.ALERT,
             language = language,
             sequence = sequence,
             text = textPayload,
+            flags = ttl,
         )
 
         // Add to deduplication cache before sending to prevent receiving our own UDP broadcast
@@ -131,16 +133,20 @@ class LanBroadcastAlertManager(
                 val udpSocket = DatagramSocket().apply {
                     broadcast = true
                 }
-                val destination = InetAddress.getByName("255.255.255.255")
-                val datagram = DatagramPacket(frameBytes, frameBytes.size, destination, port)
+                val destinations = getBroadcastDestinations()
 
-                // Send 3x burst for zero-loss delivery on unacknowledged UDP
+                // Send burst to every active broadcast destination
                 for (i in 1..BURST_COUNT) {
-                    udpSocket.send(datagram)
+                    for (dest in destinations) {
+                        try {
+                            val datagram = DatagramPacket(frameBytes, frameBytes.size, dest, port)
+                            udpSocket.send(datagram)
+                        } catch (_: Exception) {}
+                    }
                     if (i < BURST_COUNT) Thread.sleep(BURST_INTERVAL_MS)
                 }
                 udpSocket.close()
-                AppLog.d(TAG, "Sent LAN broadcast alert burst ($BURST_COUNT packets)")
+                AppLog.d(TAG, "Sent LAN broadcast alert burst ($BURST_COUNT packets to ${destinations.size} destinations)")
             } catch (e: Exception) {
                 AppLog.w(TAG, "Failed to send LAN broadcast alert: ${e.message}")
             }
@@ -162,25 +168,49 @@ class LanBroadcastAlertManager(
 
         thread(name = "iTantra-LanAckSender") {
             try {
-                // Large random jitter prevents UDP collisions when multiple devices ACK simultaneously
-                Thread.sleep((100..1500).random().toLong())
+                // Random jitter prevents UDP collisions when multiple devices ACK simultaneously
+                Thread.sleep((100..1200).random().toLong())
                 
                 val udpSocket = DatagramSocket().apply { broadcast = true }
-                val destination = InetAddress.getByName("255.255.255.255")
-                val datagram = DatagramPacket(frameBytes, frameBytes.size, destination, port)
+                val destinations = getBroadcastDestinations()
                 
-                // Send 5x burst for maximum reliability on unacknowledged UDP ACKs
-                for (i in 1..5) {
-                    udpSocket.send(datagram)
-                    if (i < 5) Thread.sleep(BURST_INTERVAL_MS)
+                // Send burst across all destinations
+                for (i in 1..4) {
+                    for (dest in destinations) {
+                        try {
+                            val datagram = DatagramPacket(frameBytes, frameBytes.size, dest, port)
+                            udpSocket.send(datagram)
+                        } catch (_: Exception) {}
+                    }
+                    if (i < 4) Thread.sleep(BURST_INTERVAL_MS)
                 }
                 
                 udpSocket.close()
-                AppLog.d(TAG, "Sent LAN broadcast ACK burst (5 packets) for sequence $sequence")
+                AppLog.d(TAG, "Sent LAN broadcast ACK burst for sequence $sequence to ${destinations.size} destinations")
             } catch (e: Exception) {
                 AppLog.w(TAG, "Failed to send LAN broadcast ACK: ${e.message}")
             }
         }
+    }
+
+    private fun getBroadcastDestinations(): Set<InetAddress> {
+        val destinations = mutableSetOf<InetAddress>()
+        try {
+            destinations.add(InetAddress.getByName("255.255.255.255"))
+            val interfaces = java.net.NetworkInterface.getNetworkInterfaces() ?: return destinations
+            for (iface in interfaces) {
+                if (!iface.isUp || iface.isLoopback) continue
+                for (addr in iface.interfaceAddresses) {
+                    val broadcast = addr.broadcast
+                    if (broadcast != null) {
+                        destinations.add(broadcast)
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            AppLog.w(TAG, "Error resolving broadcast destinations: ${e.message}")
+        }
+        return destinations
     }
 
     /**
