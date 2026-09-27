@@ -39,3 +39,6 @@ core/bin/
 
 # Python bytecode from the export scripts
 __pycache__/
+
+# Reference external app
+reference-app/
