@@ -98,6 +98,10 @@ class WifiAlertScanner(
                     val senderName = decoded.senderName ?: "Wi-Fi Peer"
                     val wirePayload = content.toWirePayload()
 
+                    if (WifiAlertBroadcaster.isOriginated(sequence)) {
+                        return@setDnsSdResponseListeners // Ignore self-originated Wi-Fi Direct alert broadcast
+                    }
+
                     val dedupKey = "${srcDevice.deviceAddress}:$sequence:$wirePayload"
                     if (!recentAlerts.add(dedupKey)) {
                         return@setDnsSdResponseListeners
@@ -111,14 +115,6 @@ class WifiAlertScanner(
                         }
                     }
 
-                    val alert = IncomingAlert(
-                        content = content,
-                        language = language,
-                        sequence = sequence,
-                        receivedAtMs = System.currentTimeMillis(),
-                        senderName = senderName
-                    )
-                    
                     AppLog.d("WifiAlertScanner", "Received connectionless Wi-Fi alert (seq $sequence): $content")
                     
                     val textPayload = "$senderName\u001F$wirePayload"
@@ -130,10 +126,6 @@ class WifiAlertScanner(
                         flags = decoded.ttl,
                     )
                     _alerts.tryEmit(packet)
-
-                    kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
-                        alertPlayer.play(alert)
-                    }
                 }
             }
         )

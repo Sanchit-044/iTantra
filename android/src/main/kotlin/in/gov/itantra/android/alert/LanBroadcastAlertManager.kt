@@ -48,6 +48,10 @@ class LanBroadcastAlertManager(
     private val _alerts = kotlinx.coroutines.flow.MutableSharedFlow<Packet>(extraBufferCapacity = 20)
     val alerts = _alerts.asSharedFlow()
 
+    fun markOriginated(sequence: Int) = Companion.markOriginated(sequence)
+    fun isOriginated(sequence: Int): Boolean = Companion.isOriginated(sequence)
+    fun setLocalDeviceName(name: String) = Companion.setLocalDeviceName(name)
+
     private val listeners = java.util.concurrent.CopyOnWriteArrayList<(Packet) -> Unit>()
 
     /**
@@ -76,6 +80,13 @@ class LanBroadcastAlertManager(
                     val datagram = DatagramPacket(buffer, buffer.size)
                     try {
                         udpSocket.receive(datagram)
+
+                        val senderAddr = datagram.address
+                        if (senderAddr != null && (senderAddr.isLoopbackAddress || isLocalAddress(senderAddr))) {
+                            // Ignore UDP packets looped back to our own socket from our own interfaces
+                            continue
+                        }
+
                         val len = datagram.length
                         if (len <= PacketCodec.LENGTH_PREFIX_LEN) continue
 
@@ -84,6 +95,22 @@ class LanBroadcastAlertManager(
                         val packet = PacketCodec.decodeBody(body, broadcastCrypto)
 
                         if (packet.type == MessageType.ALERT || packet.type == MessageType.ACK) {
+                            if (packet.type == MessageType.ALERT) {
+                                if (senderAddr != null) {
+                                    alertSenderIps[packet.sequence] = senderAddr
+                                }
+                                if (isOriginated(packet.sequence)) {
+                                    // Drop self-originated alert broadcast by sequence
+                                    continue
+                                }
+                                val split = packet.text.split("\u001F", limit = 2)
+                                val senderName = if (split.size == 2) split[0].takeIf { it.isNotBlank() } else null
+                                if (senderName != null && isLocalDeviceName(senderName)) {
+                                    // Drop self-originated alert broadcast by sender name
+                                    continue
+                                }
+                            }
+
                             val alertKey = "${packet.type.name}:${packet.sequence}:${packet.timestampMs}:${packet.text.hashCode()}"
                             val now = System.currentTimeMillis()
 
@@ -125,6 +152,10 @@ class LanBroadcastAlertManager(
      * Transmits rapid UDP burst packets across all active broadcast destinations for maximum reliability.
      */
     fun sendBroadcastAlert(language: Language, content: AlertContent, sequence: Int, senderName: String, ttl: Int = 3) {
+        markOriginated(sequence)
+        if (senderName.isNotBlank()) {
+            setLocalDeviceName(senderName)
+        }
         val textPayload = "$senderName\u001F${content.toWirePayload()}"
         val packet = Packet.text(
             type = MessageType.ALERT,
@@ -169,22 +200,26 @@ class LanBroadcastAlertManager(
      * Broadcast a delivery receipt (ACK) back to the network so the original sender
      * can update its UI.
      */
-    fun sendBroadcastAck(sequence: Int, payloadHash: Int, receiverName: String) {
+    fun sendBroadcastAck(sequence: Int, payloadHash: Int, receiverName: String, locationInfo: String? = null) {
+        val safeName = receiverName.replace(":", " ").trim()
+        val safeLoc = locationInfo?.replace(":", " ")?.trim()
+        val locPart = if (!safeLoc.isNullOrBlank()) ":$safeLoc" else ""
         val packet = Packet.text(
             type = MessageType.ACK,
             language = Language.ENGLISH, // Doesn't matter for ACK
             sequence = sequence,
-            text = "$payloadHash:$receiverName",
+            text = "$payloadHash:$safeName$locPart",
         )
         val frameBytes = PacketCodec.encode(packet, broadcastCrypto)
 
         thread(name = "iTantra-LanAckSender") {
             try {
-                // Random jitter prevents UDP collisions when multiple devices ACK simultaneously
-                Thread.sleep((100..1200).random().toLong())
+                // Short random jitter prevents UDP collisions when multiple devices ACK simultaneously
+                Thread.sleep((30..200).random().toLong())
                 
                 val udpSocket = DatagramSocket().apply { broadcast = true }
-                val destinations = getBroadcastDestinations()
+                val destinations = getBroadcastDestinations().toMutableSet()
+                alertSenderIps[sequence]?.let { destinations.add(it) }
                 
                 // Send burst across all destinations
                 for (i in 1..4) {
@@ -346,6 +381,18 @@ class LanBroadcastAlertManager(
         } catch (_: Exception) {}
     }
 
+    private fun isLocalAddress(addr: InetAddress): Boolean {
+        try {
+            val interfaces = java.net.NetworkInterface.getNetworkInterfaces() ?: return false
+            for (iface in interfaces) {
+                for (ifaceAddr in iface.inetAddresses) {
+                    if (ifaceAddr == addr) return true
+                }
+            }
+        } catch (_: Exception) {}
+        return false
+    }
+
     private fun purgeStaleCache(now: Long) {
         recentAlerts.entries.removeIf { now - it.value > DEDUP_WINDOW_MS }
     }
@@ -356,5 +403,25 @@ class LanBroadcastAlertManager(
         private const val BURST_COUNT = 3
         private const val BURST_INTERVAL_MS = 50L
         private const val DEDUP_WINDOW_MS = 15_000L
+
+        private val originatedSequences = ConcurrentHashMap.newKeySet<Int>()
+        private val localDeviceNames = ConcurrentHashMap.newKeySet<String>()
+        private val alertSenderIps = ConcurrentHashMap<Int, InetAddress>()
+
+        fun markOriginated(sequence: Int) {
+            originatedSequences.add(sequence)
+        }
+
+        fun isOriginated(sequence: Int): Boolean = originatedSequences.contains(sequence)
+
+        fun setLocalDeviceName(name: String) {
+            if (name.isNotBlank()) {
+                localDeviceNames.add(name.trim().lowercase())
+            }
+        }
+
+        fun isLocalDeviceName(name: String): Boolean {
+            return localDeviceNames.contains(name.trim().lowercase())
+        }
     }
 }

@@ -29,6 +29,9 @@ class WifiAlertBroadcaster(private val context: Context) {
 
     private var stopBroadcastRunnable: Runnable? = null
 
+    fun markOriginated(sequence: Int) = Companion.markOriginated(sequence)
+    fun isOriginated(sequence: Int): Boolean = Companion.isOriginated(sequence)
+
     @SuppressLint("MissingPermission")
     fun broadcastAlert(
         language: Language,
@@ -47,6 +50,7 @@ class WifiAlertBroadcaster(private val context: Context) {
             return
         }
 
+        originatedSequences.add(sequence.toInt())
         stopBroadcasting()
 
         AppLog.d("WifiAlertBroadcaster", "Attempting to broadcast alert sequence $sequence over Wi-Fi Direct")
@@ -104,8 +108,15 @@ class WifiAlertBroadcaster(private val context: Context) {
     }
 
     companion object {
+        val originatedSequences = java.util.concurrent.ConcurrentHashMap.newKeySet<Int>()
         const val INSTANCE_PREFIX = "iTantra_Alert"
         const val SERVICE_TYPE = "_itantra._tcp"
+
+        fun markOriginated(sequence: Int) {
+            originatedSequences.add(sequence)
+        }
+
+        fun isOriginated(sequence: Int): Boolean = originatedSequences.contains(sequence)
     }
     
     private val instanceName = INSTANCE_PREFIX + "_" + java.util.UUID.randomUUID().toString().take(6)

@@ -140,6 +140,10 @@ class BleAlertScanner(
                 val senderName = decoded.senderName ?: "Nearby Peer"
                 val wirePayload = content.toWirePayload()
 
+                if (BleAlertBroadcaster.isOriginated(sequence)) {
+                    return // Ignore self-originated BLE alert broadcast
+                }
+
                 val dedupKey = "ALERT:${result.device.address}:$sequence:$wirePayload"
                 if (recentAlerts.putIfAbsent(dedupKey, now) != null) {
                     return // Deduplicated within sliding window
@@ -174,9 +178,9 @@ class BleAlertScanner(
         val ackUuid = ParcelUuid(BleAlertBroadcaster.ACK_UUID)
         return listOf(
             ScanFilter.Builder().setServiceUuid(alertUuid).build(),
-            ScanFilter.Builder().setServiceData(alertUuid, byteArrayOf(), byteArrayOf()).build(),
+            ScanFilter.Builder().setServiceData(alertUuid, null).build(),
             ScanFilter.Builder().setServiceUuid(ackUuid).build(),
-            ScanFilter.Builder().setServiceData(ackUuid, byteArrayOf(), byteArrayOf()).build(),
+            ScanFilter.Builder().setServiceData(ackUuid, null).build(),
         )
     }
 

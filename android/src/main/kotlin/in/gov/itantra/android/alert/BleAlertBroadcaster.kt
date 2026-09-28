@@ -24,6 +24,9 @@ class BleAlertBroadcaster(private val context: Context) {
 
     private var stopBroadcastRunnable: Runnable? = null
 
+    fun markOriginated(sequence: Int) = Companion.markOriginated(sequence)
+    fun isOriginated(sequence: Int): Boolean = Companion.isOriginated(sequence)
+
     @SuppressLint("MissingPermission")
     fun broadcastAlert(
         language: Language,
@@ -52,6 +55,7 @@ class BleAlertBroadcaster(private val context: Context) {
             return
         }
 
+        originatedSequences.add(sequence.toInt())
         stopBroadcasting()
 
         val settings = AdvertiseSettings.Builder()
@@ -191,8 +195,15 @@ class BleAlertBroadcaster(private val context: Context) {
     }
 
     companion object {
+        val originatedSequences = java.util.concurrent.ConcurrentHashMap.newKeySet<Int>()
         // Standard 16-bit UUID base format ensures payload fits within 31-byte legacy BLE frame
         val ALERT_UUID: UUID = UUID.fromString("00007F3D-0000-1000-8000-00805F9B34FB")
         val ACK_UUID: UUID = UUID.fromString("00007F3E-0000-1000-8000-00805F9B34FB")
+
+        fun markOriginated(sequence: Int) {
+            originatedSequences.add(sequence)
+        }
+
+        fun isOriginated(sequence: Int): Boolean = originatedSequences.contains(sequence)
     }
 }
