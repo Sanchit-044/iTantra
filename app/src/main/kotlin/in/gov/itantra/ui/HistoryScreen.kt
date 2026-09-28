@@ -206,7 +206,17 @@ fun HistoryMessageItem(
                 )
                 Spacer(Modifier.width(6.dp))
                 Text(
-                    text = if (!outbound) chrome.receivedFrom(msg.peerName ?: chrome.unknownPeer) else chrome.sentTo(msg.peerName ?: chrome.allPeers),
+                    text = if (!outbound) {
+                        chrome.receivedFrom(msg.peerName ?: chrome.unknownPeer)
+                    } else if (msg.peerName.isNullOrBlank()) {
+                        if (msg.status == MessageStatus.SENT || msg.status == MessageStatus.QUEUED) {
+                            "Broadcasting to nearby nodes..."
+                        } else {
+                            "Broadcast Target: All Nearby Units"
+                        }
+                    } else {
+                        chrome.sentTo(msg.peerName)
+                    },
                     style = MaterialTheme.typography.labelLarge,
                     fontSize = 14.sp,
                     fontWeight = FontWeight.SemiBold,
@@ -233,7 +243,19 @@ fun HistoryMessageItem(
                 maxLines = 3,
                 overflow = TextOverflow.Ellipsis
             )
-            if (msg.isAlert) {
+            val locDistLabel = if (outbound) {
+                if (!msg.peerName.isNullOrBlank()) {
+                    val locPart = if (!msg.locationLabel.isNullOrBlank()) " (${msg.locationLabel})" else ""
+                    val distStr = if (msg.distanceMeters != null) " (~${String.format(Locale.US, "%.1f", msg.distanceMeters)}m)" else ""
+                    "Receiver: ${msg.peerName}$locPart$distStr"
+                } else {
+                    null
+                }
+            } else {
+                val distStr = if (msg.distanceMeters != null) " · ~${String.format(Locale.US, "%.1f", msg.distanceMeters)}m away" else ""
+                "${msg.locationLabel ?: "Emergency Beacon"}$distStr"
+            }
+            if (msg.isAlert && locDistLabel != null) {
                 Spacer(modifier = Modifier.height(4.dp))
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
@@ -246,16 +268,6 @@ fun HistoryMessageItem(
                         modifier = Modifier.size(13.dp),
                     )
                     Spacer(Modifier.width(3.dp))
-                    val locDistLabel = if (outbound) {
-                        if (!msg.peerName.isNullOrBlank()) {
-                            val locPart = if (!msg.locationLabel.isNullOrBlank()) " (${msg.locationLabel})" else ""
-                            "Receiver: ${msg.peerName}$locPart (~${String.format(Locale.US, "%.1f", msg.distanceMeters ?: 3.5f)}m)"
-                        } else {
-                            "Target Proximity: ~${String.format(Locale.US, "%.1f", msg.distanceMeters ?: 3.5f)}m"
-                        }
-                    } else {
-                        "${msg.locationLabel ?: "Emergency Beacon"} · ~${String.format(Locale.US, "%.1f", msg.distanceMeters ?: 3.5f)}m away"
-                    }
                     Text(
                         text = locDistLabel,
                         style = MaterialTheme.typography.labelSmall,
@@ -275,17 +287,28 @@ fun HistoryMessageItem(
                     horizontalArrangement = Arrangement.spacedBy(5.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    val (statusBg, statusFg) = when (msg.status) {
-                        MessageStatus.DELIVERED -> ext.successContainer to ext.onSuccessContainer
-                        MessageStatus.FAILED -> MaterialTheme.colorScheme.errorContainer to MaterialTheme.colorScheme.onErrorContainer
-                        MessageStatus.QUEUED -> ext.warningContainer to ext.onWarningContainer
-                        MessageStatus.RECEIVED -> MaterialTheme.colorScheme.primaryContainer to MaterialTheme.colorScheme.onPrimaryContainer
+                    val isBroadcasting = msg.isAlert && outbound && msg.peerName.isNullOrBlank() && (msg.status == MessageStatus.SENT || msg.status == MessageStatus.QUEUED)
+                    val isNotReceived = msg.isAlert && outbound && msg.peerName.isNullOrBlank() && msg.status == MessageStatus.FAILED
+                    val showSpinner = isBroadcasting
+                    val statusLabel = when {
+                        isBroadcasting -> "Broadcasting..."
+                        isNotReceived -> "Not Received / Cancelled"
+                        else -> msg.status.displayLabel(chrome)
+                    }
+                    val (statusBg, statusFg) = when {
+                        isBroadcasting -> MaterialTheme.colorScheme.tertiaryContainer to MaterialTheme.colorScheme.onTertiaryContainer
+                        isNotReceived -> MaterialTheme.colorScheme.errorContainer to MaterialTheme.colorScheme.onErrorContainer
+                        msg.status == MessageStatus.DELIVERED -> ext.successContainer to ext.onSuccessContainer
+                        msg.status == MessageStatus.FAILED -> MaterialTheme.colorScheme.errorContainer to MaterialTheme.colorScheme.onErrorContainer
+                        msg.status == MessageStatus.QUEUED -> ext.warningContainer to ext.onWarningContainer
+                        msg.status == MessageStatus.RECEIVED -> MaterialTheme.colorScheme.primaryContainer to MaterialTheme.colorScheme.onPrimaryContainer
                         else -> MaterialTheme.colorScheme.surfaceContainerHighest to MaterialTheme.colorScheme.onSurfaceVariant
                     }
                     StatusPill(
-                        text = msg.status.displayLabel(chrome),
+                        text = statusLabel,
                         containerColor = statusBg,
                         contentColor = statusFg,
+                        showProgress = showSpinner,
                     )
                     if (msg.isAlert) {
                         StatusPill(

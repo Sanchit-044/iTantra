@@ -70,10 +70,8 @@ fun IncomingAlertFullScreen(
     var isTrackingActive by remember { mutableStateOf(false) }
     var isAudioMuted by remember { mutableStateOf(false) }
 
-    // Use real RSSI-based distance from ViewModel, fall back to alert's initial distance, then default
-    val currentDistanceMeters = liveDistanceMeters
-        ?: alert.distanceMeters
-        ?: 3.5f
+    // Use real RSSI-based distance from ViewModel or alert's initial distance
+    val currentDistanceMeters = liveDistanceMeters ?: alert.distanceMeters
 
     // 2-minute (120 seconds) alarm timer countdown
     var remainingSeconds by remember { mutableIntStateOf(120) }
@@ -413,22 +411,31 @@ fun IncomingAlertFullScreen(
                                 verticalAlignment = Alignment.Bottom,
                                 horizontalArrangement = Arrangement.Center,
                             ) {
-                                Text(
-                                    text = String.format(Locale.US, "%.1f", currentDistanceMeters),
-                                    style = MaterialTheme.typography.displaySmall,
-                                    fontFamily = FontFamily.Monospace,
-                                    fontWeight = FontWeight.Black,
-                                    color = proximityColor,
-                                    fontSize = if (isCompactHeight) 32.sp else 38.sp,
-                                )
-                                Spacer(Modifier.width(4.dp))
-                                Text(
-                                    text = "meters",
-                                    style = MaterialTheme.typography.titleMedium,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = Color(0xFFA1A1AA),
-                                    modifier = Modifier.padding(bottom = 6.dp),
-                                )
+                                if (currentDistanceMeters != null) {
+                                    Text(
+                                        text = String.format(Locale.US, "%.1f", currentDistanceMeters),
+                                        style = MaterialTheme.typography.displaySmall,
+                                        fontFamily = FontFamily.Monospace,
+                                        fontWeight = FontWeight.Black,
+                                        color = proximityColor,
+                                        fontSize = if (isCompactHeight) 32.sp else 38.sp,
+                                    )
+                                    Spacer(Modifier.width(4.dp))
+                                    Text(
+                                        text = "meters",
+                                        style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = Color(0xFFA1A1AA),
+                                        modifier = Modifier.padding(bottom = 6.dp),
+                                    )
+                                } else {
+                                    Text(
+                                        text = "Estimating Proximity...",
+                                        style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color(0xFFA1A1AA),
+                                    )
+                                }
                             }
 
                             Spacer(Modifier.height(6.dp))

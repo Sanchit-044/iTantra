@@ -654,8 +654,9 @@ private fun ModernInboundBubble(
                         }
                         val senderLabel = buildString {
                             append(senderName)
-                            val dist = item.distanceMeters ?: 3.5f
-                            append(" · ~${String.format(Locale.US, "%.1f", dist)}m")
+                            if (item.distanceMeters != null) {
+                                append(" · ~${String.format(Locale.US, "%.1f", item.distanceMeters)}m")
+                            }
                         }
                         Text(
                             text = senderLabel,
@@ -859,12 +860,23 @@ private fun ModernOutboundBubble(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
-                    if (!item.receiverName.isNullOrBlank()) {
-                        val receiverLabel = if (item.isAlert) {
-                            "to ${item.receiverName} (~${String.format(Locale.US, "%.1f", item.distanceMeters ?: 3.5f)}m)"
+                    val receiverLabel = if (item.isAlert) {
+                        if (!item.receiverName.isNullOrBlank()) {
+                            val distStr = if (item.distanceMeters != null) " (~${String.format(Locale.US, "%.1f", item.distanceMeters)}m)" else ""
+                            "to ${item.receiverName}$distStr"
+                        } else if (item.state == OutboundState.SENDING) {
+                            "Broadcasting..."
+                        } else if (item.state == OutboundState.FAILED) {
+                            "Not Received / Cancelled"
                         } else {
-                            "to ${item.receiverName}"
+                            null
                         }
+                    } else if (!item.receiverName.isNullOrBlank()) {
+                        "to ${item.receiverName}"
+                    } else {
+                        null
+                    }
+                    if (receiverLabel != null) {
                         Text(
                             text = receiverLabel,
                             style = MaterialTheme.typography.labelSmall,

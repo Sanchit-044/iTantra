@@ -1819,7 +1819,18 @@ class MainViewModel @Inject constructor(
         alertPlayer.dismissActiveAlert()
         for (item in outboundQueue.snapshot()) {
             if (item.isAlert && item.state == OutboundState.SENDING) {
-                outboundQueue.markSent(item.id, item.receiverName ?: "Nearby Radio Mesh")
+                if (!item.receiverName.isNullOrBlank()) {
+                    outboundQueue.markSent(item.id, item.receiverName, item.distanceMeters, item.locationLabel)
+                } else {
+                    outboundQueue.markFailed(item.id)
+                    viewModelScope.launch(Dispatchers.IO) {
+                        try {
+                            historyDao.updateMessageStatus(item.id, MessageStatus.FAILED)
+                        } catch (e: Exception) {
+                            AppLog.w("MainViewModel", "Failed to update history status for cancelled alert: ${e.message}")
+                        }
+                    }
+                }
             }
         }
         publishQueues()
