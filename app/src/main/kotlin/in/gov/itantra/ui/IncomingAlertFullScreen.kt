@@ -72,6 +72,7 @@ fun IncomingAlertFullScreen(
 
     // Use real RSSI-based distance from ViewModel or alert's initial distance
     val currentDistanceMeters = liveDistanceMeters ?: alert.distanceMeters
+    val effectiveDistanceMeters = currentDistanceMeters ?: 15.0f
 
     // 2-minute (120 seconds) alarm timer countdown
     var remainingSeconds by remember { mutableIntStateOf(120) }
@@ -133,7 +134,7 @@ fun IncomingAlertFullScreen(
     )
 
     // Proximity Acoustic Tone Beeper (Rate scales in real-time as distance decreases)
-    LaunchedEffect(isTrackingActive, currentDistanceMeters) {
+    LaunchedEffect(isTrackingActive, effectiveDistanceMeters) {
         if (!isTrackingActive) return@LaunchedEffect
         var toneGen: ToneGenerator? = null
         try {
@@ -141,7 +142,7 @@ fun IncomingAlertFullScreen(
             while (isActive) {
                 toneGen.startTone(ToneGenerator.TONE_PROP_BEEP, 50)
                 // Acoustic Interval: 850ms at 30m, down to 80ms at <= 1.2m
-                val intervalMs = (currentDistanceMeters * 26f + 50f).coerceIn(80f, 900f).toLong()
+                val intervalMs = (effectiveDistanceMeters * 26f + 50f).coerceIn(80f, 900f).toLong()
                 delay(intervalMs)
             }
         } catch (_: Exception) {
@@ -152,10 +153,11 @@ fun IncomingAlertFullScreen(
 
     // Proximity category tokens
     val (proximityColor, proximityBandText, signalBarsCount) = when {
-        currentDistanceMeters <= 1.5f -> Triple(Color(0xFF10B981), "IMMEDIATE CONTACT · TARGET REACHED", 5)
-        currentDistanceMeters <= 4.0f -> Triple(Color(0xFF34D399), "CLOSE PROXIMITY · APPROACHING SOURCE", 4)
-        currentDistanceMeters <= 10.0f -> Triple(Color(0xFFFBBF24), "NEARBY RANGE · STRONG SIGNAL", 3)
-        currentDistanceMeters <= 20.0f -> Triple(Color(0xFFFB923C), "MEDIUM RANGE · DETECTING BEACON", 2)
+        currentDistanceMeters == null -> Triple(Color(0xFFFB923C), "ESTIMATING SIGNAL PROXIMITY...", 2)
+        effectiveDistanceMeters <= 1.5f -> Triple(Color(0xFF10B981), "IMMEDIATE CONTACT · TARGET REACHED", 5)
+        effectiveDistanceMeters <= 4.0f -> Triple(Color(0xFF34D399), "CLOSE PROXIMITY · APPROACHING SOURCE", 4)
+        effectiveDistanceMeters <= 10.0f -> Triple(Color(0xFFFBBF24), "NEARBY RANGE · STRONG SIGNAL", 3)
+        effectiveDistanceMeters <= 20.0f -> Triple(Color(0xFFFB923C), "MEDIUM RANGE · DETECTING BEACON", 2)
         else -> Triple(Color(0xFFEF4444), "EXTENDED RANGE · WEAK SIGNAL", 1)
     }
 
@@ -298,7 +300,7 @@ fun IncomingAlertFullScreen(
                     } else {
                         // High-Tech Sonar Radar Compass (Signal Tracking Mode)
                         TacticalSonarRadarView(
-                            distanceMeters = currentDistanceMeters,
+                            distanceMeters = effectiveDistanceMeters,
                             sweepAngle = radarSweepAngle,
                             radarColor = proximityColor,
                             modifier = Modifier
