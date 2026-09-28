@@ -111,6 +111,19 @@ flowchart LR
 | **Latency** | Sub-second voice round-trip | 800ms silence endpointer; clause-level pipelined TTS playback start in **<400ms**; RTF $\approx 0.07$. |
 | **Robustness** | 100% Offline & Open Source | Pure ONNX Runtime (MIT); zero cloud APIs; AES-256-GCM AEAD encryption; 30-day inbox queue. |
 
+## Live Demos
+
+<div align="center">
+
+| Push-to-Talk Walkie-Talkie | Offline Peer Radar | Emergency SOS Alert |
+| :---: | :---: | :---: |
+| <img src="assets/gifs/Main.gif" width="240" alt="Push-to-Talk Walkie-Talkie Demo"/> | <img src="assets/gifs/radar.gif" width="240" alt="Offline Peer Radar Demo"/> | <img src="assets/gifs/sos.gif" width="240" alt="Emergency SOS Broadcast Demo"/> |
+| *Real-time STT & voice playback* | *Wi-Fi Direct & BLE peer discovery* | *High-priority siren override* |
+
+</div>
+
+<br>
+
 ## Screenshots & Interface Flow
 
 <div align="center">
