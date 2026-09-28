@@ -61,7 +61,7 @@ class InboundMessageInbox(
                 language = language,
                 text = cleaned,
                 receivedAtMs = receivedAtMs,
-                unread = true,
+                unread = !isAlert,
                 senderName = senderName,
                 isAlert = isAlert,
                 locationLabel = locationLabel,

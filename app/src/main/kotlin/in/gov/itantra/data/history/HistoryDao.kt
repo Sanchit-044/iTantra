@@ -32,6 +32,6 @@ interface HistoryDao {
     @Query("UPDATE history_messages SET status = :status, peerName = :peerName, distanceMeters = COALESCE(:distanceMeters, distanceMeters) WHERE id = :id")
     suspend fun updateMessageStatusAndPeer(id: String, status: MessageStatus, peerName: String?, distanceMeters: Float? = null)
 
-    @Query("UPDATE history_messages SET status = :status, peerName = CASE WHEN peerName IS NULL OR peerName = '' THEN :peerName ELSE peerName || ', ' || :peerName END, distanceMeters = COALESCE(:distanceMeters, distanceMeters) WHERE id = :id AND (peerName IS NULL OR peerName NOT LIKE '%' || :peerName || '%')")
-    suspend fun addPeerToMessage(id: String, status: MessageStatus, peerName: String, distanceMeters: Float? = null)
+    @Query("UPDATE history_messages SET status = :status, peerName = CASE WHEN peerName IS NULL OR peerName = '' THEN :peerName WHEN peerName LIKE '%' || :peerName || '%' THEN peerName ELSE peerName || ', ' || :peerName END, distanceMeters = COALESCE(:distanceMeters, distanceMeters), locationLabel = COALESCE(:locationLabel, locationLabel) WHERE id = :id")
+    suspend fun addPeerToMessage(id: String, status: MessageStatus, peerName: String, distanceMeters: Float? = null, locationLabel: String? = null)
 }

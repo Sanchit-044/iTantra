@@ -32,7 +32,7 @@ class InboundMessageInboxTest {
         assertTrue(msg.isAlert)
         assertEquals("Sector 4 Beacon", msg.locationLabel)
         assertEquals("Commander Vikram", msg.senderName)
-        assertTrue(msg.unread)
+        assertFalse(msg.unread)
     }
 
     @Test
