@@ -11,8 +11,13 @@ import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -214,98 +219,119 @@ fun OutboundAlertFullScreen(
 
                     Spacer(modifier = Modifier.height(if (isCompactHeight) 8.dp else 12.dp))
 
-                    // 2. Countdown Timer & Status Header Card
+                    // 2. Modern Glassmorphic Countdown Timer & Status Header Card
                     Card(
                         modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(if (isCompactHeight) 16.dp else 20.dp),
+                        shape = RoundedCornerShape(if (isCompactHeight) 18.dp else 22.dp),
                         colors = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.45f)
+                            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.85f)
                         ),
                         border = BorderStroke(
-                            1.5.dp,
-                            MaterialTheme.colorScheme.error.copy(alpha = 0.6f)
+                            1.dp,
+                            Brush.horizontalGradient(
+                                colors = listOf(
+                                    MaterialTheme.colorScheme.error.copy(alpha = 0.5f),
+                                    MaterialTheme.colorScheme.error.copy(alpha = 0.2f),
+                                )
+                            )
                         ),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
                     ) {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(if (isCompactHeight) 12.dp else 16.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                        ) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
-                                    Text(
-                                        text = "Transmitting Multi-Radio Beacon",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        fontWeight = FontWeight.SemiBold,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        fontSize = if (isCompactHeight) 11.sp else 12.sp,
+                        Box(modifier = Modifier.fillMaxWidth()) {
+                            // Subtle background gradient glow behind the text
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(110.dp)
+                                    .background(
+                                        Brush.horizontalGradient(
+                                            colors = listOf(
+                                                MaterialTheme.colorScheme.error.copy(alpha = 0.12f),
+                                                Color.Transparent,
+                                            )
+                                        )
                                     )
-                                    Spacer(modifier = Modifier.height(2.dp))
-                                    Text(
-                                        text = alertText,
-                                        style = if (isCompactHeight) MaterialTheme.typography.titleSmall else MaterialTheme.typography.titleMedium,
-                                        fontWeight = FontWeight.Bold,
-                                        color = MaterialTheme.colorScheme.onErrorContainer,
-                                        maxLines = if (isCompactHeight) 1 else 2,
-                                        overflow = TextOverflow.Ellipsis,
+                            )
+
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(if (isCompactHeight) 14.dp else 18.dp),
+                            ) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    Column(modifier = Modifier.weight(1f).padding(end = 12.dp)) {
+                                        Surface(
+                                            shape = CircleShape,
+                                            color = MaterialTheme.colorScheme.error.copy(alpha = 0.15f),
+                                            modifier = Modifier.padding(bottom = 6.dp),
+                                        ) {
+                                            Text(
+                                                text = "BEACON ACTIVE",
+                                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
+                                                style = MaterialTheme.typography.labelSmall,
+                                                fontWeight = FontWeight.Black,
+                                                fontSize = 9.sp,
+                                                letterSpacing = 0.8.sp,
+                                                color = MaterialTheme.colorScheme.error,
+                                            )
+                                        }
+                                        Text(
+                                            text = alertText,
+                                            style = if (isCompactHeight) MaterialTheme.typography.titleMedium else MaterialTheme.typography.titleLarge,
+                                            fontWeight = FontWeight.ExtraBold,
+                                            color = MaterialTheme.colorScheme.onSurface,
+                                            maxLines = if (isCompactHeight) 1 else 2,
+                                            overflow = TextOverflow.Ellipsis,
+                                        )
+                                        Spacer(modifier = Modifier.height(2.dp))
+                                        Text(
+                                            text = "Broadcasting on multi-radio mesh",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            fontSize = if (isCompactHeight) 11.sp else 12.sp,
+                                        )
+                                    }
+
+                                    // Modern Circular Timer Ring Widget
+                                    val minutes = remainingSeconds / 60
+                                    val seconds = remainingSeconds % 60
+                                    val progress = (remainingSeconds.toFloat() / 300f).coerceIn(0f, 1f)
+
+                                    ModernCircularTimerRing(
+                                        progress = progress,
+                                        minutes = minutes,
+                                        seconds = seconds,
+                                        isCompactHeight = isCompactHeight,
                                     )
                                 }
 
-                                // Circular Timer Countdown
-                                val minutes = remainingSeconds / 60
-                                val seconds = remainingSeconds % 60
-                                val progress = (remainingSeconds.toFloat() / 300f).coerceIn(0f, 1f)
+                                Spacer(modifier = Modifier.height(if (isCompactHeight) 12.dp else 16.dp))
 
-                                Box(contentAlignment = Alignment.Center) {
-                                    CircularProgressIndicator(
-                                        progress = { progress },
-                                        modifier = Modifier.size(if (isCompactHeight) 44.dp else 52.dp),
-                                        color = MaterialTheme.colorScheme.error,
-                                        trackColor = MaterialTheme.colorScheme.error.copy(alpha = 0.2f),
-                                        strokeWidth = if (isCompactHeight) 3.5.dp else 4.dp,
+                                // Radio Channel Status Badges
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                ) {
+                                    RadioStatusChip(
+                                        title = "BLE Mesh",
+                                        active = true,
+                                        modifier = Modifier.weight(1f)
                                     )
-                                    Text(
-                                        text = String.format(
-                                            Locale.US,
-                                            "%02d:%02d",
-                                            minutes,
-                                            seconds
-                                        ),
-                                        style = if (isCompactHeight) MaterialTheme.typography.labelSmall else MaterialTheme.typography.labelMedium,
-                                        fontWeight = FontWeight.Bold,
-                                        fontFamily = FontFamily.Monospace,
-                                        color = MaterialTheme.colorScheme.onErrorContainer,
+                                    RadioStatusChip(
+                                        title = "Wi-Fi Direct",
+                                        active = true,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    RadioStatusChip(
+                                        title = "LAN UDP",
+                                        active = true,
+                                        modifier = Modifier.weight(1f)
                                     )
                                 }
-                            }
-
-                            Spacer(modifier = Modifier.height(if (isCompactHeight) 10.dp else 12.dp))
-
-                            // Radio Channel Status Badges
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                            ) {
-                                RadioStatusChip(
-                                    title = "BLE Mesh",
-                                    active = true,
-                                    modifier = Modifier.weight(1f)
-                                )
-                                RadioStatusChip(
-                                    title = "Wi-Fi Direct",
-                                    active = true,
-                                    modifier = Modifier.weight(1f)
-                                )
-                                RadioStatusChip(
-                                    title = "LAN UDP",
-                                    active = true,
-                                    modifier = Modifier.weight(1f)
-                                )
                             }
                         }
                     }
@@ -712,6 +738,80 @@ fun MinimizedOutboundAlertBanner(
                     )
                 }
             }
+        }
+    }
+}
+
+/**
+ * Modern Custom Animated Circular Timer Ring for Outbound Emergency Broadcast screen.
+ */
+@Composable
+private fun ModernCircularTimerRing(
+    progress: Float,
+    minutes: Int,
+    seconds: Int,
+    isCompactHeight: Boolean,
+    modifier: Modifier = Modifier,
+) {
+    val size = if (isCompactHeight) 58.dp else 68.dp
+    val strokeWidth = if (isCompactHeight) 4.5.dp else 5.5.dp
+    val errorColor = MaterialTheme.colorScheme.error
+    val trackColor = MaterialTheme.colorScheme.error.copy(alpha = 0.15f)
+
+    Box(
+        contentAlignment = Alignment.Center,
+        modifier = modifier.size(size),
+    ) {
+        Canvas(modifier = Modifier.fillMaxSize()) {
+            val strokeWidthPx = strokeWidth.toPx()
+            val arcSize = androidx.compose.ui.geometry.Size(size.toPx() - strokeWidthPx, size.toPx() - strokeWidthPx)
+            val topLeft = androidx.compose.ui.geometry.Offset(strokeWidthPx / 2f, strokeWidthPx / 2f)
+
+            // Background Track
+            drawArc(
+                color = trackColor,
+                startAngle = -90f,
+                sweepAngle = 360f,
+                useCenter = false,
+                topLeft = topLeft,
+                size = arcSize,
+                style = Stroke(width = strokeWidthPx, cap = StrokeCap.Round)
+            )
+
+            // Animated Gradient Progress Ring
+            drawArc(
+                brush = Brush.sweepGradient(
+                    colors = listOf(
+                        errorColor.copy(alpha = 0.6f),
+                        errorColor,
+                        Color(0xFFFF5252),
+                    )
+                ),
+                startAngle = -90f,
+                sweepAngle = progress * 360f,
+                useCenter = false,
+                topLeft = topLeft,
+                size = arcSize,
+                style = Stroke(width = strokeWidthPx, cap = StrokeCap.Round)
+            )
+        }
+
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(
+                text = String.format(Locale.US, "%02d:%02d", minutes, seconds),
+                style = if (isCompactHeight) MaterialTheme.typography.labelMedium else MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.ExtraBold,
+                fontFamily = FontFamily.Monospace,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+            Text(
+                text = "LEFT",
+                style = MaterialTheme.typography.labelSmall,
+                fontSize = 8.5.sp,
+                fontWeight = FontWeight.Black,
+                letterSpacing = 0.8.sp,
+                color = MaterialTheme.colorScheme.error,
+            )
         }
     }
 }

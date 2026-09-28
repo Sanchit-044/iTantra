@@ -46,6 +46,9 @@ class ConnectionService : Service() {
     lateinit var alertPlayer: AlertPlayer
 
     @Inject
+    lateinit var vibratorHelper: `in`.gov.itantra.util.VibratorHelper
+
+    @Inject
     lateinit var alertNotificationManager: AlertNotificationManager
 
     @Inject
@@ -114,6 +117,7 @@ class ConnectionService : Service() {
                     senderName = senderName
                 )
                 CoroutineScope(Dispatchers.IO).launch {
+                    vibratorHelper.startAlertVibration()
                     alertPlayer.play(alert)
                 }
             }

@@ -196,6 +196,7 @@ class MainViewModel @Inject constructor(
     private val wifiAlertScanner: `in`.gov.itantra.android.alert.WifiAlertScanner,
     private val lanAlertManager: LanBroadcastAlertManager,
     private val gpsLocationTracker: `in`.gov.itantra.android.location.GpsLocationTracker,
+    private val vibratorHelper: `in`.gov.itantra.util.VibratorHelper,
 ) : ViewModel(), TransportListener {
 
     private val _snackbarMessage = kotlinx.coroutines.flow.MutableSharedFlow<String>()
@@ -319,6 +320,7 @@ class MainViewModel @Inject constructor(
                     }
 
                     _uiState.update { it.copy(activeIncomingAlert = alert) }
+                    vibratorHelper.startAlertVibration()
                     
                     val alertKey = "${alert.sequence}:${alert.content.toWirePayload().hashCode()}"
                     if (alertKey != lastInsertedAlertKey) {
@@ -1254,6 +1256,7 @@ class MainViewModel @Inject constructor(
             publishQueues()
         }
         alertPlayer.dismissActiveAlert()
+        vibratorHelper.stopVibration()
         _uiState.update { it.copy(activeIncomingAlert = null, liveAlertDistanceMeters = null) }
     }
 
@@ -1263,6 +1266,7 @@ class MainViewModel @Inject constructor(
      */
     fun muteAlertAudio() {
         alertPlayer.dismissActiveAlert()
+        vibratorHelper.stopVibration()
     }
 
     /**
@@ -1421,6 +1425,7 @@ class MainViewModel @Inject constructor(
             isMinimized = false,
         )
         _uiState.update { it.copy(activeOutboundAlert = outboundState, activeIncomingAlert = null, liveAlertDistanceMeters = null) }
+        vibratorHelper.startBroadcastingVibration()
 
         outboundBroadcastJob?.cancel()
         outboundBroadcastJob = viewModelScope.launch(Dispatchers.IO) {
@@ -1817,6 +1822,7 @@ class MainViewModel @Inject constructor(
         bleAlertBroadcaster.stopBroadcasting()
         wifiAlertBroadcaster.stopBroadcasting()
         alertPlayer.dismissActiveAlert()
+        vibratorHelper.stopVibration()
         for (item in outboundQueue.snapshot()) {
             if (item.isAlert && item.state == OutboundState.SENDING) {
                 if (!item.receiverName.isNullOrBlank()) {
