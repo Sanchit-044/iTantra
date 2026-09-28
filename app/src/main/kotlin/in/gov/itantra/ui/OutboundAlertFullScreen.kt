@@ -351,26 +351,27 @@ fun OutboundAlertFullScreen(
                                 .fillMaxWidth()
                                 .clip(RoundedCornerShape(if (isCompactHeight) 16.dp else 20.dp))
                                 .background(MaterialTheme.colorScheme.surfaceContainerLow)
-                                .padding(if (isCompactHeight) 14.dp else 24.dp),
+                                .padding(if (isCompactHeight) 14.dp else 20.dp),
                             contentAlignment = Alignment.Center,
                         ) {
                             Column(
+                                modifier = Modifier.fillMaxWidth(),
                                 horizontalAlignment = Alignment.CenterHorizontally,
                                 verticalArrangement = Arrangement.Center,
                             ) {
                                 Box(
-                                    modifier = Modifier.size(if (isCompactHeight) 80.dp else 110.dp),
+                                    modifier = Modifier.size(if (isCompactHeight) 76.dp else 96.dp),
                                     contentAlignment = Alignment.Center,
                                 ) {
                                     PulseRing(
                                         color = MaterialTheme.colorScheme.error,
-                                        size = if (isCompactHeight) 72.dp else 100.dp,
+                                        size = if (isCompactHeight) 68.dp else 88.dp,
                                     )
                                     Icon(
                                         imageVector = Icons.Default.Sensors,
                                         contentDescription = null,
                                         tint = MaterialTheme.colorScheme.error,
-                                        modifier = Modifier.size(if (isCompactHeight) 32.dp else 42.dp),
+                                        modifier = Modifier.size(if (isCompactHeight) 30.dp else 38.dp),
                                     )
                                 }
 
@@ -381,15 +382,20 @@ fun OutboundAlertFullScreen(
                                     style = if (isCompactHeight) MaterialTheme.typography.titleSmall else MaterialTheme.typography.titleMedium,
                                     fontWeight = FontWeight.Bold,
                                     color = MaterialTheme.colorScheme.onSurface,
+                                    textAlign = TextAlign.Center,
+                                    modifier = Modifier.fillMaxWidth(),
                                 )
-                                Spacer(modifier = Modifier.height(4.dp))
+                                Spacer(modifier = Modifier.height(6.dp))
                                 Text(
                                     text = "Broadcasting continuously across BLE, Wi-Fi Direct, and LAN. Nearby devices will appear here automatically as soon as they acknowledge.",
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     textAlign = TextAlign.Center,
-                                    maxLines = if (isCompactHeight) 2 else 4,
+                                    maxLines = if (isCompactHeight) 3 else 4,
                                     overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 8.dp),
                                 )
                             }
                         }
@@ -413,6 +419,7 @@ fun OutboundAlertFullScreen(
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(if (isSmallWidth) 8.dp else 12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
                     ) {
                         OutlinedButton(
                             onClick = onMinimize,
@@ -420,34 +427,60 @@ fun OutboundAlertFullScreen(
                                 .weight(1f)
                                 .height(buttonHeight),
                             shape = RoundedCornerShape(14.dp),
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
                         ) {
-                            Icon(
-                                imageVector = Icons.Default.CloseFullscreen,
-                                contentDescription = null,
-                                modifier = Modifier.size(18.dp),
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text("Minimize", fontWeight = FontWeight.Bold)
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.Center,
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.CloseFullscreen,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(16.dp),
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(
+                                    text = "Minimize",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = if (isSmallWidth) 12.sp else 13.5.sp,
+                                    maxLines = 1,
+                                    softWrap = false,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                            }
                         }
 
                         Button(
                             onClick = onStopAlert,
                             modifier = Modifier
-                                .weight(1.3f)
+                                .weight(1.15f)
                                 .height(buttonHeight),
                             shape = RoundedCornerShape(14.dp),
                             colors = ButtonDefaults.buttonColors(
                                 containerColor = MaterialTheme.colorScheme.error,
                                 contentColor = MaterialTheme.colorScheme.onError,
                             ),
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
                         ) {
-                            Icon(
-                                imageVector = Icons.Default.Stop,
-                                contentDescription = null,
-                                modifier = Modifier.size(20.dp),
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text("Stop Broadcast", fontWeight = FontWeight.ExtraBold)
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.Center,
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Stop,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(18.dp),
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(
+                                    text = "Stop Broadcast",
+                                    fontWeight = FontWeight.ExtraBold,
+                                    fontSize = if (isSmallWidth) 12.sp else 13.5.sp,
+                                    maxLines = 1,
+                                    softWrap = false,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                            }
                         }
                     }
                 }
@@ -469,7 +502,7 @@ private fun RadioStatusChip(title: String, active: Boolean, modifier: Modifier =
         ),
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
+            modifier = Modifier.padding(horizontal = 4.dp, vertical = 6.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.Center,
         ) {
@@ -481,12 +514,15 @@ private fun RadioStatusChip(title: String, active: Boolean, modifier: Modifier =
                         CircleShape,
                     )
             )
-            Spacer(modifier = Modifier.width(6.dp))
+            Spacer(modifier = Modifier.width(4.dp))
             Text(
                 text = title,
                 style = MaterialTheme.typography.labelSmall,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+                softWrap = false,
+                overflow = TextOverflow.Ellipsis,
             )
         }
     }
