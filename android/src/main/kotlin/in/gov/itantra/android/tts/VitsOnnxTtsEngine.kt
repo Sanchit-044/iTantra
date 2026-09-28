@@ -138,8 +138,7 @@ class VitsOnnxTtsEngine(
     }
 
     private fun loadVoiceLocked(language: Language) {
-        if (activeLanguage == language && session != null) {
-            useFallbackTts = false
+        if (activeLanguage == language && (session != null || useFallbackTts)) {
             return
         }
         val descriptor = voices[language]
@@ -233,11 +232,21 @@ class VitsOnnxTtsEngine(
     }
 
     override fun synthesize(text: String, language: Language): AudioClip {
+        synchronized(lock) {
+            if (activeLanguage != language || (session == null && !useFallbackTts)) {
+                loadVoiceLocked(language)
+            }
+        }
         val normalizer = normalizers.getOrPut(language) { TextNormalizer(language) }
         return synthesizeNormalised(normalizer.normalize(text), language)
     }
 
     override fun synthesizeNormalised(text: String, language: Language): AudioClip {
+        synchronized(lock) {
+            if (activeLanguage != language || (session == null && !useFallbackTts)) {
+                loadVoiceLocked(language)
+            }
+        }
         // Fast path: ONNX pack is unavailable — use Android TTS and return.
         if (useFallbackTts) {
             android.util.Log.w(
@@ -344,10 +353,17 @@ class VitsOnnxTtsEngine(
             synchronized(lock) { if (state == TtsState.SYNTHESISING) state = TtsState.VOICE_LOADED }
             return AudioClip(pcm, outputFormat)
         } catch (e: Exception) {
-            synchronized(lock) { state = TtsState.ERROR }
             val inputNames = try { s.inputNames } catch (_: Exception) { "unknown" }
-            android.util.Log.e("iTantra-TTS", "VITS ONNX inference failed. Expected inputs: $inputNames", e)
-            throw TtsException("VITS ONNX inference failed", e)
+            android.util.Log.w(
+                "iTantra-TTS",
+                "VITS ONNX inference failed ($inputNames) — falling back to Android TTS: ${e.message}",
+            )
+            fallbackCount.incrementAndGet()
+            synchronized(lock) {
+                useFallbackTts = true
+                state = TtsState.VOICE_LOADED
+            }
+            return synthesizeViaAndroidTts(text, language)
         }
     }
 
@@ -578,17 +594,27 @@ class VitsTokenizer(
         var dropped = 0
         val unmappable = LinkedHashSet<Char>()
 
+        val maxSafeTokenId = 71L
+
         for (raw in text) {
             // Tabs and newlines carry a word boundary that the vocabulary only ever
             // spells as a plain space; without this they are dropped and words merge.
-            val ch = if (raw.isWhitespace()) ' ' else raw
+            // Map em-dash, en-dash, and quotes to standard supported ASCII tokens.
+            val ch = when {
+                raw.isWhitespace() -> ' '
+                raw == '—' || raw == '–' || raw == '―' -> {
+                    if (symbolToId.containsKey("-")) '-' else ' '
+                }
+                raw == '“' || raw == '”' || raw == '"' -> '\''
+                else -> raw
+            }
             val id = symbolToId[ch.toString()]
             when {
-                id != null -> {
+                id != null && id <= maxSafeTokenId -> {
                     ids += id
                     mapped++
                 }
-                unkId != null -> {
+                unkId != null && unkId <= maxSafeTokenId -> {
                     ids += unkId
                     substituted++
                     if (unmappable.size < MAX_REPORTED_SYMBOLS) unmappable += ch
