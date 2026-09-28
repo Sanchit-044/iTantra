@@ -27,8 +27,19 @@ class WifiAlertBroadcaster(private val context: Context) {
         }
     }
 
+    private var stopBroadcastRunnable: Runnable? = null
+
+    fun markOriginated(sequence: Int) = Companion.markOriginated(sequence)
+    fun isOriginated(sequence: Int): Boolean = Companion.isOriginated(sequence)
+
     @SuppressLint("MissingPermission")
-    fun broadcastAlert(language: Language, content: AlertContent, sequence: Long, senderName: String? = null) {
+    fun broadcastAlert(
+        language: Language,
+        content: AlertContent,
+        sequence: Long,
+        senderName: String? = null,
+        durationMs: Long = 300_000L, // 5 minutes default
+    ) {
         AppLog.d("WifiAlertBroadcaster", "broadcastAlert called for sequence $sequence")
         val manager = p2pManager ?: run {
             AppLog.e("WifiAlertBroadcaster", "Wi-Fi P2P Manager is null, cannot broadcast")
@@ -39,6 +50,7 @@ class WifiAlertBroadcaster(private val context: Context) {
             return
         }
 
+        originatedSequences.add(sequence.toInt())
         stopBroadcasting()
 
         AppLog.d("WifiAlertBroadcaster", "Attempting to broadcast alert sequence $sequence over Wi-Fi Direct")
@@ -56,10 +68,15 @@ class WifiAlertBroadcaster(private val context: Context) {
                 isAdvertising = true
                 currentServiceInfo = serviceInfo
 
-                // Broadcast for 30 seconds
-                handler.postDelayed({
-                    stopBroadcasting()
-                }, 30_000)
+                // Trigger peer discovery to beacon the local service
+                manager.discoverPeers(channel, object : WifiP2pManager.ActionListener {
+                    override fun onSuccess() {}
+                    override fun onFailure(reason: Int) {}
+                })
+
+                val runnable = Runnable { stopBroadcasting() }
+                stopBroadcastRunnable = runnable
+                handler.postDelayed(runnable, durationMs)
             }
 
             override fun onFailure(reason: Int) {
@@ -70,6 +87,8 @@ class WifiAlertBroadcaster(private val context: Context) {
 
     @SuppressLint("MissingPermission")
     fun stopBroadcasting() {
+        stopBroadcastRunnable?.let { handler.removeCallbacks(it) }
+        stopBroadcastRunnable = null
         if (!isAdvertising) return
         val manager = p2pManager ?: return
         val channel = p2pChannel ?: return
@@ -89,8 +108,15 @@ class WifiAlertBroadcaster(private val context: Context) {
     }
 
     companion object {
+        val originatedSequences = java.util.concurrent.ConcurrentHashMap.newKeySet<Int>()
         const val INSTANCE_PREFIX = "iTantra_Alert"
         const val SERVICE_TYPE = "_itantra._tcp"
+
+        fun markOriginated(sequence: Int) {
+            originatedSequences.add(sequence)
+        }
+
+        fun isOriginated(sequence: Int): Boolean = originatedSequences.contains(sequence)
     }
     
     private val instanceName = INSTANCE_PREFIX + "_" + java.util.UUID.randomUUID().toString().take(6)

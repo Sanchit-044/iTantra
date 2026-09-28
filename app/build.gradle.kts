@@ -69,9 +69,6 @@ ksp {
 dependencies {
     implementation(project(":core"))
     implementation(project(":android"))
-    implementation(libs.androidx.benchmark.common)
-    // assetPacks is defined inside the android { ... } block below
-
     implementation(libs.kotlin.coroutines.core)
     implementation(libs.kotlin.coroutines.android)
 
@@ -79,6 +76,8 @@ dependencies {
     val composeBom = platform(libs.compose.bom)
     implementation(composeBom)
     androidTestImplementation(composeBom)
+    implementation(libs.androidx.ui.text)
+    implementation(libs.compose.foundation)
     implementation(libs.compose.ui)
     implementation(libs.compose.ui.graphics)
     implementation(libs.compose.ui.tooling.preview)

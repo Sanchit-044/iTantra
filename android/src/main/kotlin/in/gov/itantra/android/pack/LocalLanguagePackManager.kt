@@ -46,7 +46,7 @@ class LocalLanguagePackManager(
 
     private fun isHindiAssetPresent(): Boolean {
         return try {
-            context.assets.open("models/stt/onnx/indicwav2vec-hi-vocab.json").use { true }
+            context.assets.open("models/stt/onnx/indicwav2vec-hi-int8.onnx").use { true }
         } catch (_: Exception) {
             false
         }

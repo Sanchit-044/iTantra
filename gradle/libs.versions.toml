@@ -41,7 +41,8 @@ hilt-compiler = { module = "com.google.dagger:hilt-compiler", version.ref = "hil
 room-runtime = { module = "androidx.room:room-runtime", version.ref = "room" }
 room-compiler = { module = "androidx.room:room-compiler", version.ref = "room" }
 room-ktx = { module = "androidx.room:room-ktx", version.ref = "room" }
-androidx-benchmark-common = { group = "androidx.benchmark", name = "benchmark-common", version.ref = "benchmarkCommon" }
+compose-foundation = { group = "androidx.compose.foundation", name = "foundation" }
+androidx-ui-text = { group = "androidx.compose.ui", name = "ui-text" }
 
 [plugins]
 kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }

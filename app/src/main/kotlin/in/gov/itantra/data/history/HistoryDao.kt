@@ -23,12 +23,15 @@ interface HistoryDao {
     @Query("DELETE FROM history_messages")
     suspend fun clearHistory()
 
+    @Query("DELETE FROM history_messages WHERE id = :id")
+    suspend fun deleteMessage(id: String)
+
     @Query("UPDATE history_messages SET status = :status WHERE id = :id")
     suspend fun updateMessageStatus(id: String, status: MessageStatus)
 
-    @Query("UPDATE history_messages SET status = :status, peerName = :peerName WHERE id = :id")
-    suspend fun updateMessageStatusAndPeer(id: String, status: MessageStatus, peerName: String?)
+    @Query("UPDATE history_messages SET status = :status, peerName = :peerName, distanceMeters = COALESCE(:distanceMeters, distanceMeters) WHERE id = :id")
+    suspend fun updateMessageStatusAndPeer(id: String, status: MessageStatus, peerName: String?, distanceMeters: Float? = null)
 
-    @Query("UPDATE history_messages SET status = :status, peerName = CASE WHEN peerName IS NULL OR peerName = '' THEN :peerName ELSE peerName || ', ' || :peerName END WHERE id = :id AND (peerName IS NULL OR peerName NOT LIKE '%' || :peerName || '%')")
-    suspend fun addPeerToMessage(id: String, status: MessageStatus, peerName: String)
+    @Query("UPDATE history_messages SET status = :status, peerName = CASE WHEN peerName IS NULL OR peerName = '' THEN :peerName WHEN peerName LIKE '%' || :peerName || '%' THEN peerName ELSE peerName || ', ' || :peerName END, distanceMeters = COALESCE(:distanceMeters, distanceMeters), locationLabel = COALESCE(:locationLabel, locationLabel) WHERE id = :id")
+    suspend fun addPeerToMessage(id: String, status: MessageStatus, peerName: String, distanceMeters: Float? = null, locationLabel: String? = null)
 }

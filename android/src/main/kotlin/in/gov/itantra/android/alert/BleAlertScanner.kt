@@ -7,6 +7,8 @@ import android.bluetooth.le.ScanFilter
 import android.bluetooth.le.ScanResult
 import android.bluetooth.le.ScanSettings
 import android.content.Context
+import android.os.Handler
+import android.os.Looper
 import android.os.ParcelUuid
 import `in`.gov.itantra.core.Language
 import `in`.gov.itantra.core.alert.AlertCodec
@@ -19,37 +21,90 @@ import kotlinx.coroutines.launch
 
 import java.util.UUID
 
+import `in`.gov.itantra.core.transport.MessageType
+import `in`.gov.itantra.core.transport.Packet
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.flow.asStateFlow
+import java.util.concurrent.ConcurrentHashMap
 
 class BleAlertScanner(
     private val context: Context,
     private val alertPlayer: AlertPlayer
 ) {
+    private val handler = Handler(Looper.getMainLooper())
     private var isScanning = false
-    
-    private val _acks = kotlinx.coroutines.flow.MutableSharedFlow<Pair<Int, String>>(extraBufferCapacity = 10)
+
+    private val _acks = MutableSharedFlow<Pair<Int, String>>(extraBufferCapacity = 10)
     val acks = _acks.asSharedFlow()
 
-    // Track recent alert sequences to avoid playing the same alert twice
-    private val recentAlerts = mutableSetOf<String>()
+    private val _alerts = MutableSharedFlow<Packet>(extraBufferCapacity = 10)
+    val alerts = _alerts.asSharedFlow()
+
+    private val _latestRssi = MutableStateFlow<Int?>(null)
+    val latestRssi: StateFlow<Int?> = _latestRssi.asStateFlow()
+
+    // Sliding-window deduplication cache: Key -> timestampMs (4 second dedup window)
+    private val recentAlerts = ConcurrentHashMap<String, Long>()
+    private val DEDUP_WINDOW_MS = 4_000L
+
+    private val restartScanRunnable = object : Runnable {
+        @SuppressLint("MissingPermission")
+        override fun run() {
+            if (!isScanning) return
+            try {
+                val adapter = (context.getSystemService(Context.BLUETOOTH_SERVICE) as? BluetoothManager)?.adapter
+                val scanner = adapter?.bluetoothLeScanner
+                if (scanner != null && adapter.isEnabled) {
+                    scanner.stopScan(scanCallback)
+                    val settings = ScanSettings.Builder()
+                        .setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY)
+                        .setReportDelay(0)
+                        .build()
+                    val filters = buildFilters()
+                    scanner.startScan(filters, settings, scanCallback)
+                    AppLog.d("BleAlertScanner", "Refreshed BLE scan keepalive")
+                }
+            } catch (e: Exception) {
+                AppLog.w("BleAlertScanner", "Scan restart error: ${e.message}")
+            }
+            handler.postDelayed(this, 25_000)
+        }
+    }
 
     private val scanCallback = object : ScanCallback() {
         override fun onScanResult(callbackType: Int, result: ScanResult) {
             val record = result.scanRecord ?: return
-            
-            // Check for ACK UUID first
+            _latestRssi.value = result.rssi
+            val now = System.currentTimeMillis()
+            recentAlerts.entries.removeIf { now - it.value > DEDUP_WINDOW_MS }
+
             val ackUuid = ParcelUuid(BleAlertBroadcaster.ACK_UUID)
-            val ackPayload = record.serviceData[ackUuid]
+            val alertUuid = ParcelUuid(BleAlertBroadcaster.ALERT_UUID)
+
+            // 1. Check for ACK UUID (direct or through map iteration)
+            var ackPayload: ByteArray? = record.serviceData[ackUuid]
+            if (ackPayload == null) {
+                for ((uuid, data) in record.serviceData) {
+                    if (uuid.uuid == BleAlertBroadcaster.ACK_UUID) {
+                        ackPayload = data
+                        break
+                    }
+                }
+            }
+
             if (ackPayload != null && ackPayload.size >= 4) {
                 try {
                     val buffer = java.nio.ByteBuffer.wrap(ackPayload)
                     val payloadHash = buffer.int
                     val nameBytes = ByteArray(ackPayload.size - 4)
                     buffer.get(nameBytes)
-                    val receiverName = String(nameBytes, Charsets.UTF_8)
-                    
+                    val receiverName = String(nameBytes, Charsets.UTF_8).trim()
+
                     val dedupKey = "ACK:${result.device.address}:$payloadHash"
-                    if (recentAlerts.add(dedupKey)) {
+                    if (recentAlerts.putIfAbsent(dedupKey, now) == null) {
                         AppLog.d("BleAlertScanner", "Received connectionless BLE ACK from $receiverName")
                         _acks.tryEmit(Pair(payloadHash, receiverName))
                     }
@@ -59,11 +114,18 @@ class BleAlertScanner(
                 return
             }
 
-            // Check for ALERT UUID
-            val alertUuid = ParcelUuid(BleAlertBroadcaster.ALERT_UUID)
-            val payload = record.serviceData[alertUuid] ?: return
-            
-            if (payload.size < 3) return // Must be at least 3 bytes
+            // 2. Check for ALERT UUID (direct or through map iteration)
+            var payload: ByteArray? = record.serviceData[alertUuid]
+            if (payload == null) {
+                for ((uuid, data) in record.serviceData) {
+                    if (uuid.uuid == BleAlertBroadcaster.ALERT_UUID) {
+                        payload = data
+                        break
+                    }
+                }
+            }
+
+            if (payload == null || payload.size < 3) return
 
             try {
                 val decoded = AlertCodec.decodeBlePayload(payload)
@@ -73,37 +135,33 @@ class BleAlertScanner(
                 }
 
                 val language = decoded.language
-                val template = (decoded.content as? AlertContent.Template)?.template ?: return
                 val sequence = decoded.sequence
                 val content = decoded.content
-                val senderName = decoded.senderName
-                
-                // Deduplication key: device address + sequence
-                val dedupKey = "${result.device.address}:$sequence"
-                if (!recentAlerts.add(dedupKey)) {
-                    return // Already played this one
-                }
-                
-                // Cap cache size
-                if (recentAlerts.size > 200) {
-                    val iterator = recentAlerts.iterator()
-                    for (i in 0 until 100) {
-                        if (iterator.hasNext()) iterator.next()
-                        iterator.remove()
-                    }
+                val senderName = decoded.senderName ?: "Nearby Peer"
+                val wirePayload = content.toWirePayload()
+
+                if (BleAlertBroadcaster.isOriginated(sequence)) {
+                    return // Ignore self-originated BLE alert broadcast
                 }
 
-                val alert = IncomingAlert(
-                    content = content,
-                    language = language,
-                    sequence = sequence,
-                    receivedAtMs = System.currentTimeMillis(),
-                    senderName = senderName
-                )
-                AppLog.d("BleAlertScanner", "Received connectionless BLE alert from $senderName: ${template.name}")
-                kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
-                    alertPlayer.play(alert)
+                val dedupKey = "ALERT:${result.device.address}:$sequence:$wirePayload"
+                if (recentAlerts.putIfAbsent(dedupKey, now) != null) {
+                    return // Deduplicated within sliding window
                 }
+
+                AppLog.d("BleAlertScanner", "Received connectionless BLE alert from $senderName (sq=$sequence)")
+
+                val ttl = decoded.ttl
+                val textPayload = "$senderName\u001F$wirePayload"
+                val packet = Packet.text(
+                    type = MessageType.ALERT,
+                    language = language,
+                    sequence = sequence.toInt(),
+                    text = textPayload,
+                    flags = ttl,
+                )
+
+                _alerts.tryEmit(packet)
 
             } catch (e: Exception) {
                 AppLog.w("BleAlertScanner", "Failed to parse BLE alert payload", e)
@@ -113,6 +171,17 @@ class BleAlertScanner(
         override fun onScanFailed(errorCode: Int) {
             AppLog.e("BleAlertScanner", "BLE scan failed with error $errorCode")
         }
+    }
+
+    private fun buildFilters(): List<ScanFilter> {
+        val alertUuid = ParcelUuid(BleAlertBroadcaster.ALERT_UUID)
+        val ackUuid = ParcelUuid(BleAlertBroadcaster.ACK_UUID)
+        return listOf(
+            ScanFilter.Builder().setServiceUuid(alertUuid).build(),
+            ScanFilter.Builder().setServiceData(alertUuid, null).build(),
+            ScanFilter.Builder().setServiceUuid(ackUuid).build(),
+            ScanFilter.Builder().setServiceData(ackUuid, null).build(),
+        )
     }
 
     @SuppressLint("MissingPermission")
@@ -132,19 +201,13 @@ class BleAlertScanner(
 
         val settings = ScanSettings.Builder()
             .setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY)
-            .build()
-
-        val alertFilter = ScanFilter.Builder()
-            .setServiceUuid(ParcelUuid(BleAlertBroadcaster.ALERT_UUID))
-            .build()
-            
-        val ackFilter = ScanFilter.Builder()
-            .setServiceUuid(ParcelUuid(BleAlertBroadcaster.ACK_UUID))
+            .setReportDelay(0)
             .build()
 
         try {
-            scanner.startScan(listOf(alertFilter, ackFilter), settings, scanCallback)
+            scanner.startScan(buildFilters(), settings, scanCallback)
             isScanning = true
+            handler.postDelayed(restartScanRunnable, 25_000)
             AppLog.d("BleAlertScanner", "Started BLE background scanning for connectionless alerts and ACKs")
         } catch (e: Exception) {
             AppLog.e("BleAlertScanner", "Failed to start BLE scanning", e)
@@ -154,6 +217,7 @@ class BleAlertScanner(
     @SuppressLint("MissingPermission")
     fun stopScanning() {
         if (!isScanning) return
+        handler.removeCallbacks(restartScanRunnable)
         try {
             val adapter = (context.getSystemService(Context.BLUETOOTH_SERVICE) as? BluetoothManager)?.adapter
             adapter?.bluetoothLeScanner?.stopScan(scanCallback)

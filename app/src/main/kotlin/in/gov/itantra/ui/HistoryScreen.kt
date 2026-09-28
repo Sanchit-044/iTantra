@@ -1,5 +1,6 @@
 package `in`.gov.itantra.ui
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -11,14 +12,21 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.CallMade
 import androidx.compose.material.icons.automirrored.filled.CallReceived
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import `in`.gov.itantra.core.alert.AlertTemplate
 import `in`.gov.itantra.core.lang.UiStrings
 import `in`.gov.itantra.data.history.HistoryMessage
 import `in`.gov.itantra.data.history.MessageDirection
@@ -30,6 +38,7 @@ import java.util.Date
 import java.util.Locale
 
 /** History tab content. The tab's top bar (with Clear) lives in [MainContent]. */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HistoryScreen(
     viewModel: HistoryViewModel,
@@ -60,11 +69,52 @@ fun HistoryScreen(
         } else {
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 24.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
+                contentPadding = PaddingValues(start = 14.dp, end = 14.dp, top = 4.dp, bottom = 20.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                items(uiState.messages) { msg ->
-                    HistoryMessageItem(msg, chrome)
+                items(uiState.messages, key = { it.id }) { msg ->
+                    val dismissState = rememberSwipeToDismissBoxState(
+                        confirmValueChange = { value ->
+                            if (value == SwipeToDismissBoxValue.EndToStart || value == SwipeToDismissBoxValue.StartToEnd) {
+                                viewModel.deleteMessage(msg.id)
+                                true
+                            } else {
+                                false
+                            }
+                        }
+                    )
+
+                    SwipeToDismissBox(
+                        state = dismissState,
+                        backgroundContent = {
+                            val isDismissing = dismissState.targetValue != SwipeToDismissBoxValue.Settled
+                            val alignment = if (dismissState.dismissDirection == SwipeToDismissBoxValue.StartToEnd) {
+                                Alignment.CenterStart
+                            } else {
+                                Alignment.CenterEnd
+                            }
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(if (isDismissing) Color(0xFFEA4335).copy(alpha = 0.85f) else Color.Transparent)
+                                    .padding(horizontal = 16.dp),
+                                contentAlignment = alignment,
+                            ) {
+                                if (isDismissing) {
+                                    Icon(
+                                        imageVector = Icons.Filled.DeleteOutline,
+                                        contentDescription = "Delete",
+                                        tint = Color.White,
+                                        modifier = Modifier.size(20.dp),
+                                    )
+                                }
+                            }
+                        },
+                        content = {
+                            HistoryMessageItem(msg, chrome, onDelete = viewModel::deleteMessage)
+                        },
+                    )
                 }
             }
         }
@@ -121,7 +171,11 @@ private fun HistoryChip(label: String, selected: Boolean, onClick: () -> Unit) {
 }
 
 @Composable
-fun HistoryMessageItem(msg: HistoryMessage, chrome: UiStrings) {
+fun HistoryMessageItem(
+    msg: HistoryMessage,
+    chrome: UiStrings,
+    onDelete: (String) -> Unit = {},
+) {
     val formatter = remember { SimpleDateFormat("MMM dd, HH:mm:ss", Locale.getDefault()) }
     val timeStr = formatter.format(Date(msg.timestampMs))
     val outbound = msg.direction == MessageDirection.OUTBOUND
@@ -133,11 +187,11 @@ fun HistoryMessageItem(msg: HistoryMessage, chrome: UiStrings) {
         shape = MaterialTheme.shapes.medium,
         color = MaterialTheme.colorScheme.surfaceContainerLow,
         contentColor = contentColor,
-        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
+        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)),
     ) {
         Column(
             modifier = Modifier
-                .padding(14.dp)
+                .padding(horizontal = 13.dp, vertical = 10.dp)
                 .fillMaxWidth()
         ) {
             Row(
@@ -147,13 +201,15 @@ fun HistoryMessageItem(msg: HistoryMessage, chrome: UiStrings) {
                 Icon(
                     if (outbound) Icons.AutoMirrored.Filled.CallMade else Icons.AutoMirrored.Filled.CallReceived,
                     contentDescription = null,
-                    modifier = Modifier.size(14.dp),
+                    modifier = Modifier.size(15.dp),
                     tint = contentColor.copy(alpha = 0.7f),
                 )
                 Spacer(Modifier.width(6.dp))
                 Text(
                     text = if (!outbound) chrome.receivedFrom(msg.peerName ?: chrome.unknownPeer) else chrome.sentTo(msg.peerName ?: chrome.allPeers),
                     style = MaterialTheme.typography.labelLarge,
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.SemiBold,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f),
@@ -161,46 +217,102 @@ fun HistoryMessageItem(msg: HistoryMessage, chrome: UiStrings) {
                 Text(
                     text = timeStr,
                     style = MaterialTheme.typography.labelSmall,
+                    fontSize = 11.sp,
                     color = contentColor.copy(alpha = 0.7f)
                 )
             }
-            Spacer(modifier = Modifier.height(6.dp))
+            Spacer(modifier = Modifier.height(4.dp))
+            val displayText = remember(msg.text, msg.language) {
+                AlertTemplate.resolveDisplayText(msg.text, msg.language)
+            }
             Text(
-                text = msg.text,
-                style = MaterialTheme.typography.bodyLarge,
+                text = displayText,
+                style = MaterialTheme.typography.bodyMedium,
+                fontSize = 14.5.sp,
+                lineHeight = 20.sp,
                 maxLines = 3,
                 overflow = TextOverflow.Ellipsis
             )
-            Spacer(modifier = Modifier.height(10.dp))
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                val (statusBg, statusFg) = when (msg.status) {
-                    MessageStatus.DELIVERED -> ext.successContainer to ext.onSuccessContainer
-                    MessageStatus.FAILED -> MaterialTheme.colorScheme.errorContainer to MaterialTheme.colorScheme.onErrorContainer
-                    MessageStatus.QUEUED -> ext.warningContainer to ext.onWarningContainer
-                    MessageStatus.RECEIVED -> MaterialTheme.colorScheme.primaryContainer to MaterialTheme.colorScheme.onPrimaryContainer
-                    else -> MaterialTheme.colorScheme.surfaceContainerHighest to MaterialTheme.colorScheme.onSurfaceVariant
-                }
-                StatusPill(
-                    text = msg.status.displayLabel(chrome),
-                    containerColor = statusBg,
-                    contentColor = statusFg,
-                )
-                if (msg.isAlert) {
-                    StatusPill(
-                        text = chrome.alertTitle,
-                        containerColor = MaterialTheme.colorScheme.error,
-                        contentColor = MaterialTheme.colorScheme.onError,
-                        icon = Icons.Filled.Warning,
+            if (msg.isAlert) {
+                Spacer(modifier = Modifier.height(4.dp))
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.padding(bottom = 2.dp),
+                ) {
+                    Icon(
+                        Icons.Filled.LocationOn,
+                        contentDescription = null,
+                        tint = Color(0xFFD32F2F),
+                        modifier = Modifier.size(13.dp),
+                    )
+                    Spacer(Modifier.width(3.dp))
+                    val locDistLabel = if (outbound) {
+                        if (!msg.peerName.isNullOrBlank()) {
+                            val locPart = if (!msg.locationLabel.isNullOrBlank()) " (${msg.locationLabel})" else ""
+                            "Receiver: ${msg.peerName}$locPart (~${String.format(Locale.US, "%.1f", msg.distanceMeters ?: 3.5f)}m)"
+                        } else {
+                            "Target Proximity: ~${String.format(Locale.US, "%.1f", msg.distanceMeters ?: 3.5f)}m"
+                        }
+                    } else {
+                        "${msg.locationLabel ?: "Emergency Beacon"} · ~${String.format(Locale.US, "%.1f", msg.distanceMeters ?: 3.5f)}m away"
+                    }
+                    Text(
+                        text = locDistLabel,
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.SemiBold,
+                        color = Color(0xFFD32F2F),
+                        fontSize = 11.5.sp,
                     )
                 }
-                StatusPill(
-                    text = msg.language.endonym,
-                    containerColor = contentColor.copy(alpha = 0.08f),
-                    contentColor = contentColor,
-                )
+            }
+            Spacer(modifier = Modifier.height(8.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(5.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    val (statusBg, statusFg) = when (msg.status) {
+                        MessageStatus.DELIVERED -> ext.successContainer to ext.onSuccessContainer
+                        MessageStatus.FAILED -> MaterialTheme.colorScheme.errorContainer to MaterialTheme.colorScheme.onErrorContainer
+                        MessageStatus.QUEUED -> ext.warningContainer to ext.onWarningContainer
+                        MessageStatus.RECEIVED -> MaterialTheme.colorScheme.primaryContainer to MaterialTheme.colorScheme.onPrimaryContainer
+                        else -> MaterialTheme.colorScheme.surfaceContainerHighest to MaterialTheme.colorScheme.onSurfaceVariant
+                    }
+                    StatusPill(
+                        text = msg.status.displayLabel(chrome),
+                        containerColor = statusBg,
+                        contentColor = statusFg,
+                    )
+                    if (msg.isAlert) {
+                        StatusPill(
+                            text = chrome.alertTitle,
+                            containerColor = MaterialTheme.colorScheme.error,
+                            contentColor = MaterialTheme.colorScheme.onError,
+                            icon = Icons.Filled.Warning,
+                        )
+                    }
+                    StatusPill(
+                        text = msg.language.endonym,
+                        containerColor = contentColor.copy(alpha = 0.08f),
+                        contentColor = contentColor,
+                    )
+                }
+
+                IconButton(
+                    onClick = { onDelete(msg.id) },
+                    modifier = Modifier.size(26.dp),
+                ) {
+                    Icon(
+                        Icons.Filled.DeleteOutline,
+                        contentDescription = "Delete chat",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                        modifier = Modifier.size(16.dp),
+                    )
+                }
             }
         }
     }

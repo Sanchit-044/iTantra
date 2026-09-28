@@ -1,21 +1,31 @@
 package `in`.gov.itantra.core.discover
 
+import java.util.Locale
+
 data class NearbyPeer(
     val id: String,
     val name: String,
     val wifiAddress: String? = null,
     val bluetoothAddress: String? = null,
     val rssiDbm: Int? = null,
+    val smoothedRssiDbm: Double? = null,
+    val distanceMeters: Float = 3.5f,
+    val trend: SignalTrend = SignalTrend.STEADY,
     val lastSeenMs: Long,
 ) {
     val hasWifi: Boolean get() = !wifiAddress.isNullOrBlank()
     val hasBluetooth: Boolean get() = !bluetoothAddress.isNullOrBlank()
-    val band: RssiBand get() = RssiBand.fromRssi(rssiDbm)
+    val effectiveRssi: Int? get() = smoothedRssiDbm?.toInt() ?: rssiDbm
+    val band: RssiBand get() = RssiBand.fromRssi(effectiveRssi)
     val radiosLabel: String = when {
         hasWifi && hasBluetooth -> "Wi-Fi + BT"
         hasWifi -> "Wi-Fi"
         hasBluetooth -> "Bluetooth"
         else -> "Unknown"
+    }
+
+    fun formattedDistance(): String {
+        return String.format(Locale.US, "%.1fm", distanceMeters)
     }
 
     /** Stable 0–360 placement. Same id stays put; it is not a real heading. */
@@ -38,6 +48,9 @@ object NearbyPeerBook {
         address: String?,
         rssiDbm: Int?,
         nowMs: Long,
+        smoothedRssiDbm: Double? = null,
+        distanceMeters: Float = 3.5f,
+        trend: SignalTrend = SignalTrend.STEADY,
     ): NearbyPeer {
         val cleanedName = name.trim().ifBlank { "Unknown" }
         val mac = address?.trim()?.lowercase()?.takeIf { it.isNotEmpty() }
@@ -48,6 +61,9 @@ object NearbyPeerBook {
             wifiAddress = if (radio == NearbyRadio.WIFI) mac else null,
             bluetoothAddress = if (radio == NearbyRadio.BLUETOOTH) mac else null,
             rssiDbm = rssiDbm,
+            smoothedRssiDbm = smoothedRssiDbm ?: rssiDbm?.toDouble(),
+            distanceMeters = distanceMeters,
+            trend = trend,
             lastSeenMs = nowMs,
         )
     }
@@ -77,12 +93,17 @@ object NearbyPeerBook {
 
     private fun merge(old: NearbyPeer, incoming: NearbyPeer): NearbyPeer {
         val rssi = incoming.rssiDbm ?: old.rssiDbm
+        val smoothed = incoming.smoothedRssiDbm ?: old.smoothedRssiDbm
+        val dist = if (incoming.smoothedRssiDbm != null || incoming.rssiDbm != null) incoming.distanceMeters else old.distanceMeters
         return NearbyPeer(
             id = old.id,
             name = incoming.name.takeIf { it.isNotBlank() && !isGenericName(it.lowercase()) } ?: old.name,
             wifiAddress = incoming.wifiAddress ?: old.wifiAddress,
             bluetoothAddress = incoming.bluetoothAddress ?: old.bluetoothAddress,
             rssiDbm = rssi,
+            smoothedRssiDbm = smoothed,
+            distanceMeters = dist,
+            trend = incoming.trend,
             lastSeenMs = incoming.lastSeenMs,
         )
     }

@@ -11,6 +11,7 @@ import `in`.gov.itantra.core.diag.AppLog
 import `in`.gov.itantra.core.transport.MessageType
 import `in`.gov.itantra.core.transport.Packet
 import `in`.gov.itantra.core.transport.PacketCodec
+import kotlinx.coroutines.flow.asSharedFlow
 import java.net.DatagramPacket
 import java.net.DatagramSocket
 import java.net.InetAddress
@@ -44,19 +45,32 @@ class LanBroadcastAlertManager(
     // Deduplication cache: Packet signature -> timestamp
     private val recentAlerts = ConcurrentHashMap<String, Long>()
 
+    private val _alerts = kotlinx.coroutines.flow.MutableSharedFlow<Packet>(extraBufferCapacity = 20)
+    val alerts = _alerts.asSharedFlow()
+
+    fun markOriginated(sequence: Int) = Companion.markOriginated(sequence)
+    fun isOriginated(sequence: Int): Boolean = Companion.isOriginated(sequence)
+    fun setLocalDeviceName(name: String) = Companion.setLocalDeviceName(name)
+
+    private val listeners = java.util.concurrent.CopyOnWriteArrayList<(Packet) -> Unit>()
+
     /**
      * Start background UDP listener for incoming LAN emergency alerts.
      */
-    fun startListening(onPacketReceived: (Packet) -> Unit) {
+    fun startListening(onPacketReceived: ((Packet) -> Unit)? = null) {
+        if (onPacketReceived != null && !listeners.contains(onPacketReceived)) {
+            listeners.add(onPacketReceived)
+        }
         if (isListening.getAndSet(true)) return
 
         acquireMulticastLock()
 
         listenerThread = thread(name = "iTantra-LanAlertListener") {
             try {
-                val udpSocket = DatagramSocket(port).apply {
+                val udpSocket = DatagramSocket(null).apply {
                     reuseAddress = true
                     broadcast = true
+                    bind(java.net.InetSocketAddress(port))
                 }
                 socket = udpSocket
 
@@ -66,6 +80,13 @@ class LanBroadcastAlertManager(
                     val datagram = DatagramPacket(buffer, buffer.size)
                     try {
                         udpSocket.receive(datagram)
+
+                        val senderAddr = datagram.address
+                        if (senderAddr != null && (senderAddr.isLoopbackAddress || isLocalAddress(senderAddr))) {
+                            // Ignore UDP packets looped back to our own socket from our own interfaces
+                            continue
+                        }
+
                         val len = datagram.length
                         if (len <= PacketCodec.LENGTH_PREFIX_LEN) continue
 
@@ -74,6 +95,22 @@ class LanBroadcastAlertManager(
                         val packet = PacketCodec.decodeBody(body, broadcastCrypto)
 
                         if (packet.type == MessageType.ALERT || packet.type == MessageType.ACK) {
+                            if (packet.type == MessageType.ALERT) {
+                                if (senderAddr != null) {
+                                    alertSenderIps[packet.sequence] = senderAddr
+                                }
+                                if (isOriginated(packet.sequence)) {
+                                    // Drop self-originated alert broadcast by sequence
+                                    continue
+                                }
+                                val split = packet.text.split("\u001F", limit = 2)
+                                val senderName = if (split.size == 2) split[0].takeIf { it.isNotBlank() } else null
+                                if (senderName != null && isLocalDeviceName(senderName)) {
+                                    // Drop self-originated alert broadcast by sender name
+                                    continue
+                                }
+                            }
+
                             val alertKey = "${packet.type.name}:${packet.sequence}:${packet.timestampMs}:${packet.text.hashCode()}"
                             val now = System.currentTimeMillis()
 
@@ -81,7 +118,10 @@ class LanBroadcastAlertManager(
                             purgeStaleCache(now)
                             if (recentAlerts.putIfAbsent(alertKey, now) == null) {
                                 AppLog.d(TAG, "Received LAN broadcast packet (${packet.type}): ${packet.text}")
-                                onPacketReceived(packet)
+                                _alerts.tryEmit(packet)
+                                for (listener in listeners) {
+                                    runCatching { listener(packet) }
+                                }
                             }
                         }
                     } catch (e: Exception) {
@@ -108,16 +148,21 @@ class LanBroadcastAlertManager(
     }
 
     /**
-     * Broadcast an emergency alert to all devices on the local Wi-Fi network.
-     * Transmits 3 rapid UDP burst packets spaced 50ms apart for maximum reliability.
+     * Broadcast an emergency alert to all devices on the local Wi-Fi / hotspot / LAN network.
+     * Transmits rapid UDP burst packets across all active broadcast destinations for maximum reliability.
      */
-    fun sendBroadcastAlert(language: Language, content: AlertContent, sequence: Int, senderName: String) {
+    fun sendBroadcastAlert(language: Language, content: AlertContent, sequence: Int, senderName: String, ttl: Int = 3) {
+        markOriginated(sequence)
+        if (senderName.isNotBlank()) {
+            setLocalDeviceName(senderName)
+        }
         val textPayload = "$senderName\u001F${content.toWirePayload()}"
         val packet = Packet.text(
             type = MessageType.ALERT,
             language = language,
             sequence = sequence,
             text = textPayload,
+            flags = ttl,
         )
 
         // Add to deduplication cache before sending to prevent receiving our own UDP broadcast
@@ -131,16 +176,20 @@ class LanBroadcastAlertManager(
                 val udpSocket = DatagramSocket().apply {
                     broadcast = true
                 }
-                val destination = InetAddress.getByName("255.255.255.255")
-                val datagram = DatagramPacket(frameBytes, frameBytes.size, destination, port)
+                val destinations = getBroadcastDestinations()
 
-                // Send 3x burst for zero-loss delivery on unacknowledged UDP
+                // Send burst to every active broadcast destination
                 for (i in 1..BURST_COUNT) {
-                    udpSocket.send(datagram)
+                    for (dest in destinations) {
+                        try {
+                            val datagram = DatagramPacket(frameBytes, frameBytes.size, dest, port)
+                            udpSocket.send(datagram)
+                        } catch (_: Exception) {}
+                    }
                     if (i < BURST_COUNT) Thread.sleep(BURST_INTERVAL_MS)
                 }
                 udpSocket.close()
-                AppLog.d(TAG, "Sent LAN broadcast alert burst ($BURST_COUNT packets)")
+                AppLog.d(TAG, "Sent LAN broadcast alert burst ($BURST_COUNT packets to ${destinations.size} destinations)")
             } catch (e: Exception) {
                 AppLog.w(TAG, "Failed to send LAN broadcast alert: ${e.message}")
             }
@@ -151,36 +200,98 @@ class LanBroadcastAlertManager(
      * Broadcast a delivery receipt (ACK) back to the network so the original sender
      * can update its UI.
      */
-    fun sendBroadcastAck(sequence: Int, payloadHash: Int, receiverName: String) {
+    fun sendBroadcastAck(sequence: Int, payloadHash: Int, receiverName: String, locationInfo: String? = null) {
+        val safeName = receiverName.replace(":", " ").trim()
+        val safeLoc = locationInfo?.replace(":", " ")?.trim()
+        val locPart = if (!safeLoc.isNullOrBlank()) ":$safeLoc" else ""
         val packet = Packet.text(
             type = MessageType.ACK,
             language = Language.ENGLISH, // Doesn't matter for ACK
             sequence = sequence,
-            text = "$payloadHash:$receiverName",
+            text = "$payloadHash:$safeName$locPart",
         )
         val frameBytes = PacketCodec.encode(packet, broadcastCrypto)
 
         thread(name = "iTantra-LanAckSender") {
             try {
-                // Large random jitter prevents UDP collisions when multiple devices ACK simultaneously
-                Thread.sleep((100..1500).random().toLong())
+                // Short random jitter prevents UDP collisions when multiple devices ACK simultaneously
+                Thread.sleep((30..200).random().toLong())
                 
                 val udpSocket = DatagramSocket().apply { broadcast = true }
-                val destination = InetAddress.getByName("255.255.255.255")
-                val datagram = DatagramPacket(frameBytes, frameBytes.size, destination, port)
+                val destinations = getBroadcastDestinations().toMutableSet()
+                alertSenderIps[sequence]?.let { destinations.add(it) }
                 
-                // Send 5x burst for maximum reliability on unacknowledged UDP ACKs
-                for (i in 1..5) {
-                    udpSocket.send(datagram)
-                    if (i < 5) Thread.sleep(BURST_INTERVAL_MS)
+                // Send burst across all destinations
+                for (i in 1..4) {
+                    for (dest in destinations) {
+                        try {
+                            val datagram = DatagramPacket(frameBytes, frameBytes.size, dest, port)
+                            udpSocket.send(datagram)
+                        } catch (_: Exception) {}
+                    }
+                    if (i < 4) Thread.sleep(BURST_INTERVAL_MS)
                 }
                 
                 udpSocket.close()
-                AppLog.d(TAG, "Sent LAN broadcast ACK burst (5 packets) for sequence $sequence")
+                AppLog.d(TAG, "Sent LAN broadcast ACK burst for sequence $sequence to ${destinations.size} destinations")
             } catch (e: Exception) {
                 AppLog.w(TAG, "Failed to send LAN broadcast ACK: ${e.message}")
             }
         }
+    }
+
+    private fun getBroadcastDestinations(): Set<InetAddress> {
+        val destinations = mutableSetOf<InetAddress>()
+        try {
+            destinations.add(InetAddress.getByName("255.255.255.255"))
+            // Common default AP/Hotspot and Wi-Fi Direct broadcast addresses
+            listOf(
+                "192.168.43.255", // Standard Android Hotspot broadcast
+                "192.168.49.255", // Standard Android Wi-Fi Direct P2P broadcast
+                "192.168.43.1",   // Hotspot host
+                "192.168.49.1",   // Wi-Fi Direct Group Owner host
+                "192.168.1.255",
+                "192.168.0.255",
+                "10.0.0.255"
+            ).forEach {
+                runCatching { destinations.add(InetAddress.getByName(it)) }
+            }
+
+            val interfaces = java.net.NetworkInterface.getNetworkInterfaces() ?: return destinations
+            for (iface in interfaces) {
+                if (!iface.isUp || iface.isLoopback) continue
+                for (addr in iface.interfaceAddresses) {
+                    val broadcast = addr.broadcast
+                    if (broadcast != null) {
+                        destinations.add(broadcast)
+                    }
+                    val ip = addr.address
+                    if (ip is java.net.Inet4Address) {
+                        // Calculate broadcast if prefix length is available
+                        val prefix = addr.networkPrefixLength.toInt()
+                        if (prefix in 1..31) {
+                            val mask = -1 shl (32 - prefix)
+                            val ipBytes = ip.address
+                            val ipInt = ((ipBytes[0].toInt() and 0xFF) shl 24) or
+                                    ((ipBytes[1].toInt() and 0xFF) shl 16) or
+                                    ((ipBytes[2].toInt() and 0xFF) shl 8) or
+                                    (ipBytes[3].toInt() and 0xFF)
+                            val broadcastInt = ipInt or mask.inv()
+                            val bCastBytes = byteArrayOf(
+                                ((broadcastInt ushr 24) and 0xFF).toByte(),
+                                ((broadcastInt ushr 16) and 0xFF).toByte(),
+                                ((broadcastInt ushr 8) and 0xFF).toByte(),
+                                (broadcastInt and 0xFF).toByte()
+                            )
+                            runCatching { destinations.add(InetAddress.getByAddress(bCastBytes)) }
+                        }
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            AppLog.w(TAG, "Error resolving broadcast destinations: ${e.message}")
+        }
+        return destinations
     }
 
     /**
@@ -270,6 +381,18 @@ class LanBroadcastAlertManager(
         } catch (_: Exception) {}
     }
 
+    private fun isLocalAddress(addr: InetAddress): Boolean {
+        try {
+            val interfaces = java.net.NetworkInterface.getNetworkInterfaces() ?: return false
+            for (iface in interfaces) {
+                for (ifaceAddr in iface.inetAddresses) {
+                    if (ifaceAddr == addr) return true
+                }
+            }
+        } catch (_: Exception) {}
+        return false
+    }
+
     private fun purgeStaleCache(now: Long) {
         recentAlerts.entries.removeIf { now - it.value > DEDUP_WINDOW_MS }
     }
@@ -280,5 +403,25 @@ class LanBroadcastAlertManager(
         private const val BURST_COUNT = 3
         private const val BURST_INTERVAL_MS = 50L
         private const val DEDUP_WINDOW_MS = 15_000L
+
+        private val originatedSequences = ConcurrentHashMap.newKeySet<Int>()
+        private val localDeviceNames = ConcurrentHashMap.newKeySet<String>()
+        private val alertSenderIps = ConcurrentHashMap<Int, InetAddress>()
+
+        fun markOriginated(sequence: Int) {
+            originatedSequences.add(sequence)
+        }
+
+        fun isOriginated(sequence: Int): Boolean = originatedSequences.contains(sequence)
+
+        fun setLocalDeviceName(name: String) {
+            if (name.isNotBlank()) {
+                localDeviceNames.add(name.trim().lowercase())
+            }
+        }
+
+        fun isLocalDeviceName(name: String): Boolean {
+            return localDeviceNames.contains(name.trim().lowercase())
+        }
     }
 }

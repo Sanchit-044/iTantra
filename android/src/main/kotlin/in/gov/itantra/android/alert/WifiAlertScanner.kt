@@ -12,6 +12,7 @@ import `in`.gov.itantra.core.alert.AlertPlayer
 import `in`.gov.itantra.core.alert.AlertTemplate
 import `in`.gov.itantra.core.alert.IncomingAlert
 import `in`.gov.itantra.core.diag.AppLog
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.launch
 
 import java.util.UUID
@@ -44,14 +45,30 @@ class WifiAlertScanner(
             val manager = p2pManager ?: return
             val channel = p2pChannel ?: return
 
-            manager.discoverServices(channel, object : WifiP2pManager.ActionListener {
-                override fun onSuccess() {}
-                override fun onFailure(reason: Int) {}
+            // Android Wi-Fi Direct requires discoverPeers to activate radio scan before discoverServices works
+            manager.discoverPeers(channel, object : WifiP2pManager.ActionListener {
+                override fun onSuccess() {
+                    manager.discoverServices(channel, object : WifiP2pManager.ActionListener {
+                        override fun onSuccess() {
+                            AppLog.d("WifiAlertScanner", "Wi-Fi Direct DNS-SD service discovery running")
+                        }
+                        override fun onFailure(reason: Int) {
+                            AppLog.w("WifiAlertScanner", "Wi-Fi Direct service discovery failed: $reason")
+                        }
+                    })
+                }
+                override fun onFailure(reason: Int) {
+                    // Direct service discovery fallback
+                    manager.discoverServices(channel, null)
+                }
             })
 
             handler.postDelayed(this, 10_000)
         }
     }
+
+    private val _alerts = kotlinx.coroutines.flow.MutableSharedFlow<`in`.gov.itantra.core.transport.Packet>(extraBufferCapacity = 10)
+    val alerts = _alerts.asSharedFlow()
 
     @SuppressLint("MissingPermission")
     fun startScanning() {
@@ -69,46 +86,46 @@ class WifiAlertScanner(
 
         manager.setDnsSdResponseListeners(channel,
             { instanceName, registrationType, srcDevice ->
-                // Handled in TxtRecordListener
+                AppLog.d("WifiAlertScanner", "DNS-SD Service Available: $instanceName, $registrationType from ${srcDevice.deviceAddress}")
             },
             { fullDomainName, record, srcDevice ->
-                AppLog.d("WifiAlertScanner", "Discovered DNS-SD service: $fullDomainName from ${srcDevice.deviceAddress}")
-                if (fullDomainName.contains(WifiAlertBroadcaster.INSTANCE_PREFIX)) {
-                    val decoded = AlertCodec.decodeWifiPayload(record)
-                    if (decoded == null) {
-                        AppLog.w("WifiAlertScanner", "Failed to decode Wi-Fi alert payload from TXT record")
-                        return@setDnsSdResponseListeners
-                    }
-                    
+                AppLog.d("WifiAlertScanner", "Discovered DNS-SD TXT: $fullDomainName from ${srcDevice.deviceAddress}")
+                val decoded = AlertCodec.decodeWifiPayload(record)
+                if (decoded != null) {
                     val language = decoded.language
                     val sequence = decoded.sequence
                     val content = decoded.content
+                    val senderName = decoded.senderName ?: "Wi-Fi Peer"
+                    val wirePayload = content.toWirePayload()
 
-                    val dedupKey = "${srcDevice.deviceAddress}:$sequence"
-                        if (!recentAlerts.add(dedupKey)) {
-                            return@setDnsSdResponseListeners
-                        }
-                        
-                        if (recentAlerts.size > 100) {
-                            val iterator = recentAlerts.iterator()
-                            for (i in 0 until 50) {
-                                if (iterator.hasNext()) iterator.next()
-                                iterator.remove()
-                            }
-                        }
-
-                        val alert = IncomingAlert(
-                            content = content,
-                            language = language,
-                            sequence = sequence,
-                            receivedAtMs = System.currentTimeMillis(),
-                            senderName = decoded.senderName
-                        )
-                        
-                    AppLog.d("WifiAlertScanner", "Received connectionless Wi-Fi alert (seq $sequence): $content")
-                    kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
-                        alertPlayer.play(alert)
+                    if (WifiAlertBroadcaster.isOriginated(sequence)) {
+                        return@setDnsSdResponseListeners // Ignore self-originated Wi-Fi Direct alert broadcast
                     }
+
+                    val dedupKey = "${srcDevice.deviceAddress}:$sequence:$wirePayload"
+                    if (!recentAlerts.add(dedupKey)) {
+                        return@setDnsSdResponseListeners
+                    }
+                    
+                    if (recentAlerts.size > 100) {
+                        val iterator = recentAlerts.iterator()
+                        for (i in 0 until 50) {
+                            if (iterator.hasNext()) iterator.next()
+                            iterator.remove()
+                        }
+                    }
+
+                    AppLog.d("WifiAlertScanner", "Received connectionless Wi-Fi alert (seq $sequence): $content")
+                    
+                    val textPayload = "$senderName\u001F$wirePayload"
+                    val packet = `in`.gov.itantra.core.transport.Packet.text(
+                        type = `in`.gov.itantra.core.transport.MessageType.ALERT,
+                        language = language,
+                        sequence = sequence,
+                        text = textPayload,
+                        flags = decoded.ttl,
+                    )
+                    _alerts.tryEmit(packet)
                 }
             }
         )

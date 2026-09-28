@@ -26,10 +26,24 @@ class AlertCodecTest {
     }
 
     @Test
-    fun testBleEncoding_CustomAlert_Fails() {
-        val content = AlertContent.Custom("This is a test alert that is too long for BLE")
+    fun testBleEncoding_CustomAlert_ScriptPacked() {
+        val content = AlertContent.Custom("मदद चाहिए")
+        val encoded = AlertCodec.encodeBlePayload(Language.HINDI, content, 7L, "Ram")
+        assertNotNull(encoded, "Short script-packed custom alert should fit in BLE payload")
+
+        val decoded = AlertCodec.decodeBlePayload(encoded!!)
+        assertNotNull(decoded)
+        assertEquals(Language.HINDI, decoded!!.language)
+        assertEquals("मदद चाहिए", (decoded.content as AlertContent.Custom).text)
+        assertEquals(7, decoded.sequence)
+        assertEquals("Ram", decoded.senderName)
+    }
+
+    @Test
+    fun testBleEncoding_CustomAlert_OversizedFails() {
+        val content = AlertContent.Custom("This is an extremely long custom alert message that will exceed the maximum BLE advertising payload size budget")
         val encoded = AlertCodec.encodeBlePayload(Language.ENGLISH, content, 1L)
-        assertNull(encoded, "Custom alerts should return null since they do not fit in BLE")
+        assertNull(encoded, "Oversized custom alerts should return null since they do not fit in BLE")
     }
 
     @Test

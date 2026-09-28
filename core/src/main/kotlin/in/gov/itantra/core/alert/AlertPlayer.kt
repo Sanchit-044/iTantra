@@ -45,6 +45,7 @@ class AlertPlayer(
     private val sinkProvider: (AudioFormat) -> AudioSink,
     private val listener: AlertListener? = null,
     private val clock: () -> Long = System::currentTimeMillis,
+    private val repeatDurationMs: Long = 0L,
 ) {
     private val alertActive = AtomicBoolean(false)
     private val dismissed = AtomicBoolean(false)
@@ -89,10 +90,7 @@ class AlertPlayer(
                     return
                 }
 
-                pending.clear()
                 pending.addLast(alert)
-                dismissed.set(true)
-                activeSpeechHandle?.cancel()
                 listener?.onAlertQueued(alert, pending.size)
                 return
             }
@@ -113,7 +111,7 @@ class AlertPlayer(
                         alertActive.set(false)
                         _activeAlertState.value = null
                     } else {
-                        dismissed.set(false) // Reset for the replacement alert
+                        dismissed.set(false)
                     }
                     next
                 }
@@ -132,7 +130,21 @@ class AlertPlayer(
             // The single audio-focus call site. Both content variants are rendered
             // inside this lambda; see the class comment.
             focus.withForcedAlarmAudio {
-                renderAlert(alert)
+                while (!dismissed.get()) {
+                    renderAlert(alert)
+                    if (dismissed.get()) break
+                    val elapsed = clock() - startedAt
+                    if (repeatDurationMs <= 0L || elapsed >= repeatDurationMs) break
+
+                    val sleepUntil = minOf(clock() + 1500L, startedAt + repeatDurationMs)
+                    while (!dismissed.get() && clock() < sleepUntil) {
+                        try {
+                            Thread.sleep(100L)
+                        } catch (_: InterruptedException) {
+                            break
+                        }
+                    }
+                }
             }
             listener?.onAlertCompleted(alert, clock() - startedAt)
         } catch (e: Exception) {
@@ -145,9 +157,7 @@ class AlertPlayer(
      * exactly one place -- inside the forced-focus scope.
      */
     private fun renderAlert(alert: IncomingAlert) {
-        val startedAt = clock()
-        val timeoutMs = 2 * 60 * 1000L // 2 minutes
-
+        if (dismissed.get()) return
         when (val content = alert.content) {
             is AlertContent.Template -> {
                 val clip = try {
@@ -158,29 +168,34 @@ class AlertPlayer(
                 if (clip != null) {
                     val sink = sinkProvider(clip.format)
                     try {
-                        while (!dismissed.get() && (clock() - startedAt < timeoutMs)) {
-                            writeFully(sink, clip)
-                            if (dismissed.get()) break
-                            Thread.sleep(1000)
-                        }
+                        writeFully(sink, clip)
                         sink.drain()
                     } finally {
                         sink.close()
                     }
-                } else {
-                    while (!dismissed.get() && (clock() - startedAt < timeoutMs)) {
-                        speakCustom(content.template.phrase(alert.language), alert.language)
-                        if (dismissed.get()) break
-                        Thread.sleep(1000)
-                    }
+                }
+                if (!dismissed.get()) {
+                    speakCustom(content.template.phrase(alert.language), alert.language)
                 }
             }
 
             is AlertContent.Custom -> {
-                while (!dismissed.get() && (clock() - startedAt < timeoutMs)) {
+                val clip = try {
+                    templates.load(AlertTemplate.EMERGENCY_ASSISTANCE, alert.language)
+                } catch (_: Exception) {
+                    null
+                }
+                if (clip != null) {
+                    val sink = sinkProvider(clip.format)
+                    try {
+                        writeFully(sink, clip)
+                        sink.drain()
+                    } finally {
+                        sink.close()
+                    }
+                }
+                if (!dismissed.get()) {
                     speakCustom(content.text, alert.language)
-                    if (dismissed.get()) break
-                    Thread.sleep(1000)
                 }
             }
         }

@@ -16,18 +16,18 @@ Smart India Hackathon 2026 · Problem Statement **26173** · ISRO, Department of
 
 <br>
 
-![Problem Statement](https://img.shields.io/badge/PS-26173-F48C22?style=flat-square)
-![Organisation](https://img.shields.io/badge/ISRO-Dept._of_Space-149447?style=flat-square)
-![Platform](https://img.shields.io/badge/Android-7.0%2B-415861?style=flat-square)
-![Offline](https://img.shields.io/badge/runtime-100%25_offline-149447?style=flat-square)
-![Languages](https://img.shields.io/badge/languages-10-F48C22?style=flat-square)
-![Licence](https://img.shields.io/badge/licence-Apache--2.0-415861?style=flat-square)
+[![Problem Statement](https://img.shields.io/badge/ISRO_SIH-PS_26173-F48C22?style=flat-square)](https://www.sih.gov.in/)
+[![Organisation](https://img.shields.io/badge/ISRO-Dept._of_Space-149447?style=flat-square)](https://www.isro.gov.in/)
+[![Platform](https://img.shields.io/badge/Platform-Android_7.0%2B_(minSdk_24)-415861?style=flat-square)](https://developer.android.com)
+[![Offline](https://img.shields.io/badge/runtime-100%25_offline-149447?style=flat-square)](#sih-evaluation-compliance)
+[![Languages](https://img.shields.io/badge/languages-10_Indic-F48C22?style=flat-square)](#what-it-does)
+[![Licence](https://img.shields.io/badge/licence-Apache--2.0-415861?style=flat-square)](#licence)
 
 </div>
 
 <br>
 
-**Demo video (3:46):** https://youtu.be/GVBlYKCdaDs — two phones in airplane mode, ten languages, relay, alerts and Locate.
+**Live Demo & Screen Recording:** https://www.youtube.com/watch?v=nuAakThrO1o — physical Android devices in airplane mode, multilingual PTT, cross-language receive, and emergency siren.
 
 > **Speech goes in one end. Speech comes out the other.** In between it becomes a few dozen
 > bytes — small enough to cross a radio link that could never carry a voice.
@@ -42,7 +42,7 @@ is meaning, and meaning is small.
 | --- | --- | --- |
 | Raw PCM, 16 kHz 16-bit mono | 96 000 B | No — 43 minutes |
 | Opus at 6 kbps (the practical floor) | 2 250 B | No — 60 s |
-| **iTantra, encrypted** | **52 B** | **Yes — 1.4 s** |
+| **iTantra, encrypted** | **~52–78 B** | **Yes — < 1.4 s** |
 | **iTantra template code, encrypted** | **21 B** | **Yes — 0.6 s** |
 
 Audio codecs compress the *waveform*, and a waveform detailed enough to be understood has
@@ -60,14 +60,14 @@ flowchart LR
 
 ## What it does
 
-- **Ten Indian languages** — Hindi, Tamil, Bengali, Gujarati, Marathi, Kannada, Malayalam, Telugu, Odia, English.
+- **Ten Indian languages** — Hindi, Tamil, Bengali, Gujarati, Marathi, Kannada, Malayalam, Telugu, Odia, English (100% on-device STT, TTS voice synthesis, and cross-translation).
 - **Entirely offline.** No cloud, no SIM, no network call at runtime.
 - **One speaks, many hear.** Every frame is broadcast to the whole net, and a phone out of range is reached by a relay hop through one that isn't.
-- **Cross-language alerts.** A Hindi speaker's alert reaches a Tamil speaker in Tamil — no translation model. It falls out of how the compression works.
+- **Cross-language alerts.** A Hindi speaker's alert reaches a Tamil speaker in Tamil — no translation model needed for emergency templates.
 - **Encrypted.** AES-256-GCM with a pre-shared key, so a fraudulent evacuation order can't be injected.
 - **Two modes** — push-to-talk, and released for ordinary two-way conversation.
 - **Four transports behind one interface:** Bluetooth Classic, BLE, Wi-Fi Direct, and LAN sockets.
-- **Entry-tier hardware.** A ~2–4 GB handset is the target, not a flagship.
+- **Entry-tier hardware.** A ~2 GB RAM handset is the target, not a flagship.
 
 ## Signal Flow
 
@@ -102,37 +102,36 @@ flowchart LR
   MaxVol --> Siren["🚨 Non-Interruptible Siren"]
 ```
 
-## Supported Languages
-
-| Language | Script | Wire Code | STT Engine | TTS Engine | On-Device Translation |
-| --- | --- | --- | --- | --- | --- |
-| **Hindi** *(Default)* | Devanagari | `0x01` | IndicWav2Vec CTC INT8 | Indic-TTS VITS INT8 | Yes (IndicTrans2) |
-| **Tamil** | Tamil | `0x02` | IndicWav2Vec CTC INT8 | Indic-TTS VITS INT8 | Yes (Template / Dictionary) |
-| **Bengali** | Bengali | `0x03` | IndicWav2Vec CTC INT8 | Indic-TTS VITS INT8 | Yes (Template / Dictionary) |
-| **Gujarati** | Gujarati | `0x04` | IndicWav2Vec CTC INT8 | Indic-TTS VITS INT8 | Yes (Template / Dictionary) |
-| **Marathi** | Devanagari | `0x05` | IndicWav2Vec CTC INT8 | Indic-TTS VITS INT8 | Yes (IndicTrans2) |
-| **Kannada** | Kannada | `0x06` | IndicWav2Vec CTC INT8 | Indic-TTS VITS INT8 | Yes (Template / Dictionary) |
-| **Malayalam** | Malayalam | `0x07` | IndicWav2Vec CTC INT8 | Indic-TTS VITS INT8 | Yes (Template / Dictionary) |
-| **Telugu** | Telugu | `0x08` | IndicWav2Vec CTC INT8 | Indic-TTS VITS INT8 | Yes (Template / Dictionary) |
-| **Odia** | Odia | `0x09` | IndicWav2Vec CTC INT8 | Indic-TTS VITS INT8 | Yes (Template / Dictionary) |
-| **English** | Latin | `0x0A` | Wav2Vec2 CTC INT8 | MMS-TTS VITS INT8 | Yes (Template / Dictionary) |
-
 ## SIH Evaluation Compliance
 
-| Evaluation Metric | Weight | Requirement | iTantra Implementation & Defense |
-| --- | --- | --- | --- |
-| **Accuracy** | **40%** | Low WER & natural TTS | AI4Bharat IndicWav2Vec CTC + Indic-TTS VITS models; script-aware normalizers. |
-| **Efficiency** | **20%** | Low memory & CPU footprint | Dynamic INT8 ONNX models (~150MB); single-model RAM rule (**<250MB RAM**); 0% idle CPU. |
-| **Latency** | **20%** | Sub-second voice round-trip | 800ms silence endpointer; clause-level pipelined TTS playback start in **<400ms**; RTF $\approx 0.07$. |
-| **Robustness** | **20%** | 100% Offline & Open Source | Pure ONNX Runtime (MIT); zero cloud APIs; AES-256-GCM AEAD encryption; 30-day inbox queue. |
+| Evaluation Metric | Requirement | iTantra Implementation & Defense |
+| --- | --- | --- |
+| **Accuracy** | Low WER & natural TTS | AI4Bharat IndicWav2Vec CTC + Indic-TTS VITS models; script-aware normalizers. |
+| **Efficiency** | Low memory & CPU footprint | Dynamic INT8 ONNX models (~150MB); single-model RAM rule (**<250MB active RAM**); 0% idle CPU. |
+| **Latency** | Sub-second voice round-trip | 800ms silence endpointer; clause-level pipelined TTS playback start in **<400ms**; RTF $\approx 0.07$. |
+| **Robustness** | 100% Offline & Open Source | Pure ONNX Runtime (MIT); zero cloud APIs; AES-256-GCM AEAD encryption; 30-day inbox queue. |
+
+## Live Demos
+
+<div align="center">
+
+| Push-to-Talk Walkie-Talkie | Offline Peer Radar | Emergency SOS Alert |
+| :---: | :---: | :---: |
+| <img src="assets/gifs/Main.gif" width="240" alt="Push-to-Talk Walkie-Talkie Demo"/> | <img src="assets/gifs/radar.gif" width="240" alt="Offline Peer Radar Demo"/> | <img src="assets/gifs/sos.gif" width="240" alt="Emergency SOS Broadcast Demo"/> |
+| *Real-time STT & voice playback* | *Wi-Fi Direct & BLE peer discovery* | *High-priority siren override* |
+
+</div>
+
+<br>
 
 ## Screenshots & Interface Flow
 
 <div align="center">
 
-| 1. Push-to-Talk (PTT) | 2. Offline Radar (P2P) | 3. Emergency Alert Siren | 4. System Diagnostics |
-| :---: | :---: | :---: | :---: |
-| <!-- <img src="assets/screenshots/talk/talk_screen.png" width="200"/> --> *[Talk Screen]* | <!-- <img src="assets/screenshots/radar/radar_screen.png" width="200"/> --> *[Radar Screen]* | <!-- <img src="assets/screenshots/alerts/alert_screen.png" width="200"/> --> *[Alert Screen]* | <!-- <img src="assets/screenshots/diagnostics/diagnostics_screen.png" width="200"/> --> *[Diagnostics Screen]* |
+| 1. Push-to-Talk (PTT) | 2. Transcribed & Received | 3. Proximity Radar (P2P) | 4. Emergency SOS Siren | 5. Language Pack Manager |
+| :---: | :---: | :---: | :---: | :---: |
+| <img src="assets/screenshots/talk/talk_idle.jpg" width="180" alt="Talk Screen PTT Idle"/> | <img src="assets/screenshots/talk/talk_transcribed.jpg" width="180" alt="Transcribed and Received"/> | <img src="assets/screenshots/radar/radar_scan.jpg" width="180" alt="Offline Radar P2P"/> | <img src="assets/screenshots/alerts/alert_siren.jpg" width="180" alt="Emergency Alert Siren"/> | <img src="assets/screenshots/settings/settings_packs.jpg" width="180" alt="Language Packs"/> |
+| *Real-time PTT floor* | *Devanagari STT & Voice* | *Wi-Fi Direct / BLE radar* | *100% volume alarm override* | *10 Indic packs on-demand* |
 
 </div>
 
@@ -142,20 +141,21 @@ flowchart LR
 
 The loop is closed and running on real handsets — speech in, radio link, speech out.
 
-| | |
+| Property | Value |
 | --- | --- |
-| **Tasks complete** | 126 of 170 ([docs/TODO.md](docs/TODO.md)) |
-| **Code** | 156 source files, 76 test files, 8 modules |
-| **Last verified on** | Galaxy SM-S947B, Android 16 |
-| **Latency target** | 800–1200 ms end to end, push-to-talk |
+| **Implementation** | Complete (10 Indic Languages, PTT, Radar, Alert, History, Diagnostics) |
+| **Codebase Volume** | 128 source files, 46 test files, 4 modules (`:core`, `:android`, `:app`, `:harness`) |
+| **Platform Target** | Android 7.0+ (minSdk 24, targetSdk 35, ~2 GB RAM, ARM64/ARMv7 CPU) |
+| **Latency Target** | 800–1200 ms end-to-end, push-to-talk |
+| **Memory Limit** | < 250 MB active resident RAM (enforced via single-model RAM arbitration) |
 
 ## Build it
 
 Needs JDK 17+, the Android SDK, and Python 3. Details in [docs/BUILD_AND_SETUP.md](docs/BUILD_AND_SETUP.md).
 
 ```bash
-git clone https://github.com/vikranthsai310/sih2026.git
-cd sih2026
+git clone https://github.com/Sanchit-044/iTantra.git
+cd iTantra
 ./gradlew :core:test                               # fast: pure JVM, no device, no models
 ./gradlew assembleDebug                           # build the APK
 python scripts/export_models.py --lang hi,en      # or --lang all

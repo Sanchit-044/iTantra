@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.History
@@ -98,86 +99,113 @@ fun ITantraApp(
     mainViewModel: MainViewModel = hiltViewModel(),
 ) {
     val navController = rememberNavController()
+    val uiState by mainViewModel.uiState.collectAsState()
+    val chrome = UiStrings.forLanguage(uiState.uiLanguage)
 
-    NavHost(
-        navController = navController,
-        startDestination = appViewModel.initialRoute,
-        enterTransition = {
-            slideIntoContainer(AnimatedContentTransitionScope.SlideDirection.Left, tween(NAV_ANIM_MS), initialOffset = { it / 5 }) +
-                fadeIn(tween(NAV_ANIM_MS))
-        },
-        exitTransition = {
-            slideOutOfContainer(AnimatedContentTransitionScope.SlideDirection.Left, tween(NAV_ANIM_MS), targetOffset = { it / 5 }) +
-                fadeOut(tween(NAV_ANIM_MS / 2))
-        },
-        popEnterTransition = {
-            slideIntoContainer(AnimatedContentTransitionScope.SlideDirection.Right, tween(NAV_ANIM_MS), initialOffset = { it / 5 }) +
-                fadeIn(tween(NAV_ANIM_MS))
-        },
-        popExitTransition = {
-            slideOutOfContainer(AnimatedContentTransitionScope.SlideDirection.Right, tween(NAV_ANIM_MS), targetOffset = { it / 5 }) +
-                fadeOut(tween(NAV_ANIM_MS / 2))
-        },
-    ) {
-        composable(AppRoutes.SETUP_PROFILE) {
-            ProfileScreen(
-                isSetup = true,
-                onFinished = { navController.navigate(AppRoutes.SETUP_LANGUAGES) { popUpTo(AppRoutes.SETUP_PROFILE) { inclusive = true } } },
-            )
-        }
-        composable(AppRoutes.SETUP_LANGUAGES) {
-            LanguageSelectionScreen(
-                isSetup = true,
-                onFinished = { navController.navigate(AppRoutes.MAIN) { popUpTo(0) } },
-            )
-        }
-        composable(AppRoutes.MAIN) {
-            MainContent(
-                mainViewModel = mainViewModel,
-                onOpenProfile = { navController.navigate(AppRoutes.SETTINGS_PROFILE) },
-                onOpenLanguages = { navController.navigate(AppRoutes.SETTINGS_LANGUAGES) },
-                onOpenDisplay = { navController.navigate(AppRoutes.SETTINGS_DISPLAY) },
-                onOpenAnalysis = { navController.navigate(AppRoutes.SETTINGS_ANALYSIS) },
-                onOpenAbout = { navController.navigate(AppRoutes.SETTINGS_ABOUT) },
-            )
-        }
-        composable(AppRoutes.SETTINGS_PROFILE) {
-            val main by mainViewModel.uiState.collectAsState()
-            ProfileScreen(
-                isSetup = false,
-                uiLanguage = main.uiLanguage,
-                onFinished = { navController.popBackStack() },
-                onBack = { navController.popBackStack() },
-            )
-        }
-        composable(AppRoutes.SETTINGS_LANGUAGES) {
-            LanguageSettingsScreen(
-                page = LanguageSettingsPage.SPEECH,
-                onBack = { navController.popBackStack() },
-            )
-        }
-        composable(AppRoutes.SETTINGS_DISPLAY) {
-            LanguageSettingsScreen(
-                page = LanguageSettingsPage.DISPLAY,
-                onBack = { navController.popBackStack() },
-            )
-        }
-        composable(AppRoutes.SETTINGS_ANALYSIS) {
-            val main by mainViewModel.uiState.collectAsState()
-            val chrome = UiStrings.forLanguage(main.uiLanguage)
-            SubScreenScaffold(
-                title = chrome.analysis,
-                onBack = { navController.popBackStack() },
-                backDescription = chrome.back,
-            ) {
-                DiagnosticsScreen(uiLanguage = main.uiLanguage)
+    Box(modifier = Modifier.fillMaxSize()) {
+        NavHost(
+            navController = navController,
+            startDestination = appViewModel.initialRoute,
+            enterTransition = {
+                slideIntoContainer(AnimatedContentTransitionScope.SlideDirection.Left, tween(NAV_ANIM_MS), initialOffset = { it / 5 }) +
+                    fadeIn(tween(NAV_ANIM_MS))
+            },
+            exitTransition = {
+                slideOutOfContainer(AnimatedContentTransitionScope.SlideDirection.Left, tween(NAV_ANIM_MS), targetOffset = { it / 5 }) +
+                    fadeOut(tween(NAV_ANIM_MS / 2))
+            },
+            popEnterTransition = {
+                slideIntoContainer(AnimatedContentTransitionScope.SlideDirection.Right, tween(NAV_ANIM_MS), initialOffset = { it / 5 }) +
+                    fadeIn(tween(NAV_ANIM_MS))
+            },
+            popExitTransition = {
+                slideOutOfContainer(AnimatedContentTransitionScope.SlideDirection.Right, tween(NAV_ANIM_MS), targetOffset = { it / 5 }) +
+                    fadeOut(tween(NAV_ANIM_MS / 2))
+            },
+        ) {
+            composable(AppRoutes.SETUP_PROFILE) {
+                ProfileScreen(
+                    isSetup = true,
+                    onFinished = { navController.navigate(AppRoutes.SETUP_LANGUAGES) { popUpTo(AppRoutes.SETUP_PROFILE) { inclusive = true } } },
+                )
+            }
+            composable(AppRoutes.SETUP_LANGUAGES) {
+                LanguageSelectionScreen(
+                    isSetup = true,
+                    onFinished = { navController.navigate(AppRoutes.MAIN) { popUpTo(0) } },
+                )
+            }
+            composable(AppRoutes.MAIN) {
+                MainContent(
+                    mainViewModel = mainViewModel,
+                    onOpenProfile = { navController.navigate(AppRoutes.SETTINGS_PROFILE) },
+                    onOpenLanguages = { navController.navigate(AppRoutes.SETTINGS_LANGUAGES) },
+                    onOpenDisplay = { navController.navigate(AppRoutes.SETTINGS_DISPLAY) },
+                    onOpenAnalysis = { navController.navigate(AppRoutes.SETTINGS_ANALYSIS) },
+                    onOpenAbout = { navController.navigate(AppRoutes.SETTINGS_ABOUT) },
+                )
+            }
+            composable(AppRoutes.SETTINGS_PROFILE) {
+                val main by mainViewModel.uiState.collectAsState()
+                ProfileScreen(
+                    isSetup = false,
+                    uiLanguage = main.uiLanguage,
+                    onFinished = { navController.popBackStack() },
+                    onBack = { navController.popBackStack() },
+                )
+            }
+            composable(AppRoutes.SETTINGS_LANGUAGES) {
+                LanguageSettingsScreen(
+                    page = LanguageSettingsPage.SPEECH,
+                    onBack = { navController.popBackStack() },
+                )
+            }
+            composable(AppRoutes.SETTINGS_DISPLAY) {
+                LanguageSettingsScreen(
+                    page = LanguageSettingsPage.DISPLAY,
+                    onBack = { navController.popBackStack() },
+                )
+            }
+            composable(AppRoutes.SETTINGS_ANALYSIS) {
+                val main by mainViewModel.uiState.collectAsState()
+                val chromeAnalysis = UiStrings.forLanguage(main.uiLanguage)
+                SubScreenScaffold(
+                    title = chromeAnalysis.analysis,
+                    onBack = { navController.popBackStack() },
+                    backDescription = chromeAnalysis.back,
+                ) {
+                    DiagnosticsScreen(uiLanguage = main.uiLanguage)
+                }
+            }
+            composable(AppRoutes.SETTINGS_ABOUT) {
+                val main by mainViewModel.uiState.collectAsState()
+                AboutScreen(
+                    uiLanguage = main.uiLanguage,
+                    onBack = { navController.popBackStack() },
+                )
             }
         }
-        composable(AppRoutes.SETTINGS_ABOUT) {
-            val main by mainViewModel.uiState.collectAsState()
-            AboutScreen(
-                uiLanguage = main.uiLanguage,
-                onBack = { navController.popBackStack() },
+
+        // Full Screen Outbound Emergency Broadcast Overlay (For Alert Sender)
+        uiState.activeOutboundAlert?.let { outboundAlert ->
+            if (!outboundAlert.isMinimized) {
+                OutboundAlertFullScreen(
+                    outboundAlert = outboundAlert,
+                    chrome = chrome,
+                    onStopAlert = { mainViewModel.stopOutboundAlert() },
+                    onMinimize = { mainViewModel.minimizeOutboundAlert() },
+                )
+            }
+        }
+
+        // Full Screen Emergency Alert Overlay (For Incoming Alerts)
+        uiState.activeIncomingAlert?.let { activeAlert ->
+            IncomingAlertFullScreen(
+                alert = activeAlert,
+                chrome = chrome,
+                liveDistanceMeters = uiState.liveAlertDistanceMeters,
+                onDismiss = { mainViewModel.dismissAlert() },
+                onMuteAudio = { mainViewModel.muteAlertAudio() },
             )
         }
     }
@@ -203,7 +231,7 @@ fun MainContent(
     val snackbarHostState = remember { SnackbarHostState() }
     val wide = isWideLayout()
     val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior()
-    val unread = uiState.inbox.count { it.unread }
+    val unread = uiState.inbox.count { it.unread && !it.isAlert }
 
     LaunchedEffect(mainViewModel) {
         mainViewModel.snackbarMessage.collect { msg ->
@@ -234,19 +262,6 @@ fun MainContent(
             chrome = chrome,
             onConfirm = { mainViewModel.confirmPairing() },
             onDismiss = { mainViewModel.dismissPairing() },
-        )
-    }
-
-    uiState.activeIncomingAlert?.let { activeAlert ->
-        val text = when (val c = activeAlert.content) {
-            is AlertContent.Template -> c.template.phrase(activeAlert.language)
-            is AlertContent.Custom -> c.text
-        }
-        IncomingAlertDialog(
-            senderName = activeAlert.senderName,
-            chrome = chrome,
-            text = text,
-            onDismiss = { mainViewModel.dismissAlert() },
         )
     }
 
@@ -329,27 +344,48 @@ fun MainContent(
                 }
             },
         ) { padding ->
-            AnimatedContent(
-                targetState = tab,
-                transitionSpec = { fadeIn(tween(220)) togetherWith fadeOut(tween(120)) },
+            Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(padding),
-                label = "tab",
-            ) { current ->
-                MaxWidthBox {
-                    when (current) {
-                        MainTab.TALK -> MainScreen(viewModel = mainViewModel)
-                        MainTab.RADAR -> RadarScreen(mainViewModel = mainViewModel, radarViewModel = radarViewModel)
-                        MainTab.ALERT -> AlertScreen(viewModel = mainViewModel)
-                        MainTab.HISTORY -> HistoryScreen(viewModel = historyViewModel, chrome = chrome)
-                        MainTab.SETTINGS -> SettingsScreen(
-                            mainState = uiState,
-                            onOpenProfile = onOpenProfile,
-                            onOpenLanguages = onOpenLanguages,
-                            onOpenDisplay = onOpenDisplay,
-                            onOpenAnalysis = onOpenAnalysis,
-                            onOpenAbout = onOpenAbout,
+                    .padding(padding)
+            ) {
+                AnimatedContent(
+                    targetState = tab,
+                    transitionSpec = { fadeIn(tween(220)) togetherWith fadeOut(tween(120)) },
+                    modifier = Modifier.fillMaxSize(),
+                    label = "tab",
+                ) { current ->
+                    MaxWidthBox {
+                        when (current) {
+                            MainTab.TALK -> MainScreen(
+                                viewModel = mainViewModel,
+                                onOpenHistory = { tab = MainTab.HISTORY },
+                            )
+                            MainTab.RADAR -> RadarScreen(mainViewModel = mainViewModel, radarViewModel = radarViewModel)
+                            MainTab.ALERT -> AlertScreen(viewModel = mainViewModel)
+                            MainTab.HISTORY -> HistoryScreen(viewModel = historyViewModel, chrome = chrome)
+                            MainTab.SETTINGS -> SettingsScreen(
+                                mainState = uiState,
+                                onOpenProfile = onOpenProfile,
+                                onOpenLanguages = onOpenLanguages,
+                                onOpenDisplay = onOpenDisplay,
+                                onOpenAnalysis = onOpenAnalysis,
+                                onOpenAbout = onOpenAbout,
+                            )
+                        }
+                    }
+                }
+
+                // Minimized floating emergency broadcast banner
+                uiState.activeOutboundAlert?.let { outbound ->
+                    if (outbound.isMinimized) {
+                        MinimizedOutboundAlertBanner(
+                            outboundAlert = outbound,
+                            onExpand = { mainViewModel.expandOutboundAlert() },
+                            onStopAlert = { mainViewModel.stopOutboundAlert() },
+                            modifier = Modifier
+                                .align(Alignment.BottomCenter)
+                                .padding(horizontal = 16.dp, vertical = 12.dp)
                         )
                     }
                 }
@@ -505,33 +541,56 @@ private fun PairingDialog(
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        icon = { Icon(Icons.Filled.Verified, contentDescription = null) },
-        title = { Text(chrome.pairingTitle, textAlign = TextAlign.Center) },
+        icon = { Icon(Icons.Filled.Verified, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
+        title = {
+            Text(
+                "Security Verification",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                textAlign = TextAlign.Center,
+            )
+        },
         text = {
             Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
                 Surface(
                     color = MaterialTheme.colorScheme.primaryContainer,
                     contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                    shape = MaterialTheme.shapes.medium,
+                    shape = RoundedCornerShape(12.dp),
                 ) {
                     Text(
                         text = code.chunked(3).joinToString(" "),
-                        style = MaterialTheme.typography.headlineMedium,
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold,
                         fontFamily = FontFamily.Monospace,
-                        letterSpacing = 4.sp,
-                        modifier = Modifier.padding(horizontal = 24.dp, vertical = 12.dp),
+                        letterSpacing = 3.sp,
+                        modifier = Modifier.padding(horizontal = 18.dp, vertical = 8.dp),
                     )
                 }
-                Spacer(Modifier.height(16.dp))
+                Spacer(Modifier.height(12.dp))
                 Text(
-                    chrome.pairingBody(code),
-                    style = MaterialTheme.typography.bodyMedium,
+                    text = "Verify that this 6-digit code matches the one on the other device to establish an encrypted connection.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                     textAlign = TextAlign.Center,
                 )
             }
         },
-        confirmButton = { Button(onClick = onConfirm, shape = MaterialTheme.shapes.medium) { Text(chrome.pairingYes) } },
-        dismissButton = { TextButton(onClick = onDismiss, shape = MaterialTheme.shapes.medium) { Text(chrome.pairingCancel) } },
+        confirmButton = {
+            Button(
+                onClick = onConfirm,
+                shape = MaterialTheme.shapes.medium,
+            ) {
+                Text(chrome.pairingYes)
+            }
+        },
+        dismissButton = {
+            TextButton(
+                onClick = onDismiss,
+                shape = MaterialTheme.shapes.medium,
+            ) {
+                Text(chrome.pairingCancel)
+            }
+        },
     )
 }
 

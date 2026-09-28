@@ -85,6 +85,16 @@ enum class AlertTemplate(val assetKey: String) {
         fun fromAssetKey(key: String): AlertTemplate? =
             entries.firstOrNull { it.assetKey == key }
 
+        fun resolveDisplayText(text: String, language: Language): String {
+            val trimmed = text.trim()
+            if (trimmed.startsWith(WIRE_PREFIX)) {
+                val key = trimmed.removePrefix(WIRE_PREFIX)
+                val template = fromAssetKey(key)
+                if (template != null) return template.phrase(language)
+            }
+            return text
+        }
+
         fun fromWirePayload(text: String): AlertContent {
             val trimmed = text.trim()
             if (trimmed.startsWith(WIRE_PREFIX)) {
@@ -114,6 +124,8 @@ data class IncomingAlert(
     val sequence: Int,
     val receivedAtMs: Long,
     val senderName: String? = null,
+    /** RSSI-estimated distance in meters at alert-receive time. Null if no RSSI was available. */
+    val distanceMeters: Float? = null,
 )
 
 interface ForcedAudioFocus {

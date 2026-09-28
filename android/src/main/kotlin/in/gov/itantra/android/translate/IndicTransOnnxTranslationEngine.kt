@@ -8,6 +8,7 @@ import `in`.gov.itantra.android.pack.LanguagePackPaths
 import `in`.gov.itantra.core.Language
 import `in`.gov.itantra.core.diag.AppLog
 import `in`.gov.itantra.core.translate.BpeTokenizer
+import `in`.gov.itantra.core.translate.BrahmicScriptTransliteration
 import `in`.gov.itantra.core.translate.TranslationEngine
 import `in`.gov.itantra.core.translate.TranslationUnavailableException
 import org.json.JSONObject
@@ -113,16 +114,6 @@ class IndicTransOnnxTranslationEngine(
         if (source == target) return text
         if (text.isBlank()) return text
 
-        // See the class doc's "Known limitation" section: without on-device
-        // Devanagari transliteration, any other language pair would silently
-        // come back as the right words in the wrong script.
-        if (source !in SCRIPT_SAFE_LANGUAGES || target !in SCRIPT_SAFE_LANGUAGES) {
-            throw TranslationUnavailableException(
-                "ONNX translation is limited to Hindi and Marathi for now; " +
-                    "${source.englishName} → ${target.englishName} is not yet supported."
-            )
-        }
-
         val (srcTok, tgtTok, enc, dec) = synchronized(lock) {
             ensureLoaded()
             val s = srcTokenizer ?: throw TranslationUnavailableException("Source tokenizer not loaded")
@@ -133,8 +124,7 @@ class IndicTransOnnxTranslationEngine(
         }
 
         // Both language tags are encoder input, so both are looked up via the SOURCE
-        // vocabulary -- see the class doc. Using tgtTok here would fail outright
-        // (tgt_encoder carries no language tags) and would be wrong even if it didn't.
+        // vocabulary -- see the class doc.
         val srcLangId = srcTok.langTagId(BpeTokenizer.floresToCode(source))
             ?: throw TranslationUnavailableException(
                 "Unknown source language tag for ${source.englishName}"
@@ -144,11 +134,17 @@ class IndicTransOnnxTranslationEngine(
                 "Unknown target language tag for ${target.englishName}"
             )
 
-        val sourceIds = srcTok.encode(text)
+        // Pivot Brahmic scripts to Devanagari (IndicTrans2 canonical representation)
+        val preprocessedText = if (BrahmicScriptTransliteration.isBrahmic(source)) {
+            BrahmicScriptTransliteration.toDevanagari(text, source)
+        } else {
+            text
+        }
+
+        val sourceIds = srcTok.encode(preprocessedText)
         if (sourceIds.isEmpty()) return text
 
-        // [src_lang_tag] [tgt_lang_tag] [BPE tokens] [EOS] -- see the class doc for why
-        // both tags are required, not just the trailing EOS.
+        // [src_lang_tag] [tgt_lang_tag] [BPE tokens] [EOS]
         val encoderInput = LongArray(sourceIds.size + 3).also { arr ->
             arr[0] = srcLangId.toLong()
             arr[1] = tgtLangId.toLong()
@@ -162,20 +158,26 @@ class IndicTransOnnxTranslationEngine(
             ?: throw TranslationUnavailableException("Encoder produced null output")
 
         try {
-            // Decoder seed is a single decoder_start_token_id (== tgtTok's own </s> id),
-            // not a language tag -- see the class doc.
+            // Decoder seed is a single decoder_start_token_id (== tgtTok's own </s> id)
             val decodedIds = greedyDecode(env, dec, encoderHidden, encoderInput.size, tgtTok)
-            val result = tgtTok.decode(decodedIds)
+            val rawResult = tgtTok.decode(decodedIds)
 
-            if (result.isBlank()) {
+            if (rawResult.isBlank()) {
                 AppLog.w(TAG, "ONNX translation returned blank for: $text")
                 throw TranslationUnavailableException(
                     "Translation model returned empty result for ${source.englishName} → ${target.englishName}"
                 )
             }
 
-            AppLog.d(TAG, "${source.code}→${target.code}: \"$text\" → \"$result\"")
-            return result
+            // Convert canonical Devanagari output to target Brahmic script if applicable
+            val finalResult = if (BrahmicScriptTransliteration.isBrahmic(target)) {
+                BrahmicScriptTransliteration.fromDevanagari(rawResult, target)
+            } else {
+                rawResult
+            }
+
+            AppLog.d(TAG, "${source.code}→${target.code}: \"$text\" → \"$finalResult\"")
+            return finalResult
         } finally {
             encoderHidden.close()
         }
@@ -498,24 +500,6 @@ class IndicTransOnnxTranslationEngine(
 
     private companion object {
         const val TAG = "IndicTransOnnx"
-
-        /**
-         * Languages [translate] will actually serve: both Devanagari script, so
-         * neither side needs IndicTrans2's internal script transliteration (see the
-         * class doc's "Known limitation" section). Every other Indic [Language] uses a
-         * different Brahmic script and would come back as the right words in the wrong
-         * script.
-         *
-         * English is deliberately excluded too, despite being Latin (no
-         * transliteration needed either): verification with this checkpoint
-         * (`indictrans2-indic-indic-dist-320M`) showed hin_Deva → eng_Latn producing
-         * garbled Devanagari-script output while eng_Latn → hin_Deva translated
-         * correctly -- this model variant is built for Indic↔Indic and is evidently
-         * unreliable for Indic→English specifically (AI4Bharat ships a separate
-         * `indictrans2-indic-en-dist-200M` checkpoint for that direction, not used
-         * here). One working direction isn't enough confidence to ship the other.
-         */
-        val SCRIPT_SAFE_LANGUAGES = setOf(Language.HINDI, Language.MARATHI)
 
         /**
          * Hard limit on generated tokens to prevent runaway decoding.
