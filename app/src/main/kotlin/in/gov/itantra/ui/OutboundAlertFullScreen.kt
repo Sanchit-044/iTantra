@@ -16,15 +16,21 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
@@ -110,7 +116,10 @@ fun OutboundAlertFullScreen(
     val alertText = remember(outboundAlert.content, outboundAlert.language) {
         when (val c = outboundAlert.content) {
             is AlertContent.Template -> c.template.phrase(outboundAlert.language)
-            is AlertContent.Custom -> AlertTemplate.resolveDisplayText(c.text, outboundAlert.language)
+            is AlertContent.Custom -> AlertTemplate.resolveDisplayText(
+                c.text,
+                outboundAlert.language
+            )
         }
     }
 
@@ -130,7 +139,7 @@ fun OutboundAlertFullScreen(
         color = MaterialTheme.colorScheme.background,
     ) {
         Box(modifier = Modifier.fillMaxSize()) {
-            // Subtle ambient emergency gradient background
+            // Subtle ambient emergency gradient background extends edge-to-edge
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -145,257 +154,301 @@ fun OutboundAlertFullScreen(
                     )
             )
 
-            Column(
+            BoxWithConstraints(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(horizontal = 20.dp, vertical = 16.dp),
+                    .windowInsetsPadding(WindowInsets.safeDrawing),
+                contentAlignment = Alignment.TopCenter,
             ) {
-                Spacer(modifier = Modifier.height(8.dp))
+                val isCompactHeight = maxHeight < 680.dp
+                val isSmallWidth = maxWidth < 380.dp
+                val horizontalPadding = if (isSmallWidth) 14.dp else 20.dp
+                val verticalPadding = if (isCompactHeight) 8.dp else 14.dp
+                val buttonHeight = if (isCompactHeight) 46.dp else 52.dp
 
-                // 1. Top Header with Emergency Pulse Badge & Minimize Icon
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically,
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .widthIn(max = 600.dp)
+                        .padding(horizontal = horizontalPadding, vertical = verticalPadding),
                 ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Box(
-                            modifier = Modifier
-                                .size(12.dp)
-                                .scale(pulseScale)
-                                .background(MaterialTheme.colorScheme.error, CircleShape)
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = "EMERGENCY BROADCAST ACTIVE",
-                            style = MaterialTheme.typography.labelLarge,
-                            fontWeight = FontWeight.ExtraBold,
-                            color = MaterialTheme.colorScheme.error,
-                            letterSpacing = 1.2.sp,
-                        )
-                    }
-
-                    IconButton(onClick = onMinimize) {
-                        Icon(
-                            imageVector = Icons.Default.CloseFullscreen,
-                            contentDescription = "Minimize",
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(14.dp))
-
-                // 2. Countdown Timer & Status Header Card
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(20.dp),
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.45f)
-                    ),
-                    border = BorderStroke(1.5.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.6f)),
-                ) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(18.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally,
+                    // 1. Top Header with Emergency Pulse Badge & Minimize Icon
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.weight(1f, fill = false),
                         ) {
-                            Column {
-                                Text(
-                                    text = "Transmitting Multi-Radio Beacon",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            Box(
+                                modifier = Modifier
+                                    .size(12.dp)
+                                    .scale(pulseScale)
+                                    .background(MaterialTheme.colorScheme.error, CircleShape)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "EMERGENCY BROADCAST ACTIVE",
+                                style = if (isCompactHeight) MaterialTheme.typography.labelMedium else MaterialTheme.typography.labelLarge,
+                                fontWeight = FontWeight.ExtraBold,
+                                color = MaterialTheme.colorScheme.error,
+                                letterSpacing = if (isCompactHeight) 0.8.sp else 1.2.sp,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+
+                        IconButton(
+                            onClick = onMinimize,
+                            modifier = Modifier.size(if (isCompactHeight) 36.dp else 44.dp),
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.CloseFullscreen,
+                                contentDescription = "Minimize",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(if (isCompactHeight) 8.dp else 12.dp))
+
+                    // 2. Countdown Timer & Status Header Card
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(if (isCompactHeight) 16.dp else 20.dp),
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.45f)
+                        ),
+                        border = BorderStroke(
+                            1.5.dp,
+                            MaterialTheme.colorScheme.error.copy(alpha = 0.6f)
+                        ),
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(if (isCompactHeight) 12.dp else 16.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
+                                    Text(
+                                        text = "Transmitting Multi-Radio Beacon",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        fontSize = if (isCompactHeight) 11.sp else 12.sp,
+                                    )
+                                    Spacer(modifier = Modifier.height(2.dp))
+                                    Text(
+                                        text = alertText,
+                                        style = if (isCompactHeight) MaterialTheme.typography.titleSmall else MaterialTheme.typography.titleMedium,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.onErrorContainer,
+                                        maxLines = if (isCompactHeight) 1 else 2,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
+                                }
+
+                                // Circular Timer Countdown
+                                val minutes = remainingSeconds / 60
+                                val seconds = remainingSeconds % 60
+                                val progress = (remainingSeconds.toFloat() / 300f).coerceIn(0f, 1f)
+
+                                Box(contentAlignment = Alignment.Center) {
+                                    CircularProgressIndicator(
+                                        progress = { progress },
+                                        modifier = Modifier.size(if (isCompactHeight) 44.dp else 52.dp),
+                                        color = MaterialTheme.colorScheme.error,
+                                        trackColor = MaterialTheme.colorScheme.error.copy(alpha = 0.2f),
+                                        strokeWidth = if (isCompactHeight) 3.5.dp else 4.dp,
+                                    )
+                                    Text(
+                                        text = String.format(
+                                            Locale.US,
+                                            "%02d:%02d",
+                                            minutes,
+                                            seconds
+                                        ),
+                                        style = if (isCompactHeight) MaterialTheme.typography.labelSmall else MaterialTheme.typography.labelMedium,
+                                        fontWeight = FontWeight.Bold,
+                                        fontFamily = FontFamily.Monospace,
+                                        color = MaterialTheme.colorScheme.onErrorContainer,
+                                    )
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.height(if (isCompactHeight) 10.dp else 12.dp))
+
+                            // Radio Channel Status Badges
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            ) {
+                                RadioStatusChip(
+                                    title = "BLE Mesh",
+                                    active = true,
+                                    modifier = Modifier.weight(1f)
                                 )
-                                Spacer(modifier = Modifier.height(2.dp))
+                                RadioStatusChip(
+                                    title = "Wi-Fi Direct",
+                                    active = true,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                RadioStatusChip(
+                                    title = "LAN UDP",
+                                    active = true,
+                                    modifier = Modifier.weight(1f)
+                                )
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(if (isCompactHeight) 10.dp else 14.dp))
+
+                    // 3. Section Title: Confirmed Reached Devices
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            text = "Confirmed Reached Devices (${outboundAlert.recipients.size})",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onBackground,
+                        )
+
+                        if (outboundAlert.recipients.isNotEmpty()) {
+                            Surface(
+                                shape = CircleShape,
+                                color = MaterialTheme.colorScheme.primaryContainer,
+                            ) {
                                 Text(
-                                    text = alertText,
-                                    style = MaterialTheme.typography.titleMedium,
+                                    text = "LIVE",
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.ExtraBold,
+                                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                )
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    // 4. Live Received Devices List or Radar Searching Animation
+                    if (outboundAlert.recipients.isEmpty()) {
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(if (isCompactHeight) 16.dp else 20.dp))
+                                .background(MaterialTheme.colorScheme.surfaceContainerLow)
+                                .padding(if (isCompactHeight) 14.dp else 24.dp),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.Center,
+                            ) {
+                                Box(
+                                    modifier = Modifier.size(if (isCompactHeight) 80.dp else 110.dp),
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    PulseRing(
+                                        color = MaterialTheme.colorScheme.error,
+                                        size = if (isCompactHeight) 72.dp else 100.dp,
+                                    )
+                                    Icon(
+                                        imageVector = Icons.Default.Sensors,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.error,
+                                        modifier = Modifier.size(if (isCompactHeight) 32.dp else 42.dp),
+                                    )
+                                }
+
+                                Spacer(modifier = Modifier.height(if (isCompactHeight) 10.dp else 16.dp))
+
+                                Text(
+                                    text = "Broadcasting Emergency Signal...",
+                                    style = if (isCompactHeight) MaterialTheme.typography.titleSmall else MaterialTheme.typography.titleMedium,
                                     fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.onErrorContainer,
-                                    maxLines = 2,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                )
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    text = "Broadcasting continuously across BLE, Wi-Fi Direct, and LAN. Nearby devices will appear here automatically as soon as they acknowledge.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    textAlign = TextAlign.Center,
+                                    maxLines = if (isCompactHeight) 2 else 4,
                                     overflow = TextOverflow.Ellipsis,
                                 )
                             }
-
-                            // Circular Timer Countdown
-                            val minutes = remainingSeconds / 60
-                            val seconds = remainingSeconds % 60
-                            val progress = (remainingSeconds.toFloat() / 300f).coerceIn(0f, 1f)
-
-                            Box(contentAlignment = Alignment.Center) {
-                                CircularProgressIndicator(
-                                    progress = { progress },
-                                    modifier = Modifier.size(54.dp),
-                                    color = MaterialTheme.colorScheme.error,
-                                    trackColor = MaterialTheme.colorScheme.error.copy(alpha = 0.2f),
-                                    strokeWidth = 4.dp,
-                                )
-                                Text(
-                                    text = String.format(Locale.US, "%02d:%02d", minutes, seconds),
-                                    style = MaterialTheme.typography.labelMedium,
-                                    fontWeight = FontWeight.Bold,
-                                    fontFamily = FontFamily.Monospace,
-                                    color = MaterialTheme.colorScheme.onErrorContainer,
-                                )
+                        }
+                    } else {
+                        LazyColumn(
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxWidth(),
+                            verticalArrangement = Arrangement.spacedBy(if (isCompactHeight) 6.dp else 10.dp),
+                            contentPadding = PaddingValues(bottom = 6.dp),
+                        ) {
+                            items(outboundAlert.recipients, key = { it.peerName }) { recipient ->
+                                RecipientDeviceCard(recipient = recipient)
                             }
                         }
+                    }
 
-                        Spacer(modifier = Modifier.height(14.dp))
+                    Spacer(modifier = Modifier.height(if (isCompactHeight) 10.dp else 16.dp))
 
-                        // Radio Channel Status Badges
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    // 5. Bottom Action Controls (Exit / Stop Broadcast & Minimize)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(if (isSmallWidth) 8.dp else 12.dp),
+                    ) {
+                        OutlinedButton(
+                            onClick = onMinimize,
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(buttonHeight),
+                            shape = RoundedCornerShape(14.dp),
                         ) {
-                            RadioStatusChip(title = "BLE Mesh", active = true, modifier = Modifier.weight(1f))
-                            RadioStatusChip(title = "Wi-Fi Direct", active = true, modifier = Modifier.weight(1f))
-                            RadioStatusChip(title = "LAN UDP", active = true, modifier = Modifier.weight(1f))
+                            Icon(
+                                imageVector = Icons.Default.CloseFullscreen,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp),
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Minimize", fontWeight = FontWeight.Bold)
                         }
-                    }
-                }
 
-                Spacer(modifier = Modifier.height(18.dp))
-
-                // 3. Section Title: Confirmed Reached Devices
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(
-                        text = "Confirmed Reached Devices (${outboundAlert.recipients.size})",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onBackground,
-                    )
-
-                    if (outboundAlert.recipients.isNotEmpty()) {
-                        Surface(
-                            shape = CircleShape,
-                            color = MaterialTheme.colorScheme.primaryContainer,
+                        Button(
+                            onClick = onStopAlert,
+                            modifier = Modifier
+                                .weight(1.3f)
+                                .height(buttonHeight),
+                            shape = RoundedCornerShape(14.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = MaterialTheme.colorScheme.error,
+                                contentColor = MaterialTheme.colorScheme.onError,
+                            ),
                         ) {
-                            Text(
-                                text = "LIVE",
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
-                                style = MaterialTheme.typography.labelSmall,
-                                fontWeight = FontWeight.ExtraBold,
-                                color = MaterialTheme.colorScheme.onPrimaryContainer,
+                            Icon(
+                                imageVector = Icons.Default.Stop,
+                                contentDescription = null,
+                                modifier = Modifier.size(20.dp),
                             )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Stop Broadcast", fontWeight = FontWeight.ExtraBold)
                         }
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(10.dp))
-
-                // 4. Live Received Devices List or Radar Searching Animation
-                if (outboundAlert.recipients.isEmpty()) {
-                    Box(
-                        modifier = Modifier
-                            .weight(1f)
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(20.dp))
-                            .background(MaterialTheme.colorScheme.surfaceContainerLow)
-                            .padding(24.dp),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.Center,
-                        ) {
-                            Box(
-                                modifier = Modifier.size(110.dp),
-                                contentAlignment = Alignment.Center,
-                            ) {
-                                PulseRing(
-                                    modifier = Modifier.size(100.dp),
-                                    color = MaterialTheme.colorScheme.error,
-                                )
-                                Icon(
-                                    imageVector = Icons.Default.Sensors,
-                                    contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.error,
-                                    modifier = Modifier.size(42.dp),
-                                )
-                            }
-
-                            Spacer(modifier = Modifier.height(16.dp))
-
-                            Text(
-                                text = "Broadcasting Emergency Signal...",
-                                style = MaterialTheme.typography.titleSmall,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onSurface,
-                            )
-                            Spacer(modifier = Modifier.height(6.dp))
-                            Text(
-                                text = "Broadcasting continuously across BLE, Wi-Fi Direct, and LAN. Nearby devices will appear here automatically as soon as they acknowledge.",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                textAlign = TextAlign.Center,
-                            )
-                        }
-                    }
-                } else {
-                    LazyColumn(
-                        modifier = Modifier
-                            .weight(1f)
-                            .fillMaxWidth(),
-                        verticalArrangement = Arrangement.spacedBy(10.dp),
-                    ) {
-                        items(outboundAlert.recipients, key = { it.peerName }) { recipient ->
-                            RecipientDeviceCard(recipient = recipient)
-                        }
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(16.dp))
-
-                // 5. Bottom Action Controls (Exit / Stop Broadcast & Minimize)
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                    OutlinedButton(
-                        onClick = onMinimize,
-                        modifier = Modifier
-                            .weight(1f)
-                            .height(52.dp),
-                        shape = RoundedCornerShape(14.dp),
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.CloseFullscreen,
-                            contentDescription = null,
-                            modifier = Modifier.size(18.dp),
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("Minimize", fontWeight = FontWeight.Bold)
-                    }
-
-                    Button(
-                        onClick = onStopAlert,
-                        modifier = Modifier
-                            .weight(1.3f)
-                            .height(52.dp),
-                        shape = RoundedCornerShape(14.dp),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = MaterialTheme.colorScheme.error,
-                            contentColor = MaterialTheme.colorScheme.onError,
-                        ),
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Stop,
-                            contentDescription = null,
-                            modifier = Modifier.size(20.dp),
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("Stop Broadcast", fontWeight = FontWeight.ExtraBold)
                     }
                 }
             }
@@ -448,7 +501,10 @@ private fun RecipientDeviceCard(recipient: AlertRecipient) {
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceContainer,
         ),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)),
+        border = BorderStroke(
+            1.dp,
+            MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)
+        ),
     ) {
         Row(
             modifier = Modifier
@@ -511,7 +567,13 @@ private fun RecipientDeviceCard(recipient: AlertRecipient) {
             Column(horizontalAlignment = Alignment.End) {
                 if (recipient.distanceMeters != null) {
                     Text(
-                        text = "~${String.format(Locale.US, "%.1f", recipient.distanceMeters)}m",
+                        text = "~${
+                            String.format(
+                                Locale.US,
+                                "%.1f",
+                                recipient.distanceMeters
+                            )
+                        }m",
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.ExtraBold,
                         color = MaterialTheme.colorScheme.primary,
@@ -578,7 +640,14 @@ fun MinimizedOutboundAlertBanner(
                 Spacer(modifier = Modifier.width(10.dp))
                 Column {
                     Text(
-                        text = "SOS Broadcasting (${String.format(Locale.US, "%02d:%02d", minutes, seconds)})",
+                        text = "SOS Broadcasting (${
+                            String.format(
+                                Locale.US,
+                                "%02d:%02d",
+                                minutes,
+                                seconds
+                            )
+                        })",
                         style = MaterialTheme.typography.labelLarge,
                         fontWeight = FontWeight.ExtraBold,
                         color = MaterialTheme.colorScheme.onErrorContainer,

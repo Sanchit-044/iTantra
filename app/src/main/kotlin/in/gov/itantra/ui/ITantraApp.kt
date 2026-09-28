@@ -203,6 +203,7 @@ fun ITantraApp(
             IncomingAlertFullScreen(
                 alert = activeAlert,
                 chrome = chrome,
+                liveDistanceMeters = uiState.liveAlertDistanceMeters,
                 onDismiss = { mainViewModel.dismissAlert() },
                 onMuteAudio = { mainViewModel.muteAlertAudio() },
             )
@@ -230,7 +231,7 @@ fun MainContent(
     val snackbarHostState = remember { SnackbarHostState() }
     val wide = isWideLayout()
     val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior()
-    val unread = uiState.inbox.count { it.unread }
+    val unread = uiState.inbox.count { it.unread && !it.isAlert }
 
     LaunchedEffect(mainViewModel) {
         mainViewModel.snackbarMessage.collect { msg ->

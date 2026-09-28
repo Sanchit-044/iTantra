@@ -248,7 +248,8 @@ fun HistoryMessageItem(
                     Spacer(Modifier.width(3.dp))
                     val locDistLabel = if (outbound) {
                         if (!msg.peerName.isNullOrBlank()) {
-                            "Receiver: ${msg.peerName} (~${String.format(Locale.US, "%.1f", msg.distanceMeters ?: 3.5f)}m)"
+                            val locPart = if (!msg.locationLabel.isNullOrBlank()) " (${msg.locationLabel})" else ""
+                            "Receiver: ${msg.peerName}$locPart (~${String.format(Locale.US, "%.1f", msg.distanceMeters ?: 3.5f)}m)"
                         } else {
                             "Target Proximity: ~${String.format(Locale.US, "%.1f", msg.distanceMeters ?: 3.5f)}m"
                         }

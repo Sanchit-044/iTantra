@@ -18,10 +18,13 @@ import `in`.gov.itantra.android.alert.WifiAlertScanner
 import `in`.gov.itantra.core.diag.AppLog
 import javax.inject.Inject
 
+import `in`.gov.itantra.android.alert.BleAlertBroadcaster
 import `in`.gov.itantra.android.alert.LanBroadcastAlertManager
+import `in`.gov.itantra.android.alert.WifiAlertBroadcaster
 import `in`.gov.itantra.core.alert.AlertPlayer
 import `in`.gov.itantra.core.alert.AlertTemplate
 import `in`.gov.itantra.core.alert.IncomingAlert
+import `in`.gov.itantra.core.profile.ProfileStore
 import `in`.gov.itantra.core.transport.MessageType
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -44,6 +47,9 @@ class ConnectionService : Service() {
 
     @Inject
     lateinit var alertNotificationManager: AlertNotificationManager
+
+    @Inject
+    lateinit var profileStore: ProfileStore
 
     /**
      * Held only while [MainViewModel]'s transport reports CONNECTED (see
@@ -79,9 +85,26 @@ class ConnectionService : Service() {
         wifiAlertScanner.startScanning()
         lanAlertManager.startListening { packet ->
             if (packet.type == MessageType.ALERT) {
+                if (LanBroadcastAlertManager.isOriginated(packet.sequence) ||
+                    BleAlertBroadcaster.isOriginated(packet.sequence) ||
+                    WifiAlertBroadcaster.isOriginated(packet.sequence)) {
+                    return@startListening
+                }
+
                 val split = packet.text.split("\u001F", limit = 2)
                 val senderName = if (split.size == 2) split[0].takeIf { it.isNotBlank() } else null
+                val localName = profileStore.snapshot.name
+                if (senderName != null && localName.isNotBlank() && senderName.equals(localName.trim(), ignoreCase = true)) {
+                    return@startListening
+                }
+                if (senderName != null && senderName.equals("You", ignoreCase = true)) {
+                    return@startListening
+                }
+
                 val wirePayload = if (split.size == 2) split[1] else packet.text
+                val payloadHash = wirePayload.hashCode()
+                lanAlertManager.sendBroadcastAck(packet.sequence, payloadHash, localName.ifBlank { "Responder" })
+
                 val content = AlertTemplate.fromWirePayload(wirePayload)
                 val alert = IncomingAlert(
                     content = content,

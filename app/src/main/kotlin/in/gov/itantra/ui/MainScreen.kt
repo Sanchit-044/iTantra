@@ -149,6 +149,7 @@ fun MainScreen(
                 .weight(1f)
                 .fillMaxWidth()
                 .padding(horizontal = 14.dp, vertical = 6.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             // 1. Sleek Link Status Header
             CompactLinkBar(
@@ -163,6 +164,7 @@ fun MainScreen(
             LazyRow(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .widthIn(max = 540.dp)
                     .padding(vertical = 6.dp),
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
             ) {
@@ -180,9 +182,10 @@ fun MainScreen(
                     state = listState,
                     modifier = Modifier
                         .weight(1f)
+                        .widthIn(max = 540.dp)
                         .fillMaxWidth(),
-                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 8.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                    contentPadding = PaddingValues(horizontal = 4.dp, vertical = 6.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     if (hasEarlierMessages) {
                         item(key = "earlier_history_header") {
@@ -257,6 +260,7 @@ fun MainScreen(
                 Box(
                     modifier = Modifier
                         .weight(1f)
+                        .widthIn(max = 540.dp)
                         .fillMaxWidth(),
                     contentAlignment = Alignment.Center,
                 ) {
@@ -554,14 +558,16 @@ private fun ModernInboundBubble(
     var showSenderName by remember { mutableStateOf(false) }
 
     Row(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(end = 40.dp),
         horizontalArrangement = Arrangement.Start,
         verticalAlignment = Alignment.Bottom,
     ) {
         // Sender Avatar (Tapping shows sender name snackbar & toggles sender tag)
         Box(
             modifier = Modifier
-                .size(34.dp)
+                .size(32.dp)
                 .clip(CircleShape)
                 .background(
                     when {
@@ -582,24 +588,24 @@ private fun ModernInboundBubble(
                     Icons.Filled.Warning,
                     contentDescription = "SOS",
                     tint = Color.White,
-                    modifier = Modifier.size(17.dp),
+                    modifier = Modifier.size(16.dp),
                 )
             } else {
                 Text(
                     text = senderName.take(1).uppercase(),
                     style = MaterialTheme.typography.labelMedium,
-                    fontSize = 14.sp,
+                    fontSize = 13.5.sp,
                     fontWeight = FontWeight.Bold,
                     color = if (isDark) Color(0xFF25D366) else Color(0xFF008069),
                 )
             }
         }
 
-        Spacer(Modifier.width(8.dp))
+        Spacer(Modifier.width(6.dp))
 
-        // Bubble Body (Hugs text comfortably, max 315dp)
+        // Bubble Body (Hugs text comfortably, max 290dp)
         Surface(
-            modifier = Modifier.widthIn(max = 315.dp),
+            modifier = Modifier.widthIn(min = 60.dp, max = 290.dp),
             shape = RoundedCornerShape(topStart = 14.dp, topEnd = 14.dp, bottomEnd = 14.dp, bottomStart = 3.dp),
             color = bubbleBg,
             border = if (isAlert) androidx.compose.foundation.BorderStroke(0.5.dp, Color(0xFFFFCDD2))
@@ -607,44 +613,58 @@ private fun ModernInboundBubble(
                      else androidx.compose.foundation.BorderStroke(0.5.dp, Color(0xFFE2E8F0)),
             shadowElevation = if (isDark) 0.dp else 0.5.dp,
         ) {
-            Column(modifier = Modifier.padding(start = 14.dp, end = 14.dp, top = 9.dp, bottom = 8.dp)) {
+            Column(
+                modifier = Modifier.padding(
+                    start = 11.dp,
+                    end = 11.dp,
+                    top = if (isAlert) 6.dp else 8.dp,
+                    bottom = if (isAlert) 5.dp else 7.dp,
+                )
+            ) {
                 if (isAlert) {
+                    // Clean, single-line alert badge + sender & distance
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.padding(bottom = 2.dp),
+                        horizontalArrangement = Arrangement.spacedBy(5.dp),
+                        modifier = Modifier.padding(bottom = 3.dp),
                     ) {
-                        Icon(
-                            Icons.Filled.Warning,
-                            contentDescription = "Alert",
-                            tint = Color(0xFFD32F2F),
-                            modifier = Modifier.size(15.dp),
-                        )
-                        Spacer(Modifier.width(4.dp))
+                        Surface(
+                            shape = RoundedCornerShape(4.dp),
+                            color = Color(0xFFD32F2F).copy(alpha = 0.12f),
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(2.dp),
+                            ) {
+                                Icon(
+                                    Icons.Filled.Warning,
+                                    contentDescription = null,
+                                    tint = Color(0xFFD32F2F),
+                                    modifier = Modifier.size(11.dp),
+                                )
+                                Text(
+                                    text = "ALERT",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color(0xFFD32F2F),
+                                    fontSize = 10.sp,
+                                )
+                            }
+                        }
+                        val senderLabel = buildString {
+                            append(senderName)
+                            val dist = item.distanceMeters ?: 3.5f
+                            append(" · ~${String.format(Locale.US, "%.1f", dist)}m")
+                        }
                         Text(
-                            text = "EMERGENCY ALERT · $senderName",
-                            style = MaterialTheme.typography.labelSmall,
-                            fontWeight = FontWeight.Bold,
-                            color = Color(0xFFD32F2F),
-                            fontSize = 11.5.sp,
-                        )
-                    }
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.padding(bottom = 4.dp),
-                    ) {
-                        Icon(
-                            Icons.Filled.LocationOn,
-                            contentDescription = null,
-                            tint = Color(0xFFD32F2F),
-                            modifier = Modifier.size(12.dp),
-                        )
-                        Spacer(Modifier.width(3.dp))
-                        Text(
-                            text = "${item.locationLabel ?: "Emergency Beacon"} · ~${String.format(Locale.US, "%.1f", item.distanceMeters ?: 3.5f)}m away",
+                            text = senderLabel,
                             style = MaterialTheme.typography.labelSmall,
                             fontWeight = FontWeight.SemiBold,
-                            color = Color(0xFFD32F2F).copy(alpha = 0.85f),
-                            fontSize = 10.5.sp,
+                            color = Color(0xFFD32F2F),
+                            fontSize = 11.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
                         )
                     }
                 } else if (showSenderName) {
@@ -675,37 +695,37 @@ private fun ModernInboundBubble(
                 }
                 Text(
                     text = displayText,
-                    style = MaterialTheme.typography.bodyLarge,
-                    fontSize = 16.sp,
-                    lineHeight = 22.sp,
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontSize = 14.5.sp,
+                    lineHeight = 20.sp,
                     color = contentTextColor,
                 )
 
-                Spacer(Modifier.height(4.dp))
+                Spacer(Modifier.height(2.dp))
 
                 // Inline Bottom Meta (Time + Replay)
                 Row(
                     modifier = Modifier.align(Alignment.End),
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
                     Text(
                         text = timeStr,
                         style = MaterialTheme.typography.labelSmall,
-                        fontSize = 12.sp,
+                        fontSize = 11.sp,
                         color = metaTextColor,
                     )
 
                     IconButton(
                         onClick = { viewModel.playInbox(item.id) },
                         enabled = uiState.playingInboxId == null || isPlaying,
-                        modifier = Modifier.size(26.dp),
+                        modifier = Modifier.size(24.dp),
                     ) {
                         Icon(
                             if (isPlaying) Icons.Filled.Stop else Icons.AutoMirrored.Filled.VolumeUp,
                             contentDescription = chrome.play,
                             tint = audioIconColor,
-                            modifier = Modifier.size(18.dp),
+                            modifier = Modifier.size(16.dp),
                         )
                     }
                 }
@@ -747,12 +767,14 @@ private fun ModernOutboundBubble(
     }
 
     Row(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = 40.dp),
         horizontalArrangement = Arrangement.End,
         verticalAlignment = Alignment.Bottom,
     ) {
         Surface(
-            modifier = Modifier.widthIn(max = 315.dp),
+            modifier = Modifier.widthIn(min = 60.dp, max = 290.dp),
             shape = RoundedCornerShape(topStart = 14.dp, topEnd = 14.dp, bottomStart = 14.dp, bottomEnd = 3.dp),
             color = bubbleBg,
             border = when {
@@ -762,30 +784,55 @@ private fun ModernOutboundBubble(
             },
             shadowElevation = if (isDark) 0.dp else 0.5.dp,
         ) {
-            Column(modifier = Modifier.padding(start = 14.dp, end = 14.dp, top = 9.dp, bottom = 8.dp)) {
+            Column(
+                modifier = Modifier.padding(
+                    start = 11.dp,
+                    end = 11.dp,
+                    top = if (item.isAlert) 6.dp else 8.dp,
+                    bottom = if (item.isAlert) 5.dp else 7.dp,
+                )
+            ) {
                 if (item.isAlert) {
+                    // Clean, single-line alert badge + status
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.padding(bottom = 4.dp),
+                        horizontalArrangement = Arrangement.spacedBy(5.dp),
+                        modifier = Modifier.padding(bottom = 3.dp),
                     ) {
-                        Icon(
-                            Icons.Filled.Warning,
-                            contentDescription = chrome.alertTitle,
-                            tint = Color(0xFFD32F2F),
-                            modifier = Modifier.size(15.dp),
-                        )
-                        Spacer(Modifier.width(4.dp))
-                        val alertTitle = if (!item.receiverName.isNullOrBlank()) {
-                            "EMERGENCY ALERT · Delivered to ${item.receiverName} (~${String.format(Locale.US, "%.1f", item.distanceMeters ?: 3.5f)}m)"
-                        } else if (item.state == OutboundState.SENDING) {
-                            "EMERGENCY ALERT · Broadcasting Nearby..."
-                        } else {
-                            "EMERGENCY ALERT"
+                        Surface(
+                            shape = RoundedCornerShape(4.dp),
+                            color = Color(0xFFD32F2F).copy(alpha = 0.12f),
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(2.dp),
+                            ) {
+                                Icon(
+                                    Icons.Filled.Warning,
+                                    contentDescription = chrome.alertTitle,
+                                    tint = Color(0xFFD32F2F),
+                                    modifier = Modifier.size(11.dp),
+                                )
+                                Text(
+                                    text = "ALERT",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color(0xFFD32F2F),
+                                    fontSize = 10.sp,
+                                )
+                            }
+                        }
+                        val statusText = when {
+                            delivered -> "Delivered"
+                            item.state == OutboundState.SENDING -> "Broadcasting..."
+                            failed -> "Failed"
+                            else -> "Broadcast"
                         }
                         Text(
-                            text = alertTitle,
+                            text = statusText,
                             style = MaterialTheme.typography.labelSmall,
-                            fontWeight = FontWeight.Bold,
+                            fontWeight = FontWeight.SemiBold,
                             color = Color(0xFFD32F2F),
                             fontSize = 11.sp,
                         )
@@ -798,19 +845,19 @@ private fun ModernOutboundBubble(
                 }
                 Text(
                     text = displayText,
-                    style = MaterialTheme.typography.bodyLarge,
-                    fontSize = 16.sp,
-                    lineHeight = 22.sp,
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontSize = 14.5.sp,
+                    lineHeight = 20.sp,
                     color = contentTextColor,
                 )
 
-                Spacer(Modifier.height(4.dp))
+                Spacer(Modifier.height(2.dp))
 
                 // Inline Bottom Meta (Time + Receiver Name + Status Checkmarks / Pending / Failed Actions)
                 Row(
                     modifier = Modifier.align(Alignment.End),
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
                     if (!item.receiverName.isNullOrBlank()) {
                         val receiverLabel = if (item.isAlert) {
@@ -821,8 +868,10 @@ private fun ModernOutboundBubble(
                         Text(
                             text = receiverLabel,
                             style = MaterialTheme.typography.labelSmall,
-                            fontSize = 11.5.sp,
+                            fontSize = 11.sp,
                             fontWeight = FontWeight.Medium,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
                             color = if (delivered) Color(0xFF53BDEB) else metaTextColor,
                         )
                     }
@@ -830,7 +879,7 @@ private fun ModernOutboundBubble(
                     Text(
                         text = timeStr,
                         style = MaterialTheme.typography.labelSmall,
-                        fontSize = 12.sp,
+                        fontSize = 11.sp,
                         color = metaTextColor,
                     )
 
@@ -846,25 +895,25 @@ private fun ModernOutboundBubble(
                             // Retry Button for failed chats
                             IconButton(
                                 onClick = { viewModel.retryQueuedMessage(item.id) },
-                                modifier = Modifier.size(26.dp),
+                                modifier = Modifier.size(22.dp),
                             ) {
                                 Icon(
                                     Icons.Filled.Refresh,
                                     contentDescription = "Retry send",
                                     tint = Color(0xFFEA4335),
-                                    modifier = Modifier.size(17.dp),
+                                    modifier = Modifier.size(14.dp),
                                 )
                             }
                             // Cross Button to cancel/delete failed message
                             IconButton(
                                 onClick = { viewModel.deleteQueuedMessage(item.id) },
-                                modifier = Modifier.size(26.dp),
+                                modifier = Modifier.size(22.dp),
                             ) {
                                 Icon(
                                     Icons.Filled.Close,
                                     contentDescription = "Delete failed chat",
                                     tint = Color(0xFFEA4335),
-                                    modifier = Modifier.size(16.dp),
+                                    modifier = Modifier.size(14.dp),
                                 )
                             }
                         }
@@ -873,7 +922,7 @@ private fun ModernOutboundBubble(
                                 Icons.Filled.DoneAll,
                                 contentDescription = "Delivered",
                                 tint = Color(0xFF53BDEB), // Blue double checkmarks
-                                modifier = Modifier.size(17.dp),
+                                modifier = Modifier.size(16.dp),
                             )
                         }
                         item.state == OutboundState.SENDING -> {
@@ -882,14 +931,14 @@ private fun ModernOutboundBubble(
                                     Icons.Filled.Refresh,
                                     contentDescription = "Broadcasting Alert",
                                     tint = Color(0xFFD32F2F),
-                                    modifier = Modifier.size(16.dp),
+                                    modifier = Modifier.size(15.dp),
                                 )
                             } else {
                                 Icon(
                                     Icons.Filled.Check,
                                     contentDescription = "Sending",
                                     tint = checkIconColor,
-                                    modifier = Modifier.size(16.dp),
+                                    modifier = Modifier.size(15.dp),
                                 )
                             }
                         }
@@ -898,18 +947,18 @@ private fun ModernOutboundBubble(
                                 Icons.Filled.Schedule,
                                 contentDescription = "Queued",
                                 tint = checkIconColor,
-                                modifier = Modifier.size(15.dp),
+                                modifier = Modifier.size(14.dp),
                             )
                             // Cross Button for pending / queued chats
                             IconButton(
                                 onClick = { viewModel.deleteQueuedMessage(item.id) },
-                                modifier = Modifier.size(26.dp),
+                                modifier = Modifier.size(22.dp),
                             ) {
                                 Icon(
                                     Icons.Filled.Close,
                                     contentDescription = "Cancel pending chat",
                                     tint = metaTextColor,
-                                    modifier = Modifier.size(16.dp),
+                                    modifier = Modifier.size(14.dp),
                                 )
                             }
                         }

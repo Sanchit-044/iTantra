@@ -62,16 +62,18 @@ import kotlin.math.sin
 fun IncomingAlertFullScreen(
     alert: IncomingAlert,
     chrome: UiStrings,
+    /** Real-time RSSI-estimated distance from the ViewModel. Null if no RSSI data yet. */
+    liveDistanceMeters: Float? = null,
     onDismiss: () -> Unit,
     onMuteAudio: () -> Unit = {},
 ) {
     var isTrackingActive by remember { mutableStateOf(false) }
     var isAudioMuted by remember { mutableStateOf(false) }
 
-    // Live Real-Time Proximity Distance (in meters)
-    // Starts at realistic direct offline initial beacon range (~6.8m) and updates dynamically in real-time
-    var liveDistanceMeters by remember { mutableFloatStateOf(6.8f) }
-    var pingTrigger by remember { mutableLongStateOf(0L) }
+    // Use real RSSI-based distance from ViewModel, fall back to alert's initial distance, then default
+    val currentDistanceMeters = liveDistanceMeters
+        ?: alert.distanceMeters
+        ?: 3.5f
 
     // 2-minute (120 seconds) alarm timer countdown
     var remainingSeconds by remember { mutableIntStateOf(120) }
@@ -80,18 +82,6 @@ fun IncomingAlertFullScreen(
         while (remainingSeconds > 0 && isActive) {
             delay(1000L)
             remainingSeconds--
-        }
-    }
-
-    // Dynamic Real-Time Proximity Convergence Simulation
-    // When tracking or pinged, distance continuously converges closer as the user moves toward the source
-    LaunchedEffect(isTrackingActive, pingTrigger) {
-        if (!isTrackingActive) return@LaunchedEffect
-        while (isActive) {
-            delay(1200L)
-            // Progressively track closer with minor realistic RF multipath jitter
-            liveDistanceMeters = (liveDistanceMeters * 0.92f - 0.15f + (Math.random().toFloat() * 0.2f - 0.1f))
-                .coerceIn(0.6f, 35.0f)
         }
     }
 
@@ -145,7 +135,7 @@ fun IncomingAlertFullScreen(
     )
 
     // Proximity Acoustic Tone Beeper (Rate scales in real-time as distance decreases)
-    LaunchedEffect(isTrackingActive, liveDistanceMeters) {
+    LaunchedEffect(isTrackingActive, currentDistanceMeters) {
         if (!isTrackingActive) return@LaunchedEffect
         var toneGen: ToneGenerator? = null
         try {
@@ -153,7 +143,7 @@ fun IncomingAlertFullScreen(
             while (isActive) {
                 toneGen.startTone(ToneGenerator.TONE_PROP_BEEP, 50)
                 // Acoustic Interval: 850ms at 30m, down to 80ms at <= 1.2m
-                val intervalMs = (liveDistanceMeters * 26f + 50f).coerceIn(80f, 900f).toLong()
+                val intervalMs = (currentDistanceMeters * 26f + 50f).coerceIn(80f, 900f).toLong()
                 delay(intervalMs)
             }
         } catch (_: Exception) {
@@ -164,31 +154,33 @@ fun IncomingAlertFullScreen(
 
     // Proximity category tokens
     val (proximityColor, proximityBandText, signalBarsCount) = when {
-        liveDistanceMeters <= 1.5f -> Triple(Color(0xFF10B981), "IMMEDIATE CONTACT · TARGET REACHED", 5)
-        liveDistanceMeters <= 4.0f -> Triple(Color(0xFF34D399), "CLOSE PROXIMITY · APPROACHING SOURCE", 4)
-        liveDistanceMeters <= 10.0f -> Triple(Color(0xFFFBBF24), "NEARBY RANGE · STRONG SIGNAL", 3)
-        liveDistanceMeters <= 20.0f -> Triple(Color(0xFFFB923C), "MEDIUM RANGE · DETECTING BEACON", 2)
+        currentDistanceMeters <= 1.5f -> Triple(Color(0xFF10B981), "IMMEDIATE CONTACT · TARGET REACHED", 5)
+        currentDistanceMeters <= 4.0f -> Triple(Color(0xFF34D399), "CLOSE PROXIMITY · APPROACHING SOURCE", 4)
+        currentDistanceMeters <= 10.0f -> Triple(Color(0xFFFBBF24), "NEARBY RANGE · STRONG SIGNAL", 3)
+        currentDistanceMeters <= 20.0f -> Triple(Color(0xFFFB923C), "MEDIUM RANGE · DETECTING BEACON", 2)
         else -> Triple(Color(0xFFEF4444), "EXTENDED RANGE · WEAK SIGNAL", 1)
     }
 
     Surface(
-        modifier = Modifier
-            .fillMaxSize()
-            .windowInsetsPadding(WindowInsets.systemBars),
+        modifier = Modifier.fillMaxSize(),
         color = Color(0xFF0D0303), // Deep tactical black-crimson
     ) {
-        BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+        BoxWithConstraints(
+            modifier = Modifier
+                .fillMaxSize()
+                .windowInsetsPadding(WindowInsets.safeDrawing),
+        ) {
             val isCompactHeight = maxHeight < 680.dp
             val isSmallWidth = maxWidth < 380.dp
 
-            val beaconOuterSize = if (isCompactHeight) 110.dp else 140.dp
-            val beaconInnerSize = if (isCompactHeight) 70.dp else 86.dp
-            val beaconIconSize = if (isCompactHeight) 36.dp else 46.dp
-            val waveformHeight = if (isCompactHeight) 32.dp else 42.dp
-            val verticalPadding = if (isCompactHeight) 10.dp else 16.dp
+            val beaconOuterSize = if (isCompactHeight) 100.dp else 136.dp
+            val beaconInnerSize = if (isCompactHeight) 64.dp else 82.dp
+            val beaconIconSize = if (isCompactHeight) 32.dp else 44.dp
+            val waveformHeight = if (isCompactHeight) 28.dp else 40.dp
+            val verticalPadding = if (isCompactHeight) 8.dp else 14.dp
             val horizontalPadding = if (isSmallWidth) 12.dp else 18.dp
 
-            // Background Radial Hazard Beacon Ambient Glow
+            // Background Radial Hazard Beacon Ambient Glow extends edge-to-edge
             Canvas(modifier = Modifier.fillMaxSize()) {
                 drawCircle(
                     brush = Brush.radialGradient(
@@ -209,7 +201,7 @@ fun IncomingAlertFullScreen(
             ) {
                 Column(
                     modifier = Modifier
-                        .widthIn(max = 520.dp)
+                        .widthIn(max = 560.dp)
                         .fillMaxHeight()
                         .verticalScroll(rememberScrollState()),
                     horizontalAlignment = Alignment.CenterHorizontally,
@@ -308,7 +300,7 @@ fun IncomingAlertFullScreen(
                     } else {
                         // High-Tech Sonar Radar Compass (Signal Tracking Mode)
                         TacticalSonarRadarView(
-                            distanceMeters = liveDistanceMeters,
+                            distanceMeters = currentDistanceMeters,
                             sweepAngle = radarSweepAngle,
                             radarColor = proximityColor,
                             modifier = Modifier
@@ -400,18 +392,14 @@ fun IncomingAlertFullScreen(
                                     )
                                 }
 
-                                // Ping & Rescan button
+                                // Ping / Refresh indicator
                                 IconButton(
-                                    onClick = {
-                                        pingTrigger = System.currentTimeMillis()
-                                        // Slight realistic ping convergence
-                                        liveDistanceMeters = (liveDistanceMeters * 0.88f).coerceAtLeast(0.6f)
-                                    },
+                                    onClick = { /* Distance is updated in real-time from RSSI */ },
                                     modifier = Modifier.size(28.dp),
                                 ) {
                                     Icon(
                                         Icons.Filled.Refresh,
-                                        contentDescription = "Ping Beacon",
+                                        contentDescription = "Refresh Signal",
                                         tint = proximityColor,
                                         modifier = Modifier.size(17.dp),
                                     )
@@ -426,7 +414,7 @@ fun IncomingAlertFullScreen(
                                 horizontalArrangement = Arrangement.Center,
                             ) {
                                 Text(
-                                    text = String.format(Locale.US, "%.1f", liveDistanceMeters),
+                                    text = String.format(Locale.US, "%.1f", currentDistanceMeters),
                                     style = MaterialTheme.typography.displaySmall,
                                     fontFamily = FontFamily.Monospace,
                                     fontWeight = FontWeight.Black,
@@ -563,6 +551,8 @@ fun IncomingAlertFullScreen(
                             )
                         }
                     }
+
+                    Spacer(Modifier.height(if (isCompactHeight) 10.dp else 16.dp))
                 }
             }
         }

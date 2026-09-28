@@ -11,7 +11,9 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
+import `in`.gov.itantra.android.alert.BleAlertBroadcaster
 import `in`.gov.itantra.android.alert.LanBroadcastAlertManager
+import `in`.gov.itantra.android.alert.WifiAlertBroadcaster
 import `in`.gov.itantra.android.diag.AndroidDiagnosticsService
 import `in`.gov.itantra.android.notify.QueuedMessageNotifier
 import `in`.gov.itantra.core.diag.AppLog
@@ -43,6 +45,7 @@ import `in`.gov.itantra.core.queue.InboxMessage
 import `in`.gov.itantra.core.queue.InboundMessageInbox
 import `in`.gov.itantra.core.queue.OutboundMessage
 import `in`.gov.itantra.core.queue.OutboundMessageQueue
+import `in`.gov.itantra.core.queue.OutboundState
 import `in`.gov.itantra.core.transport.ConnectionState
 import `in`.gov.itantra.core.transport.MessageType
 import `in`.gov.itantra.core.transport.Packet
@@ -70,6 +73,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.isActive
 import java.util.concurrent.atomic.AtomicBoolean
 import javax.inject.Inject
 
@@ -143,6 +147,8 @@ data class UiState(
     val peerProfile: OperatorProfile? = null,
     val radioPeerName: String? = null,
     val activeIncomingAlert: IncomingAlert? = null,
+    /** Real-time RSSI-estimated distance (meters) to the incoming alert sender. Updated continuously. */
+    val liveAlertDistanceMeters: Float? = null,
     val activeOutboundAlert: OutboundAlertState? = null,
     val isWifiConnected: Boolean = false,
     val alertChannel: AlertChannel = AlertChannel.ALL,
@@ -189,6 +195,7 @@ class MainViewModel @Inject constructor(
     private val wifiAlertBroadcaster: `in`.gov.itantra.android.alert.WifiAlertBroadcaster,
     private val wifiAlertScanner: `in`.gov.itantra.android.alert.WifiAlertScanner,
     private val lanAlertManager: LanBroadcastAlertManager,
+    private val gpsLocationTracker: `in`.gov.itantra.android.location.GpsLocationTracker,
 ) : ViewModel(), TransportListener {
 
     private val _snackbarMessage = kotlinx.coroutines.flow.MutableSharedFlow<String>()
@@ -260,19 +267,26 @@ class MainViewModel @Inject constructor(
     }
 
     private var outboundBroadcastJob: Job? = null
+    private val originatedAlertSequences = java.util.concurrent.ConcurrentHashMap.newKeySet<Int>()
 
-    private fun recordAlertRecipient(receiverName: String, distance: Float?, rssi: Int?) {
+    private fun recordAlertRecipient(
+        receiverName: String,
+        distance: Float?,
+        rssi: Int?,
+        locationInfo: String? = null,
+    ) {
         _uiState.update { state ->
             val activeOutbound = state.activeOutboundAlert ?: return@update state
             val existing = activeOutbound.recipients.find { it.peerName == receiverName }
             val updatedRecipient = existing?.copy(
                 distanceMeters = distance ?: existing.distanceMeters,
                 rssiDbm = rssi ?: existing.rssiDbm,
+                locationLabel = locationInfo ?: existing.locationLabel,
                 ackTimestampMs = System.currentTimeMillis()
             ) ?: AlertRecipient(
                 peerName = receiverName,
                 distanceMeters = distance,
-                locationLabel = if (distance != null) "Direct RF Proximity (${String.format(Locale.US, "%.1f", distance)}m)" else "Nearby Radio Mesh",
+                locationLabel = locationInfo ?: (if (distance != null) "Direct RF Proximity (${String.format(Locale.US, "%.1f", distance)}m)" else "Nearby Radio Mesh"),
                 rssiDbm = rssi,
                 ackTimestampMs = System.currentTimeMillis(),
             )
@@ -292,6 +306,18 @@ class MainViewModel @Inject constructor(
         viewModelScope.launch {
             alertPlayer.activeAlertState.collect { alert ->
                 if (alert != null) {
+                    val localName = _uiState.value.localProfile.displayName
+                    if (originatedAlertSequences.contains(alert.sequence) ||
+                        lanAlertManager.isOriginated(alert.sequence) ||
+                        bleAlertBroadcaster.isOriginated(alert.sequence) ||
+                        wifiAlertBroadcaster.isOriginated(alert.sequence) ||
+                        (_uiState.value.activeOutboundAlert?.sequence == alert.sequence) ||
+                        (alert.senderName != null && localName.isNotBlank() && alert.senderName.equals(localName.trim(), ignoreCase = true)) ||
+                        (alert.senderName != null && alert.senderName.equals("You", ignoreCase = true))) {
+                        // Skip self-originated alert
+                        return@collect
+                    }
+
                     _uiState.update { it.copy(activeIncomingAlert = alert) }
                     
                     val alertKey = "${alert.sequence}:${alert.content.toWirePayload().hashCode()}"
@@ -316,11 +342,14 @@ class MainViewModel @Inject constructor(
                                     distanceMeters = distance,
                                 )
                             )
+                            val loc = gpsLocationTracker.location.value
+                            val locLabel = "${String.format(Locale.US, "%.4f", loc.latitude)}, ${String.format(Locale.US, "%.4f", loc.longitude)}"
                             if (lanAlertManager.isWifiConnected()) {
                                 lanAlertManager.sendBroadcastAck(
                                     sequence = alert.sequence,
                                     payloadHash = alertWire.hashCode(),
-                                    receiverName = _uiState.value.localProfile.displayName
+                                    receiverName = _uiState.value.localProfile.displayName,
+                                    locationInfo = locLabel,
                                 )
                             }
                             // Always send BLE ACK for fully offline cases
@@ -344,6 +373,15 @@ class MainViewModel @Inject constructor(
                             AppLog.w("MainViewModel", "Failed to update alert peer name: ${e.message}")
                         }
                     }
+                }
+            }
+        }
+        // Continuously update live distance from RSSI while an incoming alert is active
+        viewModelScope.launch {
+            bleAlertScanner.latestRssi.collect { rssi ->
+                if (_uiState.value.activeIncomingAlert != null && rssi != null && rssi != 0) {
+                    val dist = estimateDistanceMeters(rssi)
+                    _uiState.update { it.copy(liveAlertDistanceMeters = dist) }
                 }
             }
         }
@@ -373,6 +411,9 @@ class MainViewModel @Inject constructor(
         viewModelScope.launch {
             profileStore.profile.collect { snap ->
                 _uiState.update { it.copy(localProfile = snap) }
+                if (snap.displayName.isNotBlank()) {
+                    lanAlertManager.setLocalDeviceName(snap.displayName)
+                }
             }
         }
         outboundQueue.purgeExpired()
@@ -408,13 +449,15 @@ class MainViewModel @Inject constructor(
             bleAlertScanner.acks.collect { (payloadHash, receiverName) ->
                 val distance = estimateDistanceMeters(bleAlertScanner.latestRssi.value)
                 val rssi = bleAlertScanner.latestRssi.value
-                recordAlertRecipient(receiverName, distance, rssi)
+                val locLabel = if (distance != null) "Direct RF Proximity (~${String.format(Locale.US, "%.1f", distance)}m)" else "Nearby Radio Mesh"
+                recordAlertRecipient(receiverName, distance, rssi, locLabel)
 
                 val ids = recentAlertIds[payloadHash]
-                if (!ids.isNullOrEmpty()) {
-                    for (id in ids) {
-                        historyDao.addPeerToMessage(id, MessageStatus.DELIVERED, receiverName, distance)
-                        outboundQueue.markSent(id, receiverName, distance)
+                val targetIds = if (!ids.isNullOrEmpty()) ids else outboundQueue.snapshot().filter { it.isAlert }.map { it.id }
+                if (targetIds.isNotEmpty()) {
+                    for (id in targetIds) {
+                        historyDao.addPeerToMessage(id, MessageStatus.DELIVERED, receiverName, distance, locLabel)
+                        outboundQueue.markSent(id, receiverName, distance, locLabel)
                     }
                     val progress = alertDeliveryTracker.onAck(payloadHash, receiverName, System.currentTimeMillis())
                     val deliveryInfo = progress?.display() ?: receiverName
@@ -687,8 +730,34 @@ class MainViewModel @Inject constructor(
                         val split = packet.text.split("\u001F", limit = 2)
                         val senderName = if (split.size == 2) split[0].takeIf { it.isNotBlank() } else null
                         val wirePayload = if (split.size == 2) split[1] else packet.text
+
+                        val localName = profileStore.snapshot.name.takeIf { it.isNotBlank() } ?: _uiState.value.localProfile.displayName
+                        if (originatedAlertSequences.contains(packet.sequence) ||
+                            lanAlertManager.isOriginated(packet.sequence) ||
+                            bleAlertBroadcaster.isOriginated(packet.sequence) ||
+                            wifiAlertBroadcaster.isOriginated(packet.sequence) ||
+                            (_uiState.value.activeOutboundAlert?.sequence == packet.sequence) ||
+                            (senderName != null && localName.isNotBlank() && senderName.equals(localName.trim(), ignoreCase = true)) ||
+                            (senderName != null && senderName.equals("You", ignoreCase = true))) {
+                            AppLog.d("MainViewModel", "Ignoring self-broadcast alert loopback (seq=${packet.sequence}) from $senderName")
+                            return@launch
+                        }
                         
+                        // Send ACK immediately to sender over all active channels so sender screen updates in real time
+                        val payloadHash = wirePayload.hashCode()
+                        val myName = localName.ifBlank { "Responder" }
+                        val loc = gpsLocationTracker.location.value
+                        val locLabel = "${String.format(Locale.US, "%.4f", loc.latitude)}, ${String.format(Locale.US, "%.4f", loc.longitude)}"
+                        lanAlertManager.sendBroadcastAck(packet.sequence, payloadHash, myName, locLabel)
+                        bleAlertBroadcaster.broadcastAck(payloadHash, myName)
+                        transport?.takeIf { it.state == ConnectionState.CONNECTED }?.let { tx ->
+                            runCatching {
+                                tx.send(Packet.text(MessageType.ACK, Language.ENGLISH, packet.sequence, "$payloadHash:$myName:$locLabel"))
+                            }
+                        }
+
                         val content = AlertTemplate.fromWirePayload(wirePayload)
+                        val initialDistance = estimateDistanceMeters(bleAlertScanner.latestRssi.value)
                         val alertToPlay = when (content) {
                             is AlertContent.Template -> IncomingAlert(
                                 content = content,
@@ -696,6 +765,7 @@ class MainViewModel @Inject constructor(
                                 sequence = packet.sequence,
                                 receivedAtMs = System.currentTimeMillis(),
                                 senderName = senderName,
+                                distanceMeters = initialDistance,
                             )
                             is AlertContent.Custom -> {
                                 val (translatedText, playLang) = try {
@@ -718,6 +788,7 @@ class MainViewModel @Inject constructor(
                                     sequence = packet.sequence,
                                     receivedAtMs = System.currentTimeMillis(),
                                     senderName = senderName,
+                                    distanceMeters = initialDistance,
                                 )
                             }
                         }
@@ -729,7 +800,7 @@ class MainViewModel @Inject constructor(
                         }
                         val alertId = "alert_${alertToPlay.sequence}_${alertToPlay.receivedAtMs}"
                         val effectiveSender = senderName ?: _uiState.value.talkingToName
-                        val distance = estimateDistanceMeters(bleAlertScanner.latestRssi.value)
+                        val distance = initialDistance
                         val location = "Emergency Beacon"
                         inbox.offer(
                             id = alertId,
@@ -755,7 +826,7 @@ class MainViewModel @Inject constructor(
                                 distanceMeters = distance,
                             )
                         )
-                        _uiState.update { it.copy(activeIncomingAlert = alertToPlay) }
+                        _uiState.update { it.copy(activeIncomingAlert = alertToPlay, liveAlertDistanceMeters = initialDistance) }
                         publishQueues()
 
                         // Multi-Hop Relay Hopping: Re-broadcast alert across BLE & LAN to cover long distance communication
@@ -809,18 +880,21 @@ class MainViewModel @Inject constructor(
                     }
                     MessageType.PROFILE -> handlePeerProfile(packet)
                     MessageType.ACK -> {
-                        val parts = packet.text.split(":")
+                        val parts = packet.text.split(":", limit = 3)
                         val payloadHash = parts.getOrNull(0)?.toIntOrNull() ?: return@launch
                         val receiverName = parts.getOrNull(1)?.takeIf { it.isNotBlank() } ?: "Peer (LAN)"
+                        val locationInfo = parts.getOrNull(2)?.takeIf { it.isNotBlank() }
                         val distance = estimateDistanceMeters(bleAlertScanner.latestRssi.value)
                         val rssi = bleAlertScanner.latestRssi.value
-                        recordAlertRecipient(receiverName, distance, rssi)
+                        val locLabel = locationInfo ?: (if (distance != null) "Direct RF Proximity (~${String.format(Locale.US, "%.1f", distance)}m)" else "Nearby Radio Mesh")
+                        recordAlertRecipient(receiverName, distance, rssi, locLabel)
                         
                         val ids = recentAlertIds[payloadHash]
-                        if (!ids.isNullOrEmpty()) {
-                            for (id in ids) {
-                                historyDao.addPeerToMessage(id, MessageStatus.DELIVERED, receiverName, distance)
-                                outboundQueue.markSent(id, receiverName, distance)
+                        val targetIds = if (!ids.isNullOrEmpty()) ids else outboundQueue.snapshot().filter { it.isAlert }.map { it.id }
+                        if (targetIds.isNotEmpty()) {
+                            for (id in targetIds) {
+                                historyDao.addPeerToMessage(id, MessageStatus.DELIVERED, receiverName, distance, locLabel)
+                                outboundQueue.markSent(id, receiverName, distance, locLabel)
                             }
                             val progress = alertDeliveryTracker.onAck(payloadHash, receiverName, System.currentTimeMillis())
                             val deliveryInfo = progress?.display() ?: receiverName
@@ -1147,12 +1221,28 @@ class MainViewModel @Inject constructor(
     fun dismissAlert() {
         val active = _uiState.value.activeIncomingAlert
         if (active != null) {
+            val alertWire = active.content.toWirePayload()
+            val payloadHash = alertWire.hashCode()
+            val myName = profileStore.snapshot.name.takeIf { it.isNotBlank() } ?: _uiState.value.localProfile.displayName.ifBlank { "Responder" }
+            val loc = gpsLocationTracker.location.value
+            val locLabel = "${String.format(Locale.US, "%.4f", loc.latitude)}, ${String.format(Locale.US, "%.4f", loc.longitude)}"
+
+            // Explicit operator confirmation ACK sent over all channels on clicking Received
+            lanAlertManager.sendBroadcastAck(active.sequence, payloadHash, myName, locLabel)
+            bleAlertBroadcaster.broadcastAck(payloadHash, myName)
+            transport?.takeIf { it.state == ConnectionState.CONNECTED }?.let { tx ->
+                runCatching {
+                    tx.send(Packet.text(MessageType.ACK, Language.ENGLISH, active.sequence, "$payloadHash:$myName:$locLabel"))
+                }
+            }
+
             val alertText = when (val c = active.content) {
                 is AlertContent.Template -> c.template.phrase(_uiState.value.currentLanguage)
                 is AlertContent.Custom -> c.text
             }
+            val alertId = "alert_${active.sequence}_${active.receivedAtMs}"
             inbox.offer(
-                id = "alert_${active.sequence}_${active.receivedAtMs}",
+                id = alertId,
                 language = active.language,
                 text = alertText,
                 receivedAtMs = active.receivedAtMs,
@@ -1160,10 +1250,11 @@ class MainViewModel @Inject constructor(
                 isAlert = true,
                 locationLabel = "Emergency Beacon",
             )
+            inbox.markRead(alertId)
             publishQueues()
         }
         alertPlayer.dismissActiveAlert()
-        _uiState.update { it.copy(activeIncomingAlert = null) }
+        _uiState.update { it.copy(activeIncomingAlert = null, liveAlertDistanceMeters = null) }
     }
 
     /**
@@ -1307,6 +1398,15 @@ class MainViewModel @Inject constructor(
         AppLog.d("MainViewModel", "Triggering broadcasters for sequence $sequence over channel $channel")
         val senderName = _uiState.value.localProfile.displayName
 
+        // Register sequence as locally originated across all broadcast and transport layers
+        originatedAlertSequences.add(sequence)
+        lanAlertManager.markOriginated(sequence)
+        bleAlertBroadcaster.markOriginated(sequence)
+        wifiAlertBroadcaster.markOriginated(sequence)
+        if (!senderName.isNullOrBlank()) {
+            lanAlertManager.setLocalDeviceName(senderName)
+        }
+
         val alertPacket = Packet.text(MessageType.ALERT, lang, sequence, payload)
         relayEngine.markOriginated(alertPacket)
         alertDeliveryTracker.trackAlert(sequence, System.currentTimeMillis(), peerCount = _uiState.value.pairedDevices.size)
@@ -1320,7 +1420,7 @@ class MainViewModel @Inject constructor(
             recipients = emptyList(),
             isMinimized = false,
         )
-        _uiState.update { it.copy(activeOutboundAlert = outboundState, activeIncomingAlert = null) }
+        _uiState.update { it.copy(activeOutboundAlert = outboundState, activeIncomingAlert = null, liveAlertDistanceMeters = null) }
 
         outboundBroadcastJob?.cancel()
         outboundBroadcastJob = viewModelScope.launch(Dispatchers.IO) {
@@ -1347,7 +1447,7 @@ class MainViewModel @Inject constructor(
             }
 
             // 3. Periodic LAN Subnet UDP Burst every 6 seconds while broadcast active
-            while (kotlinx.coroutines.isActive) {
+            while (isActive) {
                 val current = _uiState.value.activeOutboundAlert
                 if (current == null || current.sequence != sequence || current.isExpired) {
                     break
@@ -1370,17 +1470,6 @@ class MainViewModel @Inject constructor(
             if (_uiState.value.activeOutboundAlert?.sequence == sequence) {
                 stopAlertBroadcast()
             }
-        }
-
-        val localAlert = IncomingAlert(
-            content = content,
-            language = lang,
-            sequence = sequence,
-            receivedAtMs = System.currentTimeMillis(),
-            senderName = senderName ?: "You",
-        )
-        viewModelScope.launch(Dispatchers.IO) {
-            alertPlayer.play(localAlert)
         }
 
         // 3. P2P Direct Stream or Local Broadcast Tracking
@@ -1729,9 +1818,8 @@ class MainViewModel @Inject constructor(
         wifiAlertBroadcaster.stopBroadcasting()
         alertPlayer.dismissActiveAlert()
         for (item in outboundQueue.snapshot()) {
-            if (item.isAlert) {
-                outboundQueue.discard(item.id)
-                recentAlertIds.remove(item.text.hashCode())
+            if (item.isAlert && item.state == OutboundState.SENDING) {
+                outboundQueue.markSent(item.id, item.receiverName ?: "Nearby Radio Mesh")
             }
         }
         publishQueues()
