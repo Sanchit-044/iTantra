@@ -45,22 +45,52 @@ class LanBroadcastAlertManager(
     // Deduplication cache: Packet signature -> timestamp
     private val recentAlerts = ConcurrentHashMap<String, Long>()
 
-    private val _alerts = kotlinx.coroutines.flow.MutableSharedFlow<Packet>(extraBufferCapacity = 20)
+    private val _alerts = kotlinx.coroutines.flow.MutableSharedFlow<Packet>(
+        extraBufferCapacity = 64,
+        onBufferOverflow = kotlinx.coroutines.channels.BufferOverflow.DROP_OLDEST,
+    )
     val alerts = _alerts.asSharedFlow()
 
     fun markOriginated(sequence: Int) = Companion.markOriginated(sequence)
     fun isOriginated(sequence: Int): Boolean = Companion.isOriginated(sequence)
+    fun clearOriginated(sequence: Int) = Companion.clearOriginated(sequence)
     fun setLocalDeviceName(name: String) = Companion.setLocalDeviceName(name)
 
     private val listeners = java.util.concurrent.CopyOnWriteArrayList<(Packet) -> Unit>()
 
     /**
-     * Start background UDP listener for incoming LAN emergency alerts.
+     * Start background UDP listener for incoming LAN emergency packets.
      */
     fun startListening(onPacketReceived: ((Packet) -> Unit)? = null) {
         if (onPacketReceived != null && !listeners.contains(onPacketReceived)) {
             listeners.add(onPacketReceived)
         }
+        startListeningInternal()
+    }
+
+    /**
+     * Start background UDP listener with dedicated callbacks for alerts and delivery ACKs.
+     */
+    fun startListening(
+        onAlertReceived: (Packet) -> Unit,
+        onAckReceived: (sequence: Int, payloadHash: Int, receiverName: String, locationInfo: String?) -> Unit,
+    ) {
+        val compositeHandler: (Packet) -> Unit = { packet ->
+            if (packet.type == MessageType.ALERT) {
+                onAlertReceived(packet)
+            } else if (packet.type == MessageType.ACK) {
+                val parts = packet.text.split(":", limit = 3)
+                val hash = parts.getOrNull(0)?.toIntOrNull() ?: 0
+                val name = parts.getOrNull(1)?.ifBlank { "Responder" } ?: "Responder"
+                val loc = parts.getOrNull(2)
+                onAckReceived(packet.sequence, hash, name, loc)
+            }
+        }
+        listeners.add(compositeHandler)
+        startListeningInternal()
+    }
+
+    private fun startListeningInternal() {
         if (isListening.getAndSet(true)) return
 
         acquireMulticastLock()
@@ -101,12 +131,6 @@ class LanBroadcastAlertManager(
                                 }
                                 if (isOriginated(packet.sequence)) {
                                     // Drop self-originated alert broadcast by sequence
-                                    continue
-                                }
-                                val split = packet.text.split("\u001F", limit = 2)
-                                val senderName = if (split.size == 2) split[0].takeIf { it.isNotBlank() } else null
-                                if (senderName != null && isLocalDeviceName(senderName)) {
-                                    // Drop self-originated alert broadcast by sender name
                                     continue
                                 }
                             }
@@ -151,12 +175,20 @@ class LanBroadcastAlertManager(
      * Broadcast an emergency alert to all devices on the local Wi-Fi / hotspot / LAN network.
      * Transmits rapid UDP burst packets across all active broadcast destinations for maximum reliability.
      */
-    fun sendBroadcastAlert(language: Language, content: AlertContent, sequence: Int, senderName: String, ttl: Int = 3) {
+    fun sendBroadcastAlert(
+        language: Language,
+        content: AlertContent,
+        sequence: Int,
+        senderName: String,
+        ttl: Int = 3,
+        senderLoc: String? = null,
+    ) {
         markOriginated(sequence)
         if (senderName.isNotBlank()) {
             setLocalDeviceName(senderName)
         }
-        val textPayload = "$senderName\u001F${content.toWirePayload()}"
+        val locPart = if (!senderLoc.isNullOrBlank()) "\u001F$senderLoc" else ""
+        val textPayload = "$senderName\u001F${content.toWirePayload()}$locPart"
         val packet = Packet.text(
             type = MessageType.ALERT,
             language = language,
@@ -400,19 +432,30 @@ class LanBroadcastAlertManager(
     companion object {
         private const val TAG = "LanBroadcastAlertManager"
         const val UDP_ALERT_PORT = 8989
-        private const val BURST_COUNT = 3
-        private const val BURST_INTERVAL_MS = 50L
+        private const val BURST_COUNT = 5
+        private const val BURST_INTERVAL_MS = 25L
         private const val DEDUP_WINDOW_MS = 15_000L
 
-        private val originatedSequences = ConcurrentHashMap.newKeySet<Int>()
+        private val originatedSequences = ConcurrentHashMap<Int, Long>()
         private val localDeviceNames = ConcurrentHashMap.newKeySet<String>()
         private val alertSenderIps = ConcurrentHashMap<Int, InetAddress>()
 
         fun markOriginated(sequence: Int) {
-            originatedSequences.add(sequence)
+            originatedSequences[sequence] = System.currentTimeMillis()
         }
 
-        fun isOriginated(sequence: Int): Boolean = originatedSequences.contains(sequence)
+        fun isOriginated(sequence: Int): Boolean {
+            val ts = originatedSequences[sequence] ?: return false
+            if (System.currentTimeMillis() - ts > 300_000L) {
+                originatedSequences.remove(sequence)
+                return false
+            }
+            return true
+        }
+
+        fun clearOriginated(sequence: Int) {
+            originatedSequences.remove(sequence)
+        }
 
         fun setLocalDeviceName(name: String) {
             if (name.isNotBlank()) {

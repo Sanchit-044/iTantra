@@ -17,14 +17,15 @@ class GpsLocationTracker(
 
     private val locationManager = context.getSystemService(Context.LOCATION_SERVICE) as? LocationManager
 
-    // Default starting GPS coordinates (New Delhi reference for offline map rendering)
+    // Default starting GPS coordinates (New Delhi reference for offline map rendering placeholder)
     private val _location = MutableStateFlow(
         GpsLocation(
             latitude = 28.613939,
             longitude = 77.209021,
-            accuracyMeters = 4.5f,
+            accuracyMeters = 50f,
             altitudeMeters = 216.0,
-            provider = "GPS",
+            provider = "PLACEHOLDER",
+            hasRealFix = false,
         )
     )
     val location: StateFlow<GpsLocation> = _location.asStateFlow()
@@ -79,6 +80,8 @@ class GpsLocationTracker(
     }
 
     private fun updateLocation(loc: Location) {
+        val isReal = (loc.latitude != 0.0 || loc.longitude != 0.0) &&
+            !(kotlin.math.abs(loc.latitude - 28.613939) < 0.0001 && kotlin.math.abs(loc.longitude - 77.209021) < 0.0001)
         _location.value = GpsLocation(
             latitude = loc.latitude,
             longitude = loc.longitude,
@@ -88,6 +91,7 @@ class GpsLocationTracker(
             bearingDegrees = if (loc.hasBearing()) loc.bearing else 0f,
             provider = loc.provider ?: "GPS",
             timestampMs = loc.time,
+            hasRealFix = isReal,
         )
     }
 

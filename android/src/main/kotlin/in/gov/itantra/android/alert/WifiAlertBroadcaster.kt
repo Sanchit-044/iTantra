@@ -18,6 +18,13 @@ class WifiAlertBroadcaster(private val context: Context) {
     private var p2pManager: WifiP2pManager? = null
     private var p2pChannel: WifiP2pManager.Channel? = null
     private var currentServiceInfo: WifiP2pDnsSdServiceInfo? = null
+    private var currentAckServiceInfo: WifiP2pDnsSdServiceInfo? = null
+    private var currentAckSeq: Int? = null
+    private var currentAckHash: Int? = null
+    private var currentAckName: String? = null
+    private var currentAckLoc: String? = null
+    private var stopBroadcastRunnable: Runnable? = null
+    private var stopAckRunnable: Runnable? = null
 
     init {
         val manager = context.getSystemService(Context.WIFI_P2P_SERVICE) as? WifiP2pManager
@@ -27,10 +34,9 @@ class WifiAlertBroadcaster(private val context: Context) {
         }
     }
 
-    private var stopBroadcastRunnable: Runnable? = null
-
     fun markOriginated(sequence: Int) = Companion.markOriginated(sequence)
     fun isOriginated(sequence: Int): Boolean = Companion.isOriginated(sequence)
+    fun clearOriginated(sequence: Int) = Companion.clearOriginated(sequence)
 
     @SuppressLint("MissingPermission")
     fun broadcastAlert(
@@ -39,6 +45,7 @@ class WifiAlertBroadcaster(private val context: Context) {
         sequence: Long,
         senderName: String? = null,
         durationMs: Long = 300_000L, // 5 minutes default
+        senderLoc: String? = null,
     ) {
         AppLog.d("WifiAlertBroadcaster", "broadcastAlert called for sequence $sequence")
         val manager = p2pManager ?: run {
@@ -50,39 +57,189 @@ class WifiAlertBroadcaster(private val context: Context) {
             return
         }
 
-        originatedSequences.add(sequence.toInt())
-        stopBroadcasting()
+        originatedSequences[sequence.toInt()] = System.currentTimeMillis()
 
-        AppLog.d("WifiAlertBroadcaster", "Attempting to broadcast alert sequence $sequence over Wi-Fi Direct")
-        val record = AlertCodec.encodeWifiPayload(language, content, sequence, senderName)
+        val contentTag = when (content) {
+            is AlertContent.Template -> "T_${content.template.ordinal}"
+            is AlertContent.Custom -> "C_${content.text.take(10).filter { it.isLetterOrDigit() }.ifBlank { "ALERT" }}"
+        }
+        val safeSenderName = (senderName ?: "Peer").take(10).filter { it.isLetterOrDigit() }.ifBlank { "Peer" }
+        val alertInstanceName = "iTantra_Alt_${sequence}_${language.wire}_${contentTag}_$safeSenderName"
 
+        val record = AlertCodec.encodeWifiPayload(language, content, sequence, senderName, senderLoc = senderLoc)
         val serviceInfo = WifiP2pDnsSdServiceInfo.newInstance(
-            instanceName,
+            alertInstanceName,
             SERVICE_TYPE,
             record
         )
-        
-        manager.addLocalService(channel, serviceInfo, object : WifiP2pManager.ActionListener {
+
+        val registerAlertService = {
+            manager.addLocalService(channel, serviceInfo, object : WifiP2pManager.ActionListener {
+                override fun onSuccess() {
+                    AppLog.d("WifiAlertBroadcaster", "Started Wi-Fi Direct DNS-SD broadcasting for alert")
+                    isAdvertising = true
+                    currentServiceInfo = serviceInfo
+
+                    // Trigger peer discovery immediately and pulse again to broadcast probe requests on social channels
+                    manager.discoverPeers(channel, object : WifiP2pManager.ActionListener {
+                        override fun onSuccess() {
+                            AppLog.d("WifiAlertBroadcaster", "Instant peer discovery triggered for alert service")
+                        }
+                        override fun onFailure(reason: Int) {}
+                    })
+                    handler.postDelayed({
+                        manager.discoverPeers(channel, null)
+                    }, 2500L)
+
+                    val runnable = Runnable { stopBroadcasting() }
+                    stopBroadcastRunnable = runnable
+                    handler.postDelayed(runnable, durationMs)
+                }
+
+                override fun onFailure(reason: Int) {
+                    AppLog.e("WifiAlertBroadcaster", "Failed to add local service for Wi-Fi alert: $reason")
+                }
+            })
+        }
+
+        val oldInfo = currentServiceInfo
+        if (oldInfo != null) {
+            stopBroadcastRunnable?.let { handler.removeCallbacks(it) }
+            stopBroadcastRunnable = null
+            manager.removeLocalService(channel, oldInfo, object : WifiP2pManager.ActionListener {
+                override fun onSuccess() {
+                    currentServiceInfo = null
+                    isAdvertising = false
+                    registerAlertService()
+                }
+                override fun onFailure(reason: Int) {
+                    currentServiceInfo = null
+                    isAdvertising = false
+                    registerAlertService()
+                }
+            })
+        } else {
+            registerAlertService()
+        }
+    }
+
+    @SuppressLint("MissingPermission")
+    private val ackToken = Any()
+
+    @SuppressLint("MissingPermission")
+    fun broadcastAck(
+        sequence: Int,
+        payloadHash: Int,
+        receiverName: String,
+        locationLabel: String,
+        durationMs: Long = 30_000L,
+    ) {
+        val manager = p2pManager ?: return
+        val channel = p2pChannel ?: return
+
+        val statusTag = when {
+            locationLabel.contains("STOPPED", ignoreCase = true) -> "STP"
+            locationLabel.contains("TRACKING", ignoreCase = true) || receiverName.contains("Tracking", ignoreCase = true) -> "TRK"
+            else -> "RCV"
+        }
+        val cleanName = receiverName.replace(" (Tracking)", "").trim().ifBlank { "Responder" }
+        val safeName = cleanName.filter { it.isLetterOrDigit() || it == '-' || it == '_' }.take(16).ifBlank { "Responder" }
+        val ackInstanceName = "iTantra_Ack_${sequence}_${payloadHash}_${statusTag}_${safeName}"
+
+        // If we are already advertising this exact ACK with same status, just refresh the timeout
+        if (currentAckServiceInfo != null && currentAckSeq == sequence && currentAckHash == payloadHash && currentAckName == cleanName && currentAckLoc == locationLabel) {
+            handler.removeCallbacksAndMessages(ackToken)
+            handler.postDelayed({ stopBroadcastingAck(currentAckServiceInfo) }, ackToken, durationMs)
+            return
+        }
+
+        val record = mapOf(
+            "type" to "ack",
+            "seq" to sequence.toString(),
+            "hash" to payloadHash.toString(),
+            "name" to cleanName,
+            "status" to statusTag,
+            "loc" to locationLabel,
+        )
+
+        val serviceInfo = WifiP2pDnsSdServiceInfo.newInstance(
+            ackInstanceName,
+            SERVICE_TYPE,
+            record,
+        )
+
+        handler.removeCallbacksAndMessages(ackToken)
+
+        val registerNewService = {
+            manager.addLocalService(channel, serviceInfo, object : WifiP2pManager.ActionListener {
+                override fun onSuccess() {
+                    AppLog.d("WifiAlertBroadcaster", "Started Wi-Fi Direct DNS-SD broadcasting for ACK: $ackInstanceName (seq=$sequence, hash=$payloadHash)")
+                    currentAckServiceInfo = serviceInfo
+                    currentAckSeq = sequence
+                    currentAckHash = payloadHash
+                    currentAckName = cleanName
+                    currentAckLoc = locationLabel
+
+                    manager.discoverPeers(channel, object : WifiP2pManager.ActionListener {
+                        override fun onSuccess() {
+                            AppLog.d("WifiAlertBroadcaster", "Instant peer discovery triggered for ACK service")
+                        }
+                        override fun onFailure(reason: Int) {}
+                    })
+                    handler.postDelayed({
+                        manager.discoverPeers(channel, null)
+                    }, 2000L)
+
+                    handler.postDelayed({
+                        stopBroadcastingAck(serviceInfo)
+                    }, ackToken, durationMs)
+                }
+
+                override fun onFailure(reason: Int) {
+                    AppLog.e("WifiAlertBroadcaster", "Failed to add local service for Wi-Fi ACK: $reason")
+                }
+            })
+        }
+
+        val oldInfo = currentAckServiceInfo
+        if (oldInfo != null) {
+            manager.removeLocalService(channel, oldInfo, object : WifiP2pManager.ActionListener {
+                override fun onSuccess() {
+                    currentAckServiceInfo = null
+                    registerNewService()
+                }
+                override fun onFailure(reason: Int) {
+                    currentAckServiceInfo = null
+                    registerNewService()
+                }
+            })
+        } else {
+            registerNewService()
+        }
+    }
+
+    @SuppressLint("MissingPermission")
+    fun stopBroadcastingAck(expectedInfo: WifiP2pDnsSdServiceInfo? = null) {
+        handler.removeCallbacksAndMessages(ackToken)
+        val info = currentAckServiceInfo ?: return
+        if (expectedInfo != null && info != expectedInfo) {
+            // A newer ACK service is already active, don't stop it!
+            return
+        }
+        val manager = p2pManager ?: return
+        val channel = p2pChannel ?: return
+
+        manager.removeLocalService(channel, info, object : WifiP2pManager.ActionListener {
             override fun onSuccess() {
-                AppLog.d("WifiAlertBroadcaster", "Started Wi-Fi Direct DNS-SD broadcasting for alert")
-                isAdvertising = true
-                currentServiceInfo = serviceInfo
-
-                // Trigger peer discovery to beacon the local service
-                manager.discoverPeers(channel, object : WifiP2pManager.ActionListener {
-                    override fun onSuccess() {}
-                    override fun onFailure(reason: Int) {}
-                })
-
-                val runnable = Runnable { stopBroadcasting() }
-                stopBroadcastRunnable = runnable
-                handler.postDelayed(runnable, durationMs)
+                AppLog.d("WifiAlertBroadcaster", "Stopped Wi-Fi Direct ACK broadcasting")
             }
-
-            override fun onFailure(reason: Int) {
-                AppLog.e("WifiAlertBroadcaster", "Failed to add local service for Wi-Fi alert: $reason")
-            }
+            override fun onFailure(reason: Int) {}
         })
+        currentAckServiceInfo = null
+        currentAckSeq = null
+        currentAckHash = null
+        currentAckName = null
+        currentAckLoc = null
     }
 
     @SuppressLint("MissingPermission")
@@ -108,15 +265,26 @@ class WifiAlertBroadcaster(private val context: Context) {
     }
 
     companion object {
-        val originatedSequences = java.util.concurrent.ConcurrentHashMap.newKeySet<Int>()
+        val originatedSequences = java.util.concurrent.ConcurrentHashMap<Int, Long>()
         const val INSTANCE_PREFIX = "iTantra_Alert"
         const val SERVICE_TYPE = "_itantra._tcp"
 
         fun markOriginated(sequence: Int) {
-            originatedSequences.add(sequence)
+            originatedSequences[sequence] = System.currentTimeMillis()
         }
 
-        fun isOriginated(sequence: Int): Boolean = originatedSequences.contains(sequence)
+        fun isOriginated(sequence: Int): Boolean {
+            val ts = originatedSequences[sequence] ?: return false
+            if (System.currentTimeMillis() - ts > 300_000L) {
+                originatedSequences.remove(sequence)
+                return false
+            }
+            return true
+        }
+
+        fun clearOriginated(sequence: Int) {
+            originatedSequences.remove(sequence)
+        }
     }
     
     private val instanceName = INSTANCE_PREFIX + "_" + java.util.UUID.randomUUID().toString().take(6)
