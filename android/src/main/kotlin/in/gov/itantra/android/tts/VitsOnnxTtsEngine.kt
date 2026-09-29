@@ -155,11 +155,16 @@ class VitsOnnxTtsEngine(
                 packModel
             } else {
                 val cached = java.io.File(context.cacheDir, "vits_model_${language.code}.onnx")
-                if (!cached.exists()) {
+                if (!cached.exists() || cached.length() == 0L) {
+                    val temp = java.io.File(context.cacheDir, "vits_model_${language.code}.onnx.tmp")
                     context.assets.open(descriptor.modelAsset).use { input ->
-                        cached.outputStream().use { output ->
+                        temp.outputStream().use { output ->
                             input.copyTo(output)
                         }
+                    }
+                    if (!temp.renameTo(cached)) {
+                        temp.copyTo(cached, overwrite = true)
+                        temp.delete()
                     }
                 }
                 cached

@@ -25,6 +25,7 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -102,6 +103,7 @@ fun StatusPill(
     contentColor: Color,
     modifier: Modifier = Modifier,
     icon: ImageVector? = null,
+    showProgress: Boolean = false,
 ) {
     Surface(
         color = containerColor,
@@ -113,7 +115,14 @@ fun StatusPill(
             modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            if (icon != null) {
+            if (showProgress) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(12.dp),
+                    color = contentColor,
+                    strokeWidth = 1.5.dp,
+                )
+                Spacer(Modifier.width(5.dp))
+            } else if (icon != null) {
                 Icon(icon, contentDescription = null, modifier = Modifier.size(14.dp))
                 Spacer(Modifier.width(4.dp))
             }

@@ -189,7 +189,6 @@ class NearbyDiscovery(private val context: Context) {
         val adapter = (context.getSystemService(Context.BLUETOOTH_SERVICE) as? BluetoothManager)
             ?.adapter
         if (adapter == null || !adapter.isEnabled) {
-            noteError("Bluetooth is off")
             return
         }
         val uuid = ParcelUuid(BluetoothTransport.SERVICE_UUID)

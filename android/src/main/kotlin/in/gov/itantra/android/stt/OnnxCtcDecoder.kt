@@ -58,11 +58,16 @@ class OnnxCtcDecoder(
                 packModel
             } else {
                 val cached = File(context.cacheDir, "ctc_model_${language.code}.onnx")
-                if (!cached.exists()) {
+                if (!cached.exists() || cached.length() == 0L) {
+                    val temp = File(context.cacheDir, "ctc_model_${language.code}.onnx.tmp")
                     context.assets.open(descriptor.assetPath).use { input ->
-                        cached.outputStream().use { output ->
+                        temp.outputStream().use { output ->
                             input.copyTo(output)
                         }
+                    }
+                    if (!temp.renameTo(cached)) {
+                        temp.copyTo(cached, overwrite = true)
+                        temp.delete()
                     }
                 }
                 cached
@@ -83,7 +88,7 @@ class OnnxCtcDecoder(
             loadedModelSizeBytes = modelFile.length()
             loadedLanguage = language
         } catch (e: Exception) {
-            throw SttException("failed to load ONNX CTC model for ${language.code}", e)
+            throw SttException("failed to load ONNX CTC model for ${language.code}: ${e.message}", e)
         }
     }
 

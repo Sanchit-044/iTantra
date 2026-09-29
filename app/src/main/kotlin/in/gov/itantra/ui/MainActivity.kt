@@ -67,11 +67,11 @@ class MainActivity : ComponentActivity() {
             permissionsToRequest.add(Manifest.permission.BLUETOOTH_SCAN)
             permissionsToRequest.add(Manifest.permission.BLUETOOTH_ADVERTISE)
         }
+        permissionsToRequest.add(Manifest.permission.ACCESS_FINE_LOCATION)
+        permissionsToRequest.add(Manifest.permission.ACCESS_COARSE_LOCATION)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             permissionsToRequest.add(Manifest.permission.NEARBY_WIFI_DEVICES)
             permissionsToRequest.add(Manifest.permission.POST_NOTIFICATIONS)
-        } else {
-            permissionsToRequest.add(Manifest.permission.ACCESS_FINE_LOCATION)
         }
         
         val missingPermissions = permissionsToRequest.filter {

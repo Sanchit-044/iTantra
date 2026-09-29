@@ -30,6 +30,14 @@ import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import java.util.concurrent.ConcurrentHashMap
 
+data class BleAck(
+    val payloadHash: Int,
+    val receiverName: String,
+    val isTracking: Boolean,
+    val rssi: Int = 0,
+    val isStopped: Boolean = false,
+)
+
 class BleAlertScanner(
     private val context: Context,
     private val alertPlayer: AlertPlayer
@@ -37,18 +45,39 @@ class BleAlertScanner(
     private val handler = Handler(Looper.getMainLooper())
     private var isScanning = false
 
-    private val _acks = MutableSharedFlow<Pair<Int, String>>(extraBufferCapacity = 10)
+    private val _acks = MutableSharedFlow<BleAck>(
+        extraBufferCapacity = 64,
+        onBufferOverflow = kotlinx.coroutines.channels.BufferOverflow.DROP_OLDEST,
+    )
     val acks = _acks.asSharedFlow()
 
-    private val _alerts = MutableSharedFlow<Packet>(extraBufferCapacity = 10)
+    private val _alerts = MutableSharedFlow<Packet>(
+        extraBufferCapacity = 64,
+        onBufferOverflow = kotlinx.coroutines.channels.BufferOverflow.DROP_OLDEST,
+    )
     val alerts = _alerts.asSharedFlow()
 
     private val _latestRssi = MutableStateFlow<Int?>(null)
     val latestRssi: StateFlow<Int?> = _latestRssi.asStateFlow()
 
+    private var smoothedRssi: Float? = null
+
+    private fun updateSmoothedRssi(rawRssi: Int) {
+        if (rawRssi == 0) return
+        val prev = smoothedRssi
+        val next = if (prev == null) {
+            rawRssi.toFloat()
+        } else {
+            prev * 0.70f + rawRssi.toFloat() * 0.30f
+        }
+        smoothedRssi = next
+        _latestRssi.value = Math.round(next)
+    }
+
     // Sliding-window deduplication cache: Key -> timestampMs (4 second dedup window)
     private val recentAlerts = ConcurrentHashMap<String, Long>()
     private val DEDUP_WINDOW_MS = 4_000L
+    private val TRACKING_DEDUP_WINDOW_MS = 1_500L
 
     private val restartScanRunnable = object : Runnable {
         @SuppressLint("MissingPermission")
@@ -63,8 +92,11 @@ class BleAlertScanner(
                         .setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY)
                         .setReportDelay(0)
                         .build()
-                    val filters = buildFilters()
-                    scanner.startScan(filters, settings, scanCallback)
+                    try {
+                        scanner.startScan(emptyList(), settings, scanCallback)
+                    } catch (_: Exception) {
+                        scanner.startScan(buildFilters(), settings, scanCallback)
+                    }
                     AppLog.d("BleAlertScanner", "Refreshed BLE scan keepalive")
                 }
             } catch (e: Exception) {
@@ -77,7 +109,6 @@ class BleAlertScanner(
     private val scanCallback = object : ScanCallback() {
         override fun onScanResult(callbackType: Int, result: ScanResult) {
             val record = result.scanRecord ?: return
-            _latestRssi.value = result.rssi
             val now = System.currentTimeMillis()
             recentAlerts.entries.removeIf { now - it.value > DEDUP_WINDOW_MS }
 
@@ -97,16 +128,31 @@ class BleAlertScanner(
 
             if (ackPayload != null && ackPayload.size >= 4) {
                 try {
+                    updateSmoothedRssi(result.rssi)
                     val buffer = java.nio.ByteBuffer.wrap(ackPayload)
                     val payloadHash = buffer.int
-                    val nameBytes = ByteArray(ackPayload.size - 4)
-                    buffer.get(nameBytes)
-                    val receiverName = String(nameBytes, Charsets.UTF_8).trim()
+                    val (statusByte, receiverName) = if (ackPayload.size >= 5) {
+                        val status = buffer.get().toInt()
+                        val nameBytes = ByteArray(buffer.remaining())
+                        buffer.get(nameBytes)
+                        val name = String(nameBytes, Charsets.UTF_8).trim().ifBlank { "Responder" }
+                        status to name.replace(" (Tracking)", "").trim()
+                    } else {
+                        val nameBytes = ByteArray(buffer.remaining())
+                        buffer.get(nameBytes)
+                        val name = String(nameBytes, Charsets.UTF_8).trim().ifBlank { "Responder" }
+                        1 to name.replace(" (Tracking)", "").trim()
+                    }
 
-                    val dedupKey = "ACK:${result.device.address}:$payloadHash"
-                    if (recentAlerts.putIfAbsent(dedupKey, now) == null) {
-                        AppLog.d("BleAlertScanner", "Received connectionless BLE ACK from $receiverName")
-                        _acks.tryEmit(Pair(payloadHash, receiverName))
+                    val isTracking = statusByte == 2 || receiverName.contains("Tracking")
+                    val isStopped = statusByte == 3
+                    val dedupKey = "ACK:${result.device.address}:$payloadHash:$statusByte"
+                    val windowMs = if (isTracking) TRACKING_DEDUP_WINDOW_MS else DEDUP_WINDOW_MS
+                    val lastSeen = recentAlerts[dedupKey]
+                    if (lastSeen == null || now - lastSeen >= windowMs) {
+                        recentAlerts[dedupKey] = now
+                        AppLog.d("BleAlertScanner", "Received connectionless BLE ACK from $receiverName (tracking=$isTracking, stopped=$isStopped, rssi=${result.rssi})")
+                        _acks.tryEmit(BleAck(payloadHash, receiverName, isTracking, result.rssi, isStopped = isStopped))
                     }
                 } catch (e: Exception) {
                     AppLog.w("BleAlertScanner", "Failed to parse BLE ACK payload", e)
@@ -133,6 +179,8 @@ class BleAlertScanner(
                     AppLog.w("BleAlertScanner", "Failed to decode BLE alert payload")
                     return
                 }
+
+                updateSmoothedRssi(result.rssi)
 
                 val language = decoded.language
                 val sequence = decoded.sequence
@@ -205,12 +253,20 @@ class BleAlertScanner(
             .build()
 
         try {
-            scanner.startScan(buildFilters(), settings, scanCallback)
+            // Use empty filter list to prevent OEM BLE hardware filter bugs from dropping serviceData packets
+            scanner.startScan(emptyList(), settings, scanCallback)
             isScanning = true
             handler.postDelayed(restartScanRunnable, 25_000)
-            AppLog.d("BleAlertScanner", "Started BLE background scanning for connectionless alerts and ACKs")
+            AppLog.d("BleAlertScanner", "Started BLE background scanning for connectionless alerts and ACKs (low-latency)")
         } catch (e: Exception) {
-            AppLog.e("BleAlertScanner", "Failed to start BLE scanning", e)
+            AppLog.w("BleAlertScanner", "startScan with emptyList failed (${e.message}), trying with fallback filters")
+            try {
+                scanner.startScan(buildFilters(), settings, scanCallback)
+                isScanning = true
+                handler.postDelayed(restartScanRunnable, 25_000)
+            } catch (e2: Exception) {
+                AppLog.e("BleAlertScanner", "Failed to start BLE scanning", e2)
+            }
         }
     }
 

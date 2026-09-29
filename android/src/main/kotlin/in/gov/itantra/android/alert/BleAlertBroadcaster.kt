@@ -26,6 +26,7 @@ class BleAlertBroadcaster(private val context: Context) {
 
     fun markOriginated(sequence: Int) = Companion.markOriginated(sequence)
     fun isOriginated(sequence: Int): Boolean = Companion.isOriginated(sequence)
+    fun clearOriginated(sequence: Int) = Companion.clearOriginated(sequence)
 
     @SuppressLint("MissingPermission")
     fun broadcastAlert(
@@ -55,7 +56,7 @@ class BleAlertBroadcaster(private val context: Context) {
             return
         }
 
-        originatedSequences.add(sequence.toInt())
+        originatedSequences[sequence.toInt()] = System.currentTimeMillis()
         stopBroadcasting()
 
         val settings = AdvertiseSettings.Builder()
@@ -102,12 +103,25 @@ class BleAlertBroadcaster(private val context: Context) {
         }
     }
 
+    private var currentAckPayloadHash: Int? = null
+    private var currentAckStatusByte: Byte? = null
+    private var currentAckReceiverName: String? = null
+
     @SuppressLint("MissingPermission")
-    fun broadcastAck(payloadHash: Int, receiverName: String) {
+    fun broadcastAck(payloadHash: Int, receiverName: String, statusByte: Byte = STATUS_RECEIVED) {
         val adapter = (context.getSystemService(Context.BLUETOOTH_SERVICE) as? BluetoothManager)?.adapter
         if (adapter == null || !adapter.isEnabled) return
 
         val advertiser = adapter.bluetoothLeAdvertiser ?: return
+
+        val cleanName = receiverName.replace(" (Tracking)", "").trim().ifBlank { "Responder" }
+
+        // If already advertising this ACK with the same status state, refresh timeout and avoid BLE restart churn
+        if (isAdvertisingAck && currentAckPayloadHash == payloadHash && currentAckStatusByte == statusByte && currentAckReceiverName == cleanName) {
+            handler.removeCallbacksAndMessages(currentAckToken)
+            handler.postDelayed({ stopBroadcastingAck() }, currentAckToken, if (statusByte == STATUS_TRACKING) 25_000L else 15_000L)
+            return
+        }
 
         stopBroadcastingAck()
 
@@ -120,12 +134,25 @@ class BleAlertBroadcaster(private val context: Context) {
 
         val uuid = ParcelUuid(ACK_UUID)
 
-        // Encode payloadHash (4 bytes) and truncated receiverName (up to 9 bytes)
-        val nameBytes = receiverName.toByteArray(Charsets.UTF_8)
-        val nameLen = Math.min(nameBytes.size, 9)
-        val buffer = java.nio.ByteBuffer.allocate(4 + nameLen)
+        // Encode payloadHash (4 bytes) + status byte (1 byte: 1=RECEIVED, 2=TRACKING, 3=STOPPED) + clean receiverName (safe UTF-8 up to 18 bytes)
+        var nameBytes = cleanName.toByteArray(Charsets.UTF_8)
+        var safeNameLen = Math.min(nameBytes.size, 18)
+        while (safeNameLen > 0 && (nameBytes[safeNameLen - 1].toInt() and 0xC0) == 0x80) {
+            safeNameLen--
+        }
+        if (safeNameLen > 0 && (nameBytes[safeNameLen - 1].toInt() and 0x80) != 0) {
+            safeNameLen--
+        }
+        if (safeNameLen == 0) {
+            val asciiName = cleanName.filter { it.code in 32..126 }.take(18).ifBlank { "Responder" }
+            nameBytes = asciiName.toByteArray(Charsets.UTF_8)
+            safeNameLen = Math.min(nameBytes.size, 18)
+        }
+
+        val buffer = java.nio.ByteBuffer.allocate(5 + safeNameLen)
         buffer.putInt(payloadHash)
-        buffer.put(nameBytes, 0, nameLen)
+        buffer.put(statusByte)
+        buffer.put(nameBytes, 0, safeNameLen)
         val payload = buffer.array()
 
         val data = AdvertiseData.Builder()
@@ -141,12 +168,18 @@ class BleAlertBroadcaster(private val context: Context) {
 
         val callback = object : AdvertiseCallback() {
             override fun onStartSuccess(settingsInEffect: AdvertiseSettings?) {
-                AppLog.d("BleAlertBroadcaster", "Started broadcasting ACK via BLE successfully")
+                AppLog.d("BleAlertBroadcaster", "Started broadcasting ACK via BLE successfully (status=$statusByte, name=$cleanName)")
                 isAdvertisingAck = true
+                currentAckPayloadHash = payloadHash
+                currentAckStatusByte = statusByte
+                currentAckReceiverName = cleanName
             }
             override fun onStartFailure(errorCode: Int) {
                 AppLog.e("BleAlertBroadcaster", "BLE ACK broadcast failed: $errorCode")
                 isAdvertisingAck = false
+                currentAckPayloadHash = null
+                currentAckStatusByte = null
+                currentAckReceiverName = null
             }
         }
 
@@ -154,14 +187,20 @@ class BleAlertBroadcaster(private val context: Context) {
             advertiser.startAdvertising(settings, data, scanResponse, callback)
             advertiseAckCallback = callback
 
-            // Broadcast ACK for 10 seconds
+            val timeoutMs = if (statusByte == STATUS_TRACKING) 25_000L else 15_000L
             handler.postDelayed({
                 stopBroadcastingAck()
-            }, 10_000)
+            }, currentAckToken, timeoutMs)
         } catch (e: Exception) {
             AppLog.e("BleAlertBroadcaster", "Error starting BLE ACK advertising", e)
         }
     }
+
+    fun broadcastAck(payloadHash: Int, receiverName: String, isTracking: Boolean) {
+        broadcastAck(payloadHash, receiverName, if (isTracking) STATUS_TRACKING else STATUS_RECEIVED)
+    }
+
+    private val currentAckToken = Any()
 
     @SuppressLint("MissingPermission")
     fun stopBroadcasting() {
@@ -195,15 +234,30 @@ class BleAlertBroadcaster(private val context: Context) {
     }
 
     companion object {
-        val originatedSequences = java.util.concurrent.ConcurrentHashMap.newKeySet<Int>()
+        val originatedSequences = java.util.concurrent.ConcurrentHashMap<Int, Long>()
         // Standard 16-bit UUID base format ensures payload fits within 31-byte legacy BLE frame
         val ALERT_UUID: UUID = UUID.fromString("00007F3D-0000-1000-8000-00805F9B34FB")
         val ACK_UUID: UUID = UUID.fromString("00007F3E-0000-1000-8000-00805F9B34FB")
 
+        const val STATUS_RECEIVED: Byte = 1
+        const val STATUS_TRACKING: Byte = 2
+        const val STATUS_STOPPED: Byte = 3
+
         fun markOriginated(sequence: Int) {
-            originatedSequences.add(sequence)
+            originatedSequences[sequence] = System.currentTimeMillis()
         }
 
-        fun isOriginated(sequence: Int): Boolean = originatedSequences.contains(sequence)
+        fun isOriginated(sequence: Int): Boolean {
+            val ts = originatedSequences[sequence] ?: return false
+            if (System.currentTimeMillis() - ts > 300_000L) {
+                originatedSequences.remove(sequence)
+                return false
+            }
+            return true
+        }
+
+        fun clearOriginated(sequence: Int) {
+            originatedSequences.remove(sequence)
+        }
     }
 }

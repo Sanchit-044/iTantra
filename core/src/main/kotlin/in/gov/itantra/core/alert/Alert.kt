@@ -124,8 +124,9 @@ data class IncomingAlert(
     val sequence: Int,
     val receivedAtMs: Long,
     val senderName: String? = null,
-    /** RSSI-estimated distance in meters at alert-receive time. Null if no RSSI was available. */
+    /** RSSI or GPS estimated distance in meters at alert-receive time. Null if not available. */
     val distanceMeters: Float? = null,
+    val senderLocation: String? = null,
 )
 
 interface ForcedAudioFocus {

@@ -16,6 +16,9 @@ class SendAlertUseCase(
         language: Language,
         content: AlertContent,
         pairingConfirmed: Boolean,
+        sequenceNum: Int? = null,
+        senderName: String? = null,
+        senderLoc: String? = null,
     ) {
         if (!pairingConfirmed) {
             throw IllegalStateException("pairing not confirmed")
@@ -27,12 +30,20 @@ class SendAlertUseCase(
         if (payload.isEmpty()) throw IllegalArgumentException("alert text is empty")
         if (payload.length > MAX_CHARS) throw IllegalArgumentException("alert text is too long")
 
+        val seq = sequenceNum ?: sequence.incrementAndGet()
+        val textToSend = if (!senderName.isNullOrBlank()) {
+            val locPart = if (!senderLoc.isNullOrBlank()) "\u001F$senderLoc" else ""
+            "$senderName\u001F$payload$locPart"
+        } else {
+            payload
+        }
+
         transport.send(
             Packet.text(
                 type = MessageType.ALERT,
                 language = language,
-                sequence = sequence.incrementAndGet(),
-                text = payload,
+                sequence = seq,
+                text = textToSend,
             )
         )
     }

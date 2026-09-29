@@ -3,19 +3,29 @@ package `in`.gov.itantra.service
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
-import dagger.hilt.android.AndroidEntryPoint
+import dagger.hilt.EntryPoint
+import dagger.hilt.InstallIn
+import dagger.hilt.android.EntryPointAccessors
+import dagger.hilt.components.SingletonComponent
 import `in`.gov.itantra.core.alert.AlertPlayer
-import javax.inject.Inject
 
-@AndroidEntryPoint
 class AlertStopReceiver : BroadcastReceiver() {
 
-    @Inject
-    lateinit var alertPlayer: AlertPlayer
+    @EntryPoint
+    @InstallIn(SingletonComponent::class)
+    interface AlertStopReceiverEntryPoint {
+        fun alertPlayer(): AlertPlayer
+    }
 
     override fun onReceive(context: Context, intent: Intent?) {
         if (intent?.action == ACTION_STOP_ALERT) {
-            alertPlayer.dismissActiveAlert()
+            try {
+                val entryPoint = EntryPointAccessors.fromApplication(
+                    context.applicationContext,
+                    AlertStopReceiverEntryPoint::class.java
+                )
+                entryPoint.alertPlayer().dismissActiveAlert()
+            } catch (_: Exception) {}
         }
     }
 

@@ -46,6 +46,9 @@ class ConnectionService : Service() {
     lateinit var alertPlayer: AlertPlayer
 
     @Inject
+    lateinit var vibratorHelper: `in`.gov.itantra.util.VibratorHelper
+
+    @Inject
     lateinit var alertNotificationManager: AlertNotificationManager
 
     @Inject
@@ -91,17 +94,12 @@ class ConnectionService : Service() {
                     return@startListening
                 }
 
-                val split = packet.text.split("\u001F", limit = 2)
-                val senderName = if (split.size == 2) split[0].takeIf { it.isNotBlank() } else null
+                val split = packet.text.split("\u001F", limit = 3)
+                val senderName = if (split.size >= 2) split[0].takeIf { it.isNotBlank() } else null
                 val localName = profileStore.snapshot.name
-                if (senderName != null && localName.isNotBlank() && senderName.equals(localName.trim(), ignoreCase = true)) {
-                    return@startListening
-                }
-                if (senderName != null && senderName.equals("You", ignoreCase = true)) {
-                    return@startListening
-                }
 
-                val wirePayload = if (split.size == 2) split[1] else packet.text
+                val wirePayload = if (split.size >= 2) split[1] else packet.text
+                val senderLoc = if (split.size >= 3) split[2].takeIf { it.isNotBlank() } else null
                 val payloadHash = wirePayload.hashCode()
                 lanAlertManager.sendBroadcastAck(packet.sequence, payloadHash, localName.ifBlank { "Responder" })
 
@@ -111,9 +109,11 @@ class ConnectionService : Service() {
                     language = packet.language,
                     sequence = packet.sequence,
                     receivedAtMs = System.currentTimeMillis(),
-                    senderName = senderName
+                    senderName = senderName,
+                    senderLocation = senderLoc,
                 )
                 CoroutineScope(Dispatchers.IO).launch {
+                    vibratorHelper.startAlertVibration()
                     alertPlayer.play(alert)
                 }
             }
