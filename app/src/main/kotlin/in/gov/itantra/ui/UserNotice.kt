@@ -8,6 +8,7 @@ sealed class UserNotice {
     data class PlaybackError(val detail: String?) : UserNotice()
     data class QueueSendFailed(val detail: String?) : UserNotice()
     data class GenericError(val detail: String?) : UserNotice()
+    data class FloorDenied(val reason: String) : UserNotice()
     data class Raw(val detail: String?) : UserNotice()
     data object PleaseSelectDevice : UserNotice()
     data object AlertSent : UserNotice()
@@ -27,6 +28,7 @@ sealed class UserNotice {
             is PlaybackError -> strings.playbackError(clean(detail))
             is QueueSendFailed -> strings.queueSendFailed(clean(detail))
             is GenericError -> strings.genericError(clean(detail))
+            is FloorDenied -> "Channel busy ($reason)"
             is Raw -> clean(detail) ?: strings.couldNotSave
             PleaseSelectDevice -> strings.pleaseSelectDevice
             AlertSent -> strings.alertSent

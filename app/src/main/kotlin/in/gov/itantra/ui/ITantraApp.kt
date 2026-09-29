@@ -3,9 +3,13 @@ package `in`.gov.itantra.ui
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedContentTransitionScope
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -186,9 +190,19 @@ fun ITantraApp(
             }
         }
 
-        // Full Screen Outbound Emergency Broadcast Overlay (For Alert Sender)
-        uiState.activeOutboundAlert?.let { outboundAlert ->
-            if (!outboundAlert.isMinimized) {
+        // Full Screen Outbound Emergency Broadcast Overlay (For Alert Sender) with smooth transition
+        androidx.compose.animation.AnimatedVisibility(
+            visible = uiState.activeOutboundAlert != null && uiState.activeOutboundAlert?.isMinimized == false,
+            enter = slideInVertically(
+                initialOffsetY = { it },
+                animationSpec = tween(350, easing = FastOutSlowInEasing),
+            ) + fadeIn(tween(300)),
+            exit = slideOutVertically(
+                targetOffsetY = { it },
+                animationSpec = tween(300, easing = FastOutSlowInEasing),
+            ) + fadeOut(tween(250)),
+        ) {
+            uiState.activeOutboundAlert?.let { outboundAlert ->
                 OutboundAlertFullScreen(
                     outboundAlert = outboundAlert,
                     chrome = chrome,
@@ -206,6 +220,8 @@ fun ITantraApp(
                 liveDistanceMeters = uiState.liveAlertDistanceMeters,
                 onDismiss = { mainViewModel.dismissAlert() },
                 onMuteAudio = { mainViewModel.muteAlertAudio() },
+                onStartTracking = { mainViewModel.startTrackingSender(activeAlert) },
+                onStopTracking = { mainViewModel.stopTrackingSender() },
             )
         }
     }
@@ -376,16 +392,25 @@ fun MainContent(
                     }
                 }
 
-                // Minimized floating emergency broadcast banner
-                uiState.activeOutboundAlert?.let { outbound ->
-                    if (outbound.isMinimized) {
+                // Minimized floating emergency broadcast banner with smooth slide/fade transition
+                androidx.compose.animation.AnimatedVisibility(
+                    visible = uiState.activeOutboundAlert != null && uiState.activeOutboundAlert?.isMinimized == true,
+                    enter = slideInVertically(
+                        initialOffsetY = { it },
+                        animationSpec = tween(350, easing = FastOutSlowInEasing),
+                    ) + fadeIn(tween(300)),
+                    exit = slideOutVertically(
+                        targetOffsetY = { it },
+                        animationSpec = tween(300, easing = FastOutSlowInEasing),
+                    ) + fadeOut(tween(250)),
+                    modifier = Modifier.align(Alignment.BottomCenter),
+                ) {
+                    uiState.activeOutboundAlert?.let { outbound ->
                         MinimizedOutboundAlertBanner(
                             outboundAlert = outbound,
                             onExpand = { mainViewModel.expandOutboundAlert() },
                             onStopAlert = { mainViewModel.stopOutboundAlert() },
-                            modifier = Modifier
-                                .align(Alignment.BottomCenter)
-                                .padding(horizontal = 16.dp, vertical = 12.dp)
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
                         )
                     }
                 }

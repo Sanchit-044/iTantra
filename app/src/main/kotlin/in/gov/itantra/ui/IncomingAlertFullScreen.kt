@@ -1,14 +1,46 @@
 package `in`.gov.itantra.ui
 
+import android.content.Context
 import android.media.AudioManager
 import android.media.ToneGenerator
+import android.os.Build
+import android.os.VibrationEffect
+import android.os.Vibrator
+import android.os.VibratorManager
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.*
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -23,10 +55,26 @@ import androidx.compose.material.icons.filled.Radar
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Sensors
 import androidx.compose.material.icons.filled.Stop
-import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material.icons.filled.Warning
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -36,9 +84,11 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import `in`.gov.itantra.core.alert.AlertContent
@@ -56,7 +106,8 @@ import kotlin.math.sin
 
 /**
  * Full-screen Emergency SOS Alert Overlay with system insets protection,
- * 2-minute continuous alarm loop timer, and live real-time proximity radar tracking.
+ * 2-minute continuous alarm loop timer, urgent alert device vibration,
+ * and live real-time proximity radar tracking matching OutboundAlertFullScreen.
  */
 @Composable
 fun IncomingAlertFullScreen(
@@ -66,13 +117,59 @@ fun IncomingAlertFullScreen(
     liveDistanceMeters: Float? = null,
     onDismiss: () -> Unit,
     onMuteAudio: () -> Unit = {},
+    onStartTracking: () -> Unit = {},
+    onStopTracking: () -> Unit = {},
 ) {
+    val context = LocalContext.current
     var isTrackingActive by remember { mutableStateOf(false) }
     var isAudioMuted by remember { mutableStateOf(false) }
 
-    // Use real RSSI-based distance from ViewModel or alert's initial distance
-    val currentDistanceMeters = liveDistanceMeters ?: alert.distanceMeters
-    val effectiveDistanceMeters = currentDistanceMeters ?: 15.0f
+    // Device Vibrator for urgent haptic alert on receiving phone
+    val vibrator = remember {
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                (context.getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as? VibratorManager)?.defaultVibrator
+            } else {
+                @Suppress("DEPRECATION")
+                context.getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator
+            }
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    // Trigger urgent alert vibration on receipt
+    LaunchedEffect(Unit) {
+        vibrator?.let { v ->
+            try {
+                if (v.hasVibrator()) {
+                    val pattern = longArrayOf(0, 500, 200, 500, 200, 800)
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                        v.vibrate(VibrationEffect.createWaveform(pattern, 0))
+                    } else {
+                        @Suppress("DEPRECATION")
+                        v.vibrate(pattern, 0)
+                    }
+                }
+            } catch (_: Exception) {}
+        }
+    }
+
+    // Stop vibration when screen is dismissed or destroyed
+    DisposableEffect(Unit) {
+        onDispose {
+            try { vibrator?.cancel() } catch (_: Exception) {}
+        }
+    }
+    // Smooth distance transitions so micro RF variations glide gracefully instead of jumping
+    val rawDistanceMeters = liveDistanceMeters ?: alert.distanceMeters
+    val animatedDistanceMeters by animateFloatAsState(
+        targetValue = rawDistanceMeters ?: 15.0f,
+        animationSpec = spring(stiffness = Spring.StiffnessLow, dampingRatio = Spring.DampingRatioMediumBouncy),
+        label = "distanceSpring"
+    )
+    val currentDistanceMeters = if (rawDistanceMeters != null) animatedDistanceMeters else null
+    val effectiveDistanceMeters = animatedDistanceMeters
 
     // 2-minute (120 seconds) alarm timer countdown
     var remainingSeconds by remember { mutableIntStateOf(120) }
@@ -96,10 +193,10 @@ fun IncomingAlertFullScreen(
     // Pulsing Beacon Animation
     val transition = rememberInfiniteTransition(label = "sosPulse")
     val pulseScale by transition.animateFloat(
-        initialValue = 0.93f,
-        targetValue = 1.10f,
+        initialValue = 0.94f,
+        targetValue = 1.08f,
         animationSpec = infiniteRepeatable(
-            animation = tween(650, easing = FastOutSlowInEasing),
+            animation = tween(700, easing = FastOutSlowInEasing),
             repeatMode = RepeatMode.Reverse,
         ),
         label = "pulseScale",
@@ -134,8 +231,8 @@ fun IncomingAlertFullScreen(
     )
 
     // Proximity Acoustic Tone Beeper (Rate scales in real-time as distance decreases)
-    LaunchedEffect(isTrackingActive, effectiveDistanceMeters) {
-        if (!isTrackingActive) return@LaunchedEffect
+    LaunchedEffect(isTrackingActive, currentDistanceMeters, isAudioMuted) {
+        if (!isTrackingActive || currentDistanceMeters == null || isAudioMuted) return@LaunchedEffect
         var toneGen: ToneGenerator? = null
         try {
             toneGen = ToneGenerator(AudioManager.STREAM_ALARM, 85)
@@ -163,214 +260,273 @@ fun IncomingAlertFullScreen(
 
     Surface(
         modifier = Modifier.fillMaxSize(),
-        color = Color(0xFF0D0303), // Deep tactical black-crimson
+        color = MaterialTheme.colorScheme.background,
     ) {
-        BoxWithConstraints(
-            modifier = Modifier
-                .fillMaxSize()
-                .windowInsetsPadding(WindowInsets.safeDrawing),
-        ) {
-            val isCompactHeight = maxHeight < 680.dp
-            val isSmallWidth = maxWidth < 380.dp
-
-            val beaconOuterSize = if (isCompactHeight) 100.dp else 136.dp
-            val beaconInnerSize = if (isCompactHeight) 64.dp else 82.dp
-            val beaconIconSize = if (isCompactHeight) 32.dp else 44.dp
-            val waveformHeight = if (isCompactHeight) 28.dp else 40.dp
-            val verticalPadding = if (isCompactHeight) 8.dp else 14.dp
-            val horizontalPadding = if (isSmallWidth) 12.dp else 18.dp
-
-            // Background Radial Hazard Beacon Ambient Glow extends edge-to-edge
-            Canvas(modifier = Modifier.fillMaxSize()) {
-                drawCircle(
-                    brush = Brush.radialGradient(
-                        colors = listOf(Color(0xFFDC2626).copy(alpha = 0.32f), Color.Transparent),
-                        center = Offset(size.width / 2f, size.height * 0.25f),
-                        radius = size.width * 0.85f,
-                    ),
-                    center = Offset(size.width / 2f, size.height * 0.25f),
-                    radius = size.width * 0.85f,
-                )
-            }
-
+        Box(modifier = Modifier.fillMaxSize()) {
+            // Subtle ambient emergency gradient background extends edge-to-edge
             Box(
                 modifier = Modifier
+                    .fillMaxWidth()
+                    .height(280.dp)
+                    .background(
+                        Brush.verticalGradient(
+                            colors = listOf(
+                                MaterialTheme.colorScheme.error.copy(alpha = 0.22f),
+                                Color.Transparent,
+                            )
+                        )
+                    )
+            )
+
+            BoxWithConstraints(
+                modifier = Modifier
                     .fillMaxSize()
-                    .padding(horizontal = horizontalPadding, vertical = verticalPadding),
+                    .windowInsetsPadding(WindowInsets.safeDrawing),
                 contentAlignment = Alignment.TopCenter,
             ) {
+                val isUltraCompactHeight = maxHeight < 620.dp
+                val isCompactHeight = maxHeight < 740.dp
+                val isSmallWidth = maxWidth < 380.dp
+                val isExtraSmallWidth = maxWidth < 330.dp
+
+                val horizontalPadding = when {
+                    isExtraSmallWidth -> 10.dp
+                    isSmallWidth -> 14.dp
+                    else -> 20.dp
+                }
+                val verticalPadding = when {
+                    isUltraCompactHeight -> 6.dp
+                    isCompactHeight -> 10.dp
+                    else -> 14.dp
+                }
+                val buttonHeight = when {
+                    isUltraCompactHeight -> 42.dp
+                    isCompactHeight -> 46.dp
+                    else -> 50.dp
+                }
+                val cardCornerRadius = if (isCompactHeight) 16.dp else 22.dp
+                val cardInnerPadding = when {
+                    isUltraCompactHeight -> 10.dp
+                    isCompactHeight -> 14.dp
+                    else -> 18.dp
+                }
+                val sectionSpacing = when {
+                    isUltraCompactHeight -> 6.dp
+                    isCompactHeight -> 10.dp
+                    else -> 14.dp
+                }
+
                 Column(
                     modifier = Modifier
-                        .widthIn(max = 560.dp)
-                        .fillMaxHeight()
+                        .fillMaxSize()
+                        .widthIn(max = 600.dp)
+                        .padding(horizontal = horizontalPadding, vertical = verticalPadding)
                         .verticalScroll(rememberScrollState()),
                     horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(if (isCompactHeight) 8.dp else 12.dp),
                 ) {
-                    // 1. Top Header: Priority Status & 2-Minute Countdown Loop Badge
+                    // 1. Top Header: Emergency Status & Mute/Countdown Controls
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        StatusPill(
-                            text = "EMERGENCY SOS",
-                            containerColor = Color(0xFFDC2626),
-                            contentColor = Color.White,
-                            icon = Icons.Filled.Warning,
-                        )
-
-                        val minutes = remainingSeconds / 60
-                        val seconds = remainingSeconds % 60
-                        Surface(
-                            shape = CircleShape,
-                            color = if (isAudioMuted) Color(0xFF27272A) else Color(0xFF3F1414),
-                            border = androidx.compose.foundation.BorderStroke(
-                                1.dp,
-                                if (isAudioMuted) Color(0xFF52525B) else Color(0xFFEF4444).copy(alpha = 0.6f),
-                            ),
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.weight(1f, fill = false),
                         ) {
-                            Row(
-                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
-                                verticalAlignment = Alignment.CenterVertically,
+                            Box(
+                                modifier = Modifier
+                                    .size(if (isCompactHeight) 10.dp else 12.dp)
+                                    .scale(pulseScale)
+                                    .background(MaterialTheme.colorScheme.error, CircleShape)
+                            )
+                            Spacer(modifier = Modifier.width(if (isCompactHeight) 6.dp else 8.dp))
+                            Text(
+                                text = "EMERGENCY ALERT RECEIVED",
+                                style = if (isCompactHeight) MaterialTheme.typography.labelSmall else MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.ExtraBold,
+                                color = MaterialTheme.colorScheme.error,
+                                letterSpacing = if (isCompactHeight) 0.5.sp else 1.0.sp,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        ) {
+                            // Mute Audio / Stop Vibration Toggle
+                            IconButton(
+                                onClick = {
+                                    isAudioMuted = !isAudioMuted
+                                    if (isAudioMuted) {
+                                        try { vibrator?.cancel() } catch (_: Exception) {}
+                                        onMuteAudio()
+                                    }
+                                },
+                                modifier = Modifier.size(if (isCompactHeight) 34.dp else 40.dp),
                             ) {
                                 Icon(
-                                    if (isAudioMuted) Icons.Filled.NotificationsOff else Icons.Filled.NotificationsActive,
-                                    contentDescription = null,
-                                    tint = if (isAudioMuted) Color(0xFFA1A1AA) else Color(0xFFFCA5A5),
-                                    modifier = Modifier.size(14.dp),
-                                )
-                                Spacer(Modifier.width(5.dp))
-                                Text(
-                                    text = if (isAudioMuted) "Alarm Muted" else String.format(Locale.US, "Loop %02d:%02d", minutes, seconds),
-                                    style = MaterialTheme.typography.labelSmall,
-                                    fontWeight = FontWeight.Bold,
-                                    color = if (isAudioMuted) Color(0xFFA1A1AA) else Color(0xFFFEF2F2),
+                                    imageVector = if (isAudioMuted) Icons.Filled.NotificationsOff else Icons.Filled.NotificationsActive,
+                                    contentDescription = if (isAudioMuted) "Muted" else "Mute Alert Audio",
+                                    tint = if (isAudioMuted) MaterialTheme.colorScheme.outline else MaterialTheme.colorScheme.error,
+                                    modifier = Modifier.size(if (isCompactHeight) 18.dp else 20.dp),
                                 )
                             }
-                        }
-                    }
 
-                    // 2. Center Visual: Animated SOS Beacon or Live Radar View
-                    if (!isTrackingActive) {
-                        // Standard Emergency Beacon View
-                        Box(
-                            contentAlignment = Alignment.Center,
-                            modifier = Modifier
-                                .size(beaconOuterSize)
-                                .scale(pulseScale),
-                        ) {
-                            PulseRing(color = Color(0xFFDC2626), size = beaconOuterSize)
-                            PulseRing(color = Color(0xFFEF4444), size = beaconOuterSize, delayMillis = 400)
-
+                            // 2-Minute Alarm Countdown Pill
+                            val minutes = remainingSeconds / 60
+                            val seconds = remainingSeconds % 60
                             Surface(
                                 shape = CircleShape,
-                                color = Color(0xFFDC2626),
-                                shadowElevation = 10.dp,
-                                modifier = Modifier.size(beaconInnerSize),
+                                color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                                border = BorderStroke(
+                                    1.dp,
+                                    if (isAudioMuted) MaterialTheme.colorScheme.outlineVariant else MaterialTheme.colorScheme.error.copy(alpha = 0.5f),
+                                ),
                             ) {
-                                Box(contentAlignment = Alignment.Center) {
-                                    Icon(
-                                        Icons.Filled.Warning,
-                                        contentDescription = "SOS",
-                                        tint = Color.White,
-                                        modifier = Modifier.size(beaconIconSize),
-                                    )
-                                }
-                            }
-                        }
-
-                        // Audio Waveform Equalizer Animation (while alarm audio is active)
-                        Row(
-                            horizontalArrangement = Arrangement.spacedBy(4.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.height(waveformHeight),
-                        ) {
-                            val bars = listOf(bar1, bar2, bar3, bar2, bar1, bar3, bar2)
-                            bars.forEach { h ->
-                                Box(
-                                    modifier = Modifier
-                                        .width(4.5.dp)
-                                        .height(if (isAudioMuted) 4.dp else h.dp)
-                                        .clip(RoundedCornerShape(3.dp))
-                                        .background(if (isAudioMuted) Color(0xFF52525B) else Color(0xFFEF4444)),
+                                Text(
+                                    text = if (isAudioMuted) "MUTED" else String.format(Locale.US, "%02d:%02d", minutes, seconds),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (isAudioMuted) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.error,
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
                                 )
                             }
                         }
-                    } else {
-                        // High-Tech Sonar Radar Compass (Signal Tracking Mode)
-                        TacticalSonarRadarView(
-                            distanceMeters = effectiveDistanceMeters,
-                            sweepAngle = radarSweepAngle,
-                            radarColor = proximityColor,
-                            modifier = Modifier
-                                .size(if (isCompactHeight) 130.dp else 160.dp)
-                                .padding(vertical = 4.dp),
-                        )
                     }
 
-                    // 3. Alert Message Card
-                    Surface(
+                    Spacer(modifier = Modifier.height(sectionSpacing))
+
+                    // 2. Alert Message & Sender Identity Card
+                    Card(
                         modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(16.dp),
-                        color = Color(0xFF1C1919),
-                        border = androidx.compose.foundation.BorderStroke(1.5.dp, Color(0xFFDC2626).copy(alpha = 0.8f)),
+                        shape = RoundedCornerShape(cardCornerRadius),
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        ),
+                        border = BorderStroke(1.5.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.7f)),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 3.dp),
                     ) {
                         Column(
-                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(cardInnerPadding),
                             horizontalAlignment = Alignment.CenterHorizontally,
                         ) {
+                            val alertFontSize = when {
+                                isUltraCompactHeight -> if (alertText.length > 50) 15.sp else 17.sp
+                                isCompactHeight -> if (alertText.length > 60) 16.sp else if (alertText.length > 30) 18.sp else 20.sp
+                                else -> if (alertText.length > 60) 18.sp else if (alertText.length > 30) 21.sp else 24.sp
+                            }
+                            val alertLineHeight = when {
+                                isUltraCompactHeight -> 20.sp
+                                isCompactHeight -> 23.sp
+                                else -> 28.sp
+                            }
+
                             Text(
                                 text = alertText,
-                                style = if (isCompactHeight) MaterialTheme.typography.titleLarge else MaterialTheme.typography.headlineSmall,
+                                fontSize = alertFontSize,
+                                lineHeight = alertLineHeight,
                                 fontWeight = FontWeight.Black,
-                                color = Color(0xFFFEF2F2),
+                                color = MaterialTheme.colorScheme.onSurface,
                                 textAlign = TextAlign.Center,
+                                modifier = Modifier.fillMaxWidth(),
                             )
 
-                            Spacer(Modifier.height(6.dp))
+                            Spacer(Modifier.height(if (isCompactHeight) 6.dp else 10.dp))
+                            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                            Spacer(Modifier.height(if (isCompactHeight) 6.dp else 10.dp))
 
-                            HorizontalDivider(color = Color(0xFF3F3F46).copy(alpha = 0.6f))
-
-                            Spacer(Modifier.height(6.dp))
-
-                            // Sender Info
+                            // Sender Identity & Language
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.Center,
                             ) {
                                 Icon(
-                                    Icons.Filled.LocationOn,
+                                    imageVector = Icons.Filled.LocationOn,
                                     contentDescription = null,
-                                    tint = Color(0xFFEF4444),
-                                    modifier = Modifier.size(15.dp),
+                                    tint = MaterialTheme.colorScheme.error,
+                                    modifier = Modifier.size(if (isCompactHeight) 14.dp else 16.dp),
                                 )
                                 Spacer(Modifier.width(4.dp))
                                 Text(
                                     text = "From: $senderName (${alert.language.endonym})",
-                                    style = MaterialTheme.typography.bodyMedium,
+                                    style = if (isCompactHeight) MaterialTheme.typography.bodySmall else MaterialTheme.typography.bodyMedium,
                                     fontWeight = FontWeight.Bold,
-                                    color = Color(0xFFFCA5A5),
-                                    fontSize = 13.5.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
+                            }
+
+                            val senderLoc = alert.senderLocation
+                            if (!senderLoc.isNullOrBlank()) {
+                                Spacer(Modifier.height(3.dp))
+                                Text(
+                                    text = senderLoc,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.outline,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                            }
+
+                            // Responsive Acknowledgment Status Confirmation Banner
+                            Surface(
+                                shape = RoundedCornerShape(16.dp),
+                                color = Color(0xFF10B981).copy(alpha = 0.14f),
+                                border = BorderStroke(1.dp, Color(0xFF10B981).copy(alpha = 0.45f)),
+                                modifier = Modifier.padding(top = if (isCompactHeight) 6.dp else 8.dp),
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier.padding(
+                                        horizontal = if (isSmallWidth) 8.dp else 10.dp,
+                                        vertical = 4.dp
+                                    ),
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Filled.Check,
+                                        contentDescription = null,
+                                        tint = Color(0xFF10B981),
+                                        modifier = Modifier.size(if (isCompactHeight) 13.dp else 15.dp),
+                                    )
+                                    Spacer(Modifier.width(5.dp))
+                                    Text(
+                                        text = "Receipt Acknowledged to Sender",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color(0xFF10B981),
+                                        fontSize = if (isUltraCompactHeight) 10.sp else 11.5.sp,
+                                    )
+                                }
                             }
                         }
                     }
 
-                    // 4. Tactical Real-Time Visual Proximity & Signal Gauge (NO Sliders)
-                    Surface(
+                    Spacer(modifier = Modifier.height(sectionSpacing))
+
+                    // 3. Real-Time Proximity & Sonar Radar Tracking Card
+                    Card(
                         modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(16.dp),
-                        color = Color(0xFF141416),
-                        border = androidx.compose.foundation.BorderStroke(
-                            1.dp,
-                            if (isTrackingActive) proximityColor.copy(alpha = 0.8f) else Color(0xFF27272A),
+                        shape = RoundedCornerShape(cardCornerRadius),
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceContainer,
                         ),
+                        border = BorderStroke(
+                            1.5.dp,
+                            if (isTrackingActive) proximityColor.copy(alpha = 0.85f) else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f),
+                        ),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
                     ) {
                         Column(
-                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(cardInnerPadding),
                             horizontalAlignment = Alignment.CenterHorizontally,
                         ) {
+                            // Radar Header Bar
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -378,190 +534,316 @@ fun IncomingAlertFullScreen(
                             ) {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                     Icon(
-                                        if (isTrackingActive) Icons.Filled.Radar else Icons.Filled.Sensors,
+                                        imageVector = if (isTrackingActive) Icons.Filled.Radar else Icons.Filled.Sensors,
                                         contentDescription = null,
-                                        tint = proximityColor,
-                                        modifier = Modifier.size(18.dp),
+                                        tint = if (isTrackingActive) proximityColor else MaterialTheme.colorScheme.error,
+                                        modifier = Modifier.size(if (isCompactHeight) 18.dp else 20.dp),
                                     )
-                                    Spacer(Modifier.width(6.dp))
+                                    Spacer(Modifier.width(8.dp))
                                     Text(
-                                        text = if (isTrackingActive) "Real-Time Proximity Tracker" else "Estimated Beacon Proximity",
-                                        style = MaterialTheme.typography.labelMedium,
+                                        text = if (isTrackingActive) "Tactical Radar & Proximity" else "Beacon Status",
+                                        style = if (isCompactHeight) MaterialTheme.typography.labelLarge else MaterialTheme.typography.titleSmall,
                                         fontWeight = FontWeight.Bold,
-                                        color = Color(0xFFE4E4E7),
+                                        color = MaterialTheme.colorScheme.onSurface,
                                     )
                                 }
 
-                                // Ping / Refresh indicator
-                                IconButton(
-                                    onClick = { /* Distance is updated in real-time from RSSI */ },
-                                    modifier = Modifier.size(28.dp),
-                                ) {
-                                    Icon(
-                                        Icons.Filled.Refresh,
-                                        contentDescription = "Refresh Signal",
-                                        tint = proximityColor,
-                                        modifier = Modifier.size(17.dp),
-                                    )
-                                }
-                            }
-
-                            Spacer(Modifier.height(6.dp))
-
-                            // Large Digital Distance Readout
-                            Row(
-                                verticalAlignment = Alignment.Bottom,
-                                horizontalArrangement = Arrangement.Center,
-                            ) {
-                                if (currentDistanceMeters != null) {
-                                    Text(
-                                        text = String.format(Locale.US, "%.1f", currentDistanceMeters),
-                                        style = MaterialTheme.typography.displaySmall,
-                                        fontFamily = FontFamily.Monospace,
-                                        fontWeight = FontWeight.Black,
-                                        color = proximityColor,
-                                        fontSize = if (isCompactHeight) 32.sp else 38.sp,
-                                    )
-                                    Spacer(Modifier.width(4.dp))
-                                    Text(
-                                        text = "meters",
-                                        style = MaterialTheme.typography.titleMedium,
-                                        fontWeight = FontWeight.SemiBold,
-                                        color = Color(0xFFA1A1AA),
-                                        modifier = Modifier.padding(bottom = 6.dp),
-                                    )
-                                } else {
-                                    Text(
-                                        text = "Estimating Proximity...",
-                                        style = MaterialTheme.typography.titleMedium,
-                                        fontWeight = FontWeight.Bold,
-                                        color = Color(0xFFA1A1AA),
-                                    )
-                                }
-                            }
-
-                            Spacer(Modifier.height(6.dp))
-
-                            // 5-Segment Dynamic Signal Strength LED Meter
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 8.dp),
-                                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                for (i in 1..5) {
-                                    val isFilled = i <= signalBarsCount
-                                    val barColor = when (i) {
-                                        1 -> Color(0xFFEF4444) // Red
-                                        2 -> Color(0xFFFB923C) // Orange
-                                        3 -> Color(0xFFFBBF24) // Yellow
-                                        4 -> Color(0xFF34D399) // Light Green
-                                        else -> Color(0xFF10B981) // Emerald Green
+                                if (isTrackingActive) {
+                                    IconButton(
+                                        onClick = { /* Updates continuously via live RSSI flow */ },
+                                        modifier = Modifier.size(28.dp),
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Filled.Refresh,
+                                            contentDescription = "Active Signal",
+                                            tint = proximityColor,
+                                            modifier = Modifier.size(18.dp),
+                                        )
                                     }
-                                    Box(
-                                        modifier = Modifier
-                                            .weight(1f)
-                                            .height(8.dp)
-                                            .clip(RoundedCornerShape(4.dp))
-                                            .background(if (isFilled) barColor else Color(0xFF27272A)),
-                                    )
                                 }
                             }
 
-                            Spacer(Modifier.height(8.dp))
-
-                            // Proximity Band Status Label
-                            Text(
-                                text = proximityBandText,
-                                style = MaterialTheme.typography.labelSmall,
-                                fontWeight = FontWeight.Bold,
-                                color = proximityColor,
-                                textAlign = TextAlign.Center,
-                            )
+                            Spacer(Modifier.height(if (isCompactHeight) 6.dp else 10.dp))
 
                             if (isTrackingActive) {
-                                Spacer(Modifier.height(4.dp))
+                                val radarSize = when {
+                                    isUltraCompactHeight -> 88.dp
+                                    isCompactHeight -> 108.dp
+                                    else -> 136.dp
+                                }
+
+                                // Tactical Sonar Radar Scope
+                                TacticalSonarRadarView(
+                                    distanceMeters = effectiveDistanceMeters,
+                                    sweepAngle = radarSweepAngle,
+                                    radarColor = proximityColor,
+                                    modifier = Modifier
+                                        .size(radarSize)
+                                        .padding(vertical = 2.dp),
+                                )
+
+                                Spacer(Modifier.height(if (isCompactHeight) 6.dp else 10.dp))
+
+                                val distanceFontSize = when {
+                                    isUltraCompactHeight -> 24.sp
+                                    isCompactHeight -> 28.sp
+                                    else -> 34.sp
+                                }
+
+                                // Large Digital Distance Readout
+                                Row(
+                                    verticalAlignment = Alignment.Bottom,
+                                    horizontalArrangement = Arrangement.Center,
+                                ) {
+                                    if (currentDistanceMeters != null) {
+                                        Text(
+                                            text = String.format(Locale.US, "%.1f", currentDistanceMeters),
+                                            style = MaterialTheme.typography.displaySmall,
+                                            fontFamily = FontFamily.Monospace,
+                                            fontWeight = FontWeight.Black,
+                                            color = proximityColor,
+                                            fontSize = distanceFontSize,
+                                        )
+                                        Spacer(Modifier.width(4.dp))
+                                        Text(
+                                            text = "meters",
+                                            style = MaterialTheme.typography.titleMedium,
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            fontSize = if (isCompactHeight) 14.sp else 16.sp,
+                                            modifier = Modifier.padding(bottom = if (isCompactHeight) 3.dp else 5.dp),
+                                        )
+                                    } else {
+                                        Text(
+                                            text = "Calculating Signal Proximity...",
+                                            style = MaterialTheme.typography.titleMedium,
+                                            fontWeight = FontWeight.Bold,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            fontSize = if (isCompactHeight) 14.sp else 16.sp,
+                                        )
+                                    }
+                                }
+
+                                Spacer(Modifier.height(if (isCompactHeight) 6.dp else 8.dp))
+
+                                // 5-Segment Dynamic Signal Strength LED Meter
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = if (isSmallWidth) 6.dp else 12.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    for (i in 1..5) {
+                                        val isFilled = i <= signalBarsCount
+                                        val barColor = when (i) {
+                                            1 -> Color(0xFFEF4444) // Red
+                                            2 -> Color(0xFFFB923C) // Orange
+                                            3 -> Color(0xFFFBBF24) // Yellow
+                                            4 -> Color(0xFF34D399) // Light Green
+                                            else -> Color(0xFF10B981) // Emerald Green
+                                        }
+                                        Box(
+                                            modifier = Modifier
+                                                .weight(1f)
+                                                .height(if (isCompactHeight) 5.dp else 7.dp)
+                                                .clip(RoundedCornerShape(4.dp))
+                                                .background(if (isFilled) barColor else MaterialTheme.colorScheme.surfaceContainerHighest),
+                                        )
+                                    }
+                                }
+
+                                Spacer(Modifier.height(if (isCompactHeight) 6.dp else 8.dp))
+
+                                // Proximity Band Status Label
                                 Text(
-                                    text = "Acoustic ping interval tightens as you move closer",
+                                    text = proximityBandText,
                                     style = MaterialTheme.typography.labelSmall,
-                                    color = Color(0xFF71717A),
-                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = proximityColor,
+                                    textAlign = TextAlign.Center,
+                                    fontSize = if (isCompactHeight) 10.sp else 11.sp,
+                                )
+
+                                if (!isAudioMuted) {
+                                    Spacer(Modifier.height(3.dp))
+                                    Text(
+                                        text = "Acoustic sonar tightens as distance closes",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.outline,
+                                        fontSize = if (isCompactHeight) 10.sp else 11.sp,
+                                    )
+                                }
+                            } else {
+                                val beaconOuterSize = when {
+                                    isUltraCompactHeight -> 68.dp
+                                    isCompactHeight -> 84.dp
+                                    else -> 108.dp
+                                }
+                                val beaconInnerSize = when {
+                                    isUltraCompactHeight -> 42.dp
+                                    isCompactHeight -> 52.dp
+                                    else -> 64.dp
+                                }
+                                val beaconIconSize = when {
+                                    isUltraCompactHeight -> 22.dp
+                                    isCompactHeight -> 26.dp
+                                    else -> 32.dp
+                                }
+
+                                // Clean Beacon Display when NOT tracking yet
+                                Box(
+                                    contentAlignment = Alignment.Center,
+                                    modifier = Modifier
+                                        .size(beaconOuterSize)
+                                        .scale(pulseScale)
+                                        .padding(vertical = if (isCompactHeight) 2.dp else 4.dp),
+                                ) {
+                                    PulseRing(color = MaterialTheme.colorScheme.error, size = beaconOuterSize)
+                                    Surface(
+                                        shape = CircleShape,
+                                        color = MaterialTheme.colorScheme.error,
+                                        modifier = Modifier.size(beaconInnerSize),
+                                    ) {
+                                        Box(contentAlignment = Alignment.Center) {
+                                            Icon(
+                                                imageVector = Icons.Filled.Warning,
+                                                contentDescription = "Alert",
+                                                tint = Color.White,
+                                                modifier = Modifier.size(beaconIconSize),
+                                            )
+                                        }
+                                    }
+                                }
+
+                                Spacer(Modifier.height(if (isCompactHeight) 8.dp else 12.dp))
+
+                                Text(
+                                    text = "Emergency Signal Active",
+                                    style = if (isCompactHeight) MaterialTheme.typography.titleSmall else MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    textAlign = TextAlign.Center,
+                                )
+                                Spacer(Modifier.height(3.dp))
+                                Text(
+                                    text = "Tap 'Track Beacon' below to start live proximity radar and navigate to $senderName",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    textAlign = TextAlign.Center,
+                                    fontSize = if (isCompactHeight) 11.5.sp else 12.5.sp,
+                                    modifier = Modifier.padding(horizontal = if (isSmallWidth) 8.dp else 14.dp),
                                 )
                             }
                         }
                     }
 
-                    Spacer(Modifier.weight(1f, fill = false))
+                    Spacer(modifier = Modifier.height(sectionSpacing))
 
-                    // 5. Tactical Action Buttons Row
-                    Column(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        // Track / Acoustic Radar Toggle Button
-                        OutlinedButton(
-                            onClick = {
-                                if (!isTrackingActive) {
-                                    isTrackingActive = true
-                                    // Mute loud speech when tracking begins so acoustic sonar beeps take over
-                                    if (!isAudioMuted) {
-                                        isAudioMuted = true
-                                        onMuteAudio()
+                    // 4. Responsive Bottom Action Buttons
+                    val buttonContent: @Composable (Modifier, Boolean) -> Unit = { mod, isTrackBtn ->
+                        if (isTrackBtn) {
+                            OutlinedButton(
+                                onClick = {
+                                    if (!isTrackingActive) {
+                                        isTrackingActive = true
+                                        onStartTracking()
+                                    } else {
+                                        isTrackingActive = false
+                                        onStopTracking()
                                     }
-                                } else {
-                                    isTrackingActive = false
+                                },
+                                shape = RoundedCornerShape(14.dp),
+                                modifier = mod.height(buttonHeight),
+                                colors = ButtonDefaults.outlinedButtonColors(
+                                    contentColor = if (isTrackingActive) Color(0xFF10B981) else MaterialTheme.colorScheme.primary,
+                                ),
+                                border = BorderStroke(
+                                    1.5.dp,
+                                    if (isTrackingActive) Color(0xFF10B981) else MaterialTheme.colorScheme.primary.copy(alpha = 0.8f),
+                                ),
+                                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp),
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.Center,
+                                ) {
+                                    Icon(
+                                        imageVector = if (isTrackingActive) Icons.Filled.Check else Icons.Filled.Explore,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(if (isCompactHeight) 16.dp else 18.dp),
+                                    )
+                                    Spacer(Modifier.width(5.dp))
+                                    Text(
+                                        text = if (isTrackingActive) "Tracking Live" else "Track Beacon",
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = if (isSmallWidth) 12.sp else 13.5.sp,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
                                 }
-                            },
-                            shape = RoundedCornerShape(14.dp),
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(if (isCompactHeight) 44.dp else 48.dp),
-                            colors = ButtonDefaults.outlinedButtonColors(
-                                contentColor = if (isTrackingActive) Color(0xFF34D399) else Color.White,
-                            ),
-                            border = androidx.compose.foundation.BorderStroke(
-                                1.dp,
-                                if (isTrackingActive) Color(0xFF059669) else Color(0xFF52525B),
-                            ),
-                        ) {
-                            Icon(
-                                if (isTrackingActive) Icons.Filled.Check else Icons.Filled.Explore,
-                                contentDescription = null,
-                                modifier = Modifier.size(17.dp),
-                            )
-                            Spacer(Modifier.width(6.dp))
-                            Text(
-                                if (isTrackingActive) "Tracking Signal Active (Beeping...)" else "Track Signal & Proximity",
-                                fontWeight = FontWeight.SemiBold,
-                                fontSize = 14.sp,
-                            )
-                        }
-
-                        // Stop Alarm / Mark Received Button
-                        Button(
-                            onClick = onDismiss,
-                            shape = RoundedCornerShape(14.dp),
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(if (isCompactHeight) 48.dp else 52.dp),
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = Color(0xFFDC2626),
-                                contentColor = Color.White,
-                            ),
-                        ) {
-                            Icon(Icons.Filled.Stop, contentDescription = null, modifier = Modifier.size(19.dp))
-                            Spacer(Modifier.width(6.dp))
-                            Text(
-                                text = "Stop Alarm & Mark Received",
-                                style = MaterialTheme.typography.titleMedium,
-                                fontSize = 15.sp,
-                                fontWeight = FontWeight.Bold,
-                            )
+                            }
+                        } else {
+                            Button(
+                                onClick = {
+                                    try { vibrator?.cancel() } catch (_: Exception) {}
+                                    onDismiss()
+                                },
+                                shape = RoundedCornerShape(14.dp),
+                                modifier = mod.height(buttonHeight),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = MaterialTheme.colorScheme.error,
+                                    contentColor = Color.White,
+                                ),
+                                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp),
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.Center,
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Filled.Stop,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(if (isCompactHeight) 16.dp else 18.dp),
+                                    )
+                                    Spacer(Modifier.width(5.dp))
+                                    Text(
+                                        text = when {
+                                            isExtraSmallWidth -> "Stop Alarm"
+                                            isSmallWidth -> "Acknowledge"
+                                            else -> "Stop Alarm & ACK"
+                                        },
+                                        style = MaterialTheme.typography.titleMedium,
+                                        fontSize = if (isSmallWidth) 12.sp else 13.5.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
+                                }
+                            }
                         }
                     }
 
-                    Spacer(Modifier.height(if (isCompactHeight) 10.dp else 16.dp))
+                    if (isExtraSmallWidth) {
+                        Column(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            buttonContent(Modifier.fillMaxWidth(), true)
+                            buttonContent(Modifier.fillMaxWidth(), false)
+                        }
+                    } else {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(if (isSmallWidth) 8.dp else 12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            buttonContent(Modifier.weight(1f), true)
+                            buttonContent(Modifier.weight(1f), false)
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(verticalPadding))
                 }
             }
         }
