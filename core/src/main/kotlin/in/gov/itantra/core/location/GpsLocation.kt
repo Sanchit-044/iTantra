@@ -17,7 +17,15 @@ data class GpsLocation(
     val bearingDegrees: Float = 0f,
     val provider: String = "GPS",
     val timestampMs: Long = System.currentTimeMillis(),
+    val hasRealFix: Boolean = false,
 ) {
+    /** Returns true if this coordinate represents default/mock/unacquired placeholder coordinates. */
+    fun isMockOrDelhi(): Boolean {
+        if (!hasRealFix) return true
+        if (latitude == 0.0 && longitude == 0.0) return true
+        return kotlin.math.abs(latitude - 28.613939) < 0.001 && kotlin.math.abs(longitude - 77.209021) < 0.001
+    }
+
     /** Returns distance in meters between this location and [target] using Haversine formula. */
     fun distanceTo(target: GpsLocation): Float {
         val earthRadius = 6371000.0 // Earth radius in meters

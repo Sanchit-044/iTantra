@@ -141,6 +141,7 @@ object AlertCodec {
         sequence: Long,
         senderName: String? = null,
         ttl: Int = 3,
+        senderLoc: String? = null,
     ): Map<String, String> {
         val map = mutableMapOf(
             "lang" to language.code,
@@ -150,6 +151,9 @@ object AlertCodec {
         )
         if (senderName != null) {
             map["name"] = senderName
+        }
+        if (senderLoc != null) {
+            map["loc"] = senderLoc
         }
         return map
     }
@@ -164,12 +168,13 @@ object AlertCodec {
             val payloadStr = record["payload"] ?: return null
             val senderName = record["name"]
             val ttl = record["ttl"]?.toIntOrNull() ?: 3
+            val senderLoc = record["loc"]
 
             val language = Language.fromCode(langCode) ?: return null
             val sequence = sequenceStr.toIntOrNull() ?: return null
 
             val content = AlertTemplate.fromWirePayload(payloadStr)
-            return DecodedAlert(language, content, sequence, senderName, ttl)
+            return DecodedAlert(language, content, sequence, senderName, ttl, senderLoc)
         } catch (e: Exception) {
             return null
         }
@@ -181,5 +186,6 @@ object AlertCodec {
         val sequence: Int,
         val senderName: String? = null,
         val ttl: Int = 3,
+        val senderLoc: String? = null,
     )
 }
