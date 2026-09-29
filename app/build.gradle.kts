@@ -2,8 +2,8 @@ plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.compose.compiler)
-    alias(libs.plugins.hilt.android)
     alias(libs.plugins.ksp)
+    alias(libs.plugins.hilt.android)
 }
 
 android {
@@ -55,7 +55,32 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
+    packaging {
+        androidResources {
+            noCompress += listOf("onnx", "wav", "json")
+        }
+    }
+}
 
+tasks.register("ensureBundledModels") {
+    doLast {
+        val rootDir = project.rootDir
+        val hiStt = File(rootDir, "model-host/indicwav2vec-hi-int8.onnx")
+        val targetStt = file("src/main/assets/models/stt/onnx/indicwav2vec-hi-int8.onnx")
+        if (hiStt.exists() && (!targetStt.exists() || targetStt.length() != hiStt.length())) {
+            targetStt.parentFile.mkdirs()
+            hiStt.copyTo(targetStt, overwrite = true)
+        }
+        val hiTts = File(rootDir, "model-host/vits-hi-int8.onnx")
+        val targetTts = file("src/main/assets/models/tts/vits-hi-int8.onnx")
+        if (hiTts.exists() && (!targetTts.exists() || targetTts.length() != hiTts.length())) {
+            targetTts.parentFile.mkdirs()
+            hiTts.copyTo(targetTts, overwrite = true)
+        }
+    }
+}
+tasks.named("preBuild") {
+    dependsOn("ensureBundledModels")
 }
 
 kotlin {

@@ -6,7 +6,7 @@ import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
 import dagger.hilt.android.qualifiers.ApplicationContext
-import `in`.gov.itantra.core.util.AppLog
+import `in`.gov.itantra.core.diag.AppLog
 import javax.inject.Inject
 import javax.inject.Singleton
 
