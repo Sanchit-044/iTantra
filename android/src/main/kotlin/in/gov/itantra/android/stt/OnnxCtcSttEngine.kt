@@ -85,7 +85,9 @@ class OnnxCtcSttEngine(
             state = SttState.MODEL_LOADED
         } catch (e: Exception) {
             state = SttState.ERROR
-            throw SttException("failed to load CTC model for ${language.code}", e)
+            val detail = e.message ?: e.cause?.message ?: "unknown error"
+            android.util.Log.e("OnnxCtcSttEngine", "Failed to load CTC model for ${language.code}: $detail", e)
+            throw SttException("failed to load CTC model for ${language.code}: $detail", e)
         }
     }
 
